@@ -2,25 +2,73 @@ from __future__ import annotations
 
 from typing import Dict
 
+from ..domain import MacroDef, MacroParam
+
 from .access_driver import fetch_macro_pairs
 
 
 CANDIDATE_MACRO_COLS = ["MacroName", "FunctionName", "Macro", "Function"]
 
 
-def discover_macro_map(cursor) -> Dict[int, str]:
-    """Discover mapping from IDFunction to macro name using MDB schema."""
-    macro_map: Dict[int, str] = {}
+PARAM_COLS = ["ParamName", "ParamType", "DefValue", "MinValue", "MaxValue"]
+
+
+def _fetch_param_rows(cursor, table: str):
+    cols = ", ".join(["IDFunction"] + PARAM_COLS)
+    query = f"SELECT {cols} FROM [{table}]"
+    return cursor.execute(query).fetchall()
+
+
+def discover_macro_map(cursor) -> Dict[int, MacroDef]:
+    """Discover mapping from IDFunction to :class:`MacroDef`."""
+    macro_map: Dict[int, MacroDef] = {}
+    tables = {}
     for t in cursor.tables(tableType="TABLE"):
         table = t.table_name
         columns = [c.column_name for c in cursor.columns(table=table)]
-        if "IDFunction" not in columns:
-            continue
-        macro_col = next((c for c in CANDIDATE_MACRO_COLS if c in columns), None)
+        tables[table] = columns
+
+    macro_tables = [
+        (table, next((c for c in CANDIDATE_MACRO_COLS if c in cols), None))
+        for table, cols in tables.items()
+        if "IDFunction" in cols
+        and any(c in cols for c in CANDIDATE_MACRO_COLS)
+    ]
+
+    param_tables = [
+        table
+        for table, cols in tables.items()
+        if "IDFunction" in cols and all(p in cols for p in PARAM_COLS)
+    ]
+
+    for table, macro_col in macro_tables:
         if not macro_col:
             continue
         for id_function, name in fetch_macro_pairs(cursor, table, macro_col):
             if id_function is None or name is None:
                 continue
-            macro_map[int(id_function)] = str(name)
+            id_func = int(id_function)
+            if id_func not in macro_map:
+                macro_map[id_func] = MacroDef(id_func, str(name), [])
+
+    for table in param_tables:
+        for row in _fetch_param_rows(cursor, table):
+            id_func = int(getattr(row, "IDFunction", row[0]))
+            if id_func not in macro_map:
+                continue
+            param = MacroParam(
+                name=str(getattr(row, "ParamName", row[1])) if getattr(row, "ParamName", row[1]) is not None else None,
+                type=str(getattr(row, "ParamType", row[2])) if getattr(row, "ParamType", row[2]) is not None else None,
+                default=(
+                    str(getattr(row, "DefValue", row[3])) if getattr(row, "DefValue", row[3]) is not None else None
+                ),
+                min=(
+                    str(getattr(row, "MinValue", row[4])) if getattr(row, "MinValue", row[4]) is not None else None
+                ),
+                max=(
+                    str(getattr(row, "MaxValue", row[5])) if getattr(row, "MaxValue", row[5]) is not None else None
+                ),
+            )
+            macro_map[id_func].params.append(param)
+
     return macro_map
