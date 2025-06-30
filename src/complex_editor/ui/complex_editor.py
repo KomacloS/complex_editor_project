@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+import pyodbc
 
 from ..domain import (
     ComplexDevice,
@@ -10,6 +11,7 @@ from ..domain import (
     parse_param_xml,
 )
 from ..services import insert_complex
+from ..db import make_backup
 
 
 class ComplexEditor(QtWidgets.QWidget):
@@ -44,6 +46,7 @@ class ComplexEditor(QtWidgets.QWidget):
         layout.addWidget(self.save_btn)
 
         self.save_btn.clicked.connect(self.save_complex)
+        self.macro_combo.currentIndexChanged.connect(self._on_macro_change)
         self.set_macro_map(self.macro_map)
 
     # ------------------------------------------------------------------ utils
@@ -57,6 +60,12 @@ class ComplexEditor(QtWidgets.QWidget):
         while self.param_form.rowCount():
             self.param_form.removeRow(0)
         self.param_widgets: dict[str, QtWidgets.QWidget] = {}
+
+    def _on_macro_change(self) -> None:
+        id_func = int(self.macro_combo.currentData())
+        macro = self.macro_map.get(id_func)
+        self._build_param_widgets(macro)
+        self.on_dirty()
 
     def _build_param_widgets(self, macro: MacroDef | None) -> None:
         self._clear_params()
@@ -81,12 +90,9 @@ class ComplexEditor(QtWidgets.QWidget):
                 widget = QtWidgets.QCheckBox()
             elif param.type == "ENUM":
                 widget = QtWidgets.QComboBox()
-                choices = (
-                    param.default.split(";")
-                    if param.default and ";" in param.default
-                    else []
-                )
-                widget.addItems(choices)
+                choices = (param.default or param.min or "").split(";")
+                if len(choices) > 1:
+                    widget.addItems(choices)
             else:
                 widget = QtWidgets.QLineEdit()
             self.param_widgets[param.name] = widget
@@ -117,6 +123,17 @@ class ComplexEditor(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------ loading
     def load_complex(self, row) -> None:
+        if row is None:
+            for edit in self.pin_edits:
+                edit.clear()
+            if self.macro_combo.count():
+                self.macro_combo.setCurrentIndex(0)
+            macro = self.macro_map.get(int(self.macro_combo.currentData()))
+            self._build_param_widgets(macro)
+            self.xml_preview.clear()
+            self.on_dirty()
+            return
+
         pins = [
             getattr(row, f"Pin{c}", row[i + 2]) if len(row) > i + 2 else None
             for i, c in enumerate("ABCD")
@@ -181,6 +198,8 @@ class ComplexEditor(QtWidgets.QWidget):
         device = ComplexDevice(
             id_function=id_func, pins=pins, macro=MacroInstance(macro_name, params)
         )
+        db_path = self.conn.getinfo(pyodbc.SQL_DATABASE_NAME)
+        bak = make_backup(db_path)
         try:
             new_id = insert_complex(self.conn, device)
         except Exception as exc:  # pragma: no cover - error path
@@ -192,5 +211,5 @@ class ComplexEditor(QtWidgets.QWidget):
         if parent and hasattr(parent, "list_panel"):
             parent.list_panel.load_rows(parent.cursor, parent.macro_map)
         QtWidgets.QMessageBox.information(
-            self, "Saved", f"Inserted complex {new_id}"
+            self, "Saved", f"Inserted {new_id}\nBackup: {bak}"
         )
