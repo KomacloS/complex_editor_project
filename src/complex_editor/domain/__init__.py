@@ -6,7 +6,7 @@ from .models import (
     MacroInstance,
     MacroParam,
 )
-from .pinxml import macro_to_xml
+from .pinxml import macro_to_xml, parse_param_xml
 
 __all__ = [
     "MacroParam",
@@ -14,5 +14,6 @@ __all__ = [
     "MacroInstance",
     "ComplexDevice",
     "macro_to_xml",
+    "parse_param_xml",
 ]
 

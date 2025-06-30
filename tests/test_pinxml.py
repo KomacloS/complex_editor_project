@@ -10,7 +10,11 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from complex_editor import cli  # noqa: E402
-from complex_editor.domain import MacroInstance, macro_to_xml  # noqa: E402
+from complex_editor.domain import (
+    MacroInstance,
+    macro_to_xml,
+    parse_param_xml,
+)
 
 EXPECTED_XML = (
     "<?xml version=\"1.0\" encoding=\"utf-16\"?>\n"
@@ -50,3 +54,9 @@ def test_cli_make_pinxml(capsys):
     bytes_out = bytes.fromhex(hex_out)
     xml = bytes_out.decode("utf-16le")
     assert xml.replace("\r\n", "\n") == EXPECTED_XML
+
+
+def test_parse_param_xml():
+    xml_bytes = EXPECTED_XML.encode("utf-16le")
+    params = parse_param_xml(xml_bytes)
+    assert params == {"PathPin_A": "010101", "PathPin_B": "HLHLHL"}

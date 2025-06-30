@@ -41,16 +41,24 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.addWidget(self.stack, 1)
         self.list_panel = ComplexListPanel()
         self.stack.addWidget(self.list_panel)
-        self.editor_panel = ComplexEditor()
+        self.editor_panel = ComplexEditor(self.macro_map)
+        self.editor_panel.conn = self.conn
+        self.editor_panel.dirtyChanged.connect(self._on_dirty)
         self.stack.addWidget(self.editor_panel)
+        self.list_panel.complexSelected.connect(self.editor_panel.load_complex)
         self.setCentralWidget(central)
         # Menu
         file_menu = self.menuBar().addMenu("File")
         open_act = file_menu.addAction("Open…")
         open_act.triggered.connect(self.open_mdb)
+        self.save_act = file_menu.addAction("Save")
+        self.save_act.triggered.connect(self.editor_panel.save_complex)
+        self.save_act.setEnabled(False)
 
     def open_mdb(self) -> None:
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open MDB", filter="MDB Files (*.mdb *.accdb)")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Open MDB", filter="MDB Files (*.mdb *.accdb)"
+        )
         if not path:
             return
         self.conn = connect(path)
@@ -62,6 +70,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.macro_map = discover_macro_map(self.cursor)
         self.list_panel.load_rows(self.cursor, self.macro_map)
+        self.editor_panel.conn = self.conn
+        self.editor_panel.set_macro_map(self.macro_map)
+
+    def _on_dirty(self, dirty: bool) -> None:
+        self.save_act.setEnabled(dirty)
 
 
 def run_gui(mdb_path: Optional[str] = None) -> None:
