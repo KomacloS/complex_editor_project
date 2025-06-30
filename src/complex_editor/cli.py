@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from .db import connect, discover_macro_map, fetch_comp_desc_rows, table_exists
+from .domain import MacroInstance, macro_to_xml
 
 
 def list_complexes_cmd(args: argparse.Namespace) -> int:
@@ -51,6 +52,21 @@ def dump_macros_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def make_pinxml_cmd(args: argparse.Namespace) -> int:
+    params_pairs = []
+    for item in args.param:
+        if "=" not in item:
+            print(f"Invalid --param: {item}")
+            return 1
+        name, value = item.split("=", 1)
+        params_pairs.append((name, value))
+    macro = MacroInstance(args.macro, dict(params_pairs))
+    xml_str = macro_to_xml(macro)
+    hex_dump = " ".join(f"{b:02x}" for b in xml_str.encode("utf-16le"))
+    print(hex_dump)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Complex-Editor CLI")
     parser.add_argument("--version", action="version", version="0.0.1")
@@ -64,6 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
     dump_p.add_argument("mdb_path")
     dump_p.add_argument("--id", type=int)
     dump_p.set_defaults(func=dump_macros_cmd)
+
+    xml_p = sub.add_parser("make-pinxml", help="Build PinS XML for a macro")
+    xml_p.add_argument("--macro", required=True)
+    xml_p.add_argument("--param", action="append", default=[])
+    xml_p.set_defaults(func=make_pinxml_cmd)
     return parser
 
 
