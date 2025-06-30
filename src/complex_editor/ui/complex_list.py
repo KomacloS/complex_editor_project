@@ -44,22 +44,38 @@ class ComplexListModel(QtCore.QAbstractTableModel):
         return None
 
     def headerData(self, section, orientation, role):
-        if role == QtCore.Qt.ItemDataRole.DisplayRole and orientation == QtCore.Qt.Orientation.Horizontal:
+        if (
+            role == QtCore.Qt.ItemDataRole.DisplayRole
+            and orientation == QtCore.Qt.Orientation.Horizontal
+        ):
             return self.HEADERS[section]
         return None
 
 
 class ComplexListPanel(QtWidgets.QWidget):
+    complexSelected = QtCore.pyqtSignal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         self.view = QtWidgets.QTableView()
         self.model = ComplexListModel([])
         self.view.setModel(self.model)
-        self.view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
-        self.view.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.view.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.view.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.view.clicked.connect(self._on_clicked)
         layout.addWidget(self.view)
 
     def load_rows(self, cursor, macro_map):
         rows = fetch_comp_desc_rows(cursor, 1000)
         self.model.load(rows, macro_map)
+
+    def _on_clicked(self, index: QtCore.QModelIndex) -> None:
+        if not index.isValid():
+            return
+        row = self.model.rows[index.row()]
+        self.complexSelected.emit(row)
