@@ -58,6 +58,9 @@ class ComplexListPanel(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
+        btn_new = QtWidgets.QPushButton("New Complex")
+        btn_new.clicked.connect(lambda: self.complexSelected.emit(None))
+        layout.addWidget(btn_new)
         self.view = QtWidgets.QTableView()
         self.model = ComplexListModel([])
         self.view.setModel(self.model)
