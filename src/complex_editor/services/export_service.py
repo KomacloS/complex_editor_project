@@ -11,25 +11,21 @@ def insert_complex(conn, complex_dev: ComplexDevice) -> int:
         raise RuntimeError("tabCompDesc table missing")
 
     cursor.execute("SELECT MAX(IDCompDesc) FROM tabCompDesc")
-    max_id = cursor.scalar()
-    next_id = (max_id or 0) + 1
+    row = cursor.fetchone()
+    max_id = row[0] if row and row[0] is not None else 0
+    next_id = max_id + 1
 
     pin_s = macro_to_xml(complex_dev.macro).encode("utf-16le")
+    if len(complex_dev.pins) < 2:
+        raise ValueError("At least two pins required")
+
+    pins = (complex_dev.pins + [None, None, None, None])[:4]
+
     query = (
         "INSERT INTO tabCompDesc "
         "(IDCompDesc, IDFunction, PinA, PinB, PinC, PinD, PinS) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-    cursor.execute(
-        query,
-        (
-            next_id,
-            complex_dev.id_function,
-            complex_dev.pins[0],
-            complex_dev.pins[1],
-            complex_dev.pins[2],
-            complex_dev.pins[3],
-            pin_s,
-        ),
-    )
+    params = (next_id, complex_dev.id_function, *pins, pin_s)
+    cursor.execute(query, params)
     return next_id

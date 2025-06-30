@@ -19,10 +19,11 @@ class FakeCursor:
     def execute(self, query, params=None):
         self.calls.append((query, params))
         self.last_query = query
+        self.last_params = params
         return self
 
-    def scalar(self):
-        return 10
+    def fetchone(self):
+        return (10,)
 
 
 class FakeConnection:
@@ -38,7 +39,7 @@ def test_insert_complex(monkeypatch):
     monkeypatch.setattr(export_service, "table_exists", lambda c, t: True)
     dev = ComplexDevice(
         id_function=42,
-        pins=["A1", "B2", "C3", "D4"],
+        pins=["A1", "B2"],
         macro=MacroInstance("GATE", {"PathPin_A": "0101"}),
     )
     new_id = export_service.insert_complex(conn, dev)
@@ -46,5 +47,6 @@ def test_insert_complex(monkeypatch):
     assert "SELECT MAX" in conn.cursor_obj.calls[0][0]
     insert_sql, params = conn.cursor_obj.calls[1]
     assert "INSERT INTO tabCompDesc" in insert_sql
+    assert params[2:6] == ("A1", "B2", None, None)
     xml_blob = params[-1]
     assert xml_blob.decode("utf-16le").startswith("<?xml")
