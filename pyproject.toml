@@ -20,3 +20,6 @@ requires-python = ">=3.9"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-qt", "ruff"]
+
+[tool.setuptools.package-data]
+"complex_editor.resources" = ["*.yaml"]

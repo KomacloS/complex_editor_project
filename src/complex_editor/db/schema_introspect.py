@@ -71,4 +71,20 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
             )
             macro_map[id_func].params.append(param)
 
+    if not macro_map:          # nothing found – fall back
+        import importlib.resources
+        import yaml
+        data = importlib.resources.files(
+            "complex_editor.resources"
+        ).joinpath("macro_fallback.yaml").read_text()
+        y = yaml.safe_load(data)
+        for entry in y["macros"]:
+            macro_map[entry["id_function"]] = MacroDef(
+                id_function=entry["id_function"],
+                name=entry["name"],
+                params=[
+                    MacroParam(**p) for p in entry.get("params", [])
+                ],
+            )
+
     return macro_map

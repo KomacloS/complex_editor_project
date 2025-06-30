@@ -1,0 +1,34 @@
+# Minimal macro catalogue – extracted from “System Macros” manual
+macros:
+  - id_function: 1
+    name: RESISTOR
+    params:
+      - {name: Value,        type: INT,   default: 1000,  min: 0,      max: 10000000}
+      - {name: TolPos,       type: INT,   default: 5,     min: 0,      max: 100}
+      - {name: TolNeg,       type: INT,   default: -5,    min: -100,   max: 0}
+      - {name: PinA,         type: STRING, default: null, min: null, max: null}
+      - {name: PinB,         type: STRING, default: null, min: null, max: null}
+
+  - id_function: 2
+    name: CAPACITOR
+    params:
+      - {name: Value,        type: FLOAT, default: 1e-6,  min: 1e-12,  max: 1e-1}
+      - {name: TolPos,       type: INT,   default: 10,    min: 0,      max: 100}
+      - {name: TolNeg,       type: INT,   default: -10,   min: -100,   max: 0}
+      - {name: PinA,         type: STRING, default: null, min: null, max: null}
+      - {name: PinB,         type: STRING, default: null, min: null, max: null}
+
+  - id_function: 3
+    name: GATE
+    params:
+      - {name: PathPin_A,    type: STRING, default: null, min: null, max: null}
+      - {name: PathPin_B,    type: STRING, default: null, min: null, max: null}
+      - {name: PathPin_C,    type: STRING, default: null, min: null, max: null}
+
+  - id_function: 4
+    name: RELAY
+    params:
+      - {name: CoilPins,     type: STRING, default: null, min: null, max: null}
+      - {name: ContactPins,  type: STRING, default: null, min: null, max: null}
+      - {name: CoilRes,      type: INT,   default: 500,   min: 0,      max: 10000}
+# (Enough to keep the GUI functional; extend later as needed.)
