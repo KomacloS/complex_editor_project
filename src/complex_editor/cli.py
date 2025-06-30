@@ -5,8 +5,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .db import connect, discover_macro_map, fetch_comp_desc_rows, table_exists
-from .domain import MacroInstance, macro_to_xml
+from .db import (
+    connect,
+    discover_macro_map,
+    fetch_comp_desc_rows,
+    make_backup,
+    table_exists,
+)
+from .domain import ComplexDevice, MacroInstance, macro_to_xml
+from .services import insert_complex
 
 
 def list_complexes_cmd(args: argparse.Namespace) -> int:
@@ -67,6 +74,32 @@ def make_pinxml_cmd(args: argparse.Namespace) -> int:
     return 0
 
 
+def add_complex_cmd(args: argparse.Namespace) -> int:
+    params_pairs = []
+    for item in args.param:
+        if "=" not in item:
+            print(f"Invalid --param: {item}")
+            return 1
+        name, value = item.split("=", 1)
+        params_pairs.append((name, value))
+
+    conn = connect(args.mdb_path)
+    conn.autocommit = False
+    try:
+        make_backup(args.mdb_path)
+        device = ComplexDevice(
+            id_function=args.idfunc,
+            pins=args.pins,
+            macro=MacroInstance(args.macro, dict(params_pairs)),
+        )
+        new_id = insert_complex(conn, device)
+        conn.commit()
+        print(f"Inserted complex {new_id} (macro {device.macro.name})")
+    finally:
+        conn.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Complex-Editor CLI")
     parser.add_argument("--version", action="version", version="0.0.1")
@@ -85,6 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     xml_p.add_argument("--macro", required=True)
     xml_p.add_argument("--param", action="append", default=[])
     xml_p.set_defaults(func=make_pinxml_cmd)
+
+    add_p = sub.add_parser("add-complex", help="Insert a complex into an MDB")
+    add_p.add_argument("mdb_path")
+    add_p.add_argument("--idfunc", type=int, required=True)
+    add_p.add_argument("--pins", nargs=4, required=True)
+    add_p.add_argument("--macro", required=True)
+    add_p.add_argument("--param", action="append", default=[])
+    add_p.set_defaults(func=add_complex_cmd)
     return parser
 
 
