@@ -48,6 +48,9 @@ class FakeCursor:
         self.last_query = query
         return self
 
+    def fetchone(self):
+        return (10,)
+
     def fetchall(self):
         if "tabFunction" in self.last_query:
             return [(1, "MACRO1")]
@@ -56,6 +59,8 @@ class FakeCursor:
                 (1, 1, "A1", "B1", None, None, None),
                 (2, 1, "A2", "B2", None, None, None),
             ]
+        if "tabFuncMacro" in self.last_query:
+            return [(1, "P1", "INT", "0", "0", "10")]
         return []
 
 
@@ -69,3 +74,27 @@ def test_main_window_load(qtbot):
     qtbot.addWidget(window)
     model = window.list_panel.model
     assert model.rowCount() == 2
+
+
+def test_editor_save(qtbot, monkeypatch):
+    conn = FakeConnection()
+    window = MainWindow(conn)
+    qtbot.addWidget(window)
+    index = window.list_panel.model.index(0, 0)
+    window.list_panel.view.clicked.emit(index)
+    assert window.editor_panel.pin_edits[0].text() == "A1"
+    assert window.editor_panel.macro_combo.currentText() == "MACRO1"
+    widget = window.editor_panel.param_widgets["P1"]
+    widget.setValue(5)
+
+    def fake_insert(c, dev):
+        window.list_panel.model.rows.append((3, dev.id_function, *dev.pins, b""))
+        return 3
+
+    monkeypatch.setattr(
+        "complex_editor.ui.complex_editor.insert_complex", fake_insert
+    )
+    monkeypatch.setattr(window.list_panel, "load_rows", lambda c, m: None)
+    window.editor_panel.conn = conn
+    window.editor_panel.save_complex()
+    assert window.list_panel.model.rowCount() == 3
