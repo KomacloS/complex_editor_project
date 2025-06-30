@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "complex-editor"
+dynamic = ["version"]
+description = "Editor for Seica/VIVA complex devices"
+authors = [{name="Your Name", email="you@example.com"}]
+readme = "README.md"
+license = {text = "MIT"}
+dependencies = [
+    "pyodbc>=5.0",
+    "sqlalchemy>=2.0",
+    "PyQt6>=6.6",
+    "PyMuPDF>=1.24",
+    "pyyaml>=6.0"
+]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
