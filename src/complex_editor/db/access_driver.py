@@ -46,3 +46,12 @@ def make_backup(db_path: str) -> Path:
     dest = src.with_name(f"{src.stem}_{stamp}{src.suffix}.bak")
     shutil.copy2(src, dest)
     return dest
+
+
+__all__ = [
+    "connect",
+    "table_exists",
+    "fetch_comp_desc_rows",
+    "fetch_macro_pairs",
+    "make_backup",
+]

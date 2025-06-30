@@ -83,6 +83,10 @@ def add_complex_cmd(args: argparse.Namespace) -> int:
         name, value = item.split("=", 1)
         params_pairs.append((name, value))
 
+    if len(args.pins) < 2 or len(args.pins) > 4:
+        print("Error: --pins expects between 2 and 4 values")
+        return 1
+
     conn = connect(args.mdb_path)
     conn.autocommit = False
     try:
@@ -92,7 +96,12 @@ def add_complex_cmd(args: argparse.Namespace) -> int:
             pins=args.pins,
             macro=MacroInstance(args.macro, dict(params_pairs)),
         )
-        new_id = insert_complex(conn, device)
+        try:
+            new_id = insert_complex(conn, device)
+        except Exception as e:
+            conn.rollback()
+            print(str(e))
+            return 1
         conn.commit()
         print(f"Inserted complex {new_id} (macro {device.macro.name})")
     finally:
@@ -122,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_p = sub.add_parser("add-complex", help="Insert a complex into an MDB")
     add_p.add_argument("mdb_path")
     add_p.add_argument("--idfunc", type=int, required=True)
-    add_p.add_argument("--pins", nargs=4, required=True)
+    add_p.add_argument("--pins", nargs="+", type=str, required=True)
     add_p.add_argument("--macro", required=True)
     add_p.add_argument("--param", action="append", default=[])
     add_p.set_defaults(func=add_complex_cmd)
