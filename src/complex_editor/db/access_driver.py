@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pyodbc
+from datetime import datetime
+from pathlib import Path
+import shutil
 
 
 def connect(mdb_path: str) -> pyodbc.Connection:
@@ -34,3 +37,12 @@ def fetch_macro_pairs(cursor: pyodbc.Cursor, table: str, macro_col: str):
     """Return (IDFunction, macro_name) pairs from the given table."""
     query = f"SELECT IDFunction, [{macro_col}] FROM [{table}]"
     return cursor.execute(query).fetchall()
+
+
+def make_backup(db_path: str) -> Path:
+    """Copy 'foo.mdb' -> 'foo_YYYYMMDD_HHMMSS.mdb.bak'."""
+    src = Path(db_path)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = src.with_name(f"{src.stem}_{stamp}{src.suffix}.bak")
+    shutil.copy2(src, dest)
+    return dest
