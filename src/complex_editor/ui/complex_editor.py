@@ -62,8 +62,8 @@ class ComplexEditor(QtWidgets.QWidget):
         self.param_widgets: dict[str, QtWidgets.QWidget] = {}
 
     def _on_macro_change(self) -> None:
-        id_func = int(self.macro_combo.currentData())
-        macro = self.macro_map.get(id_func)
+        data = self.macro_combo.currentData()
+        macro = self.macro_map.get(int(data)) if data is not None else None
         self._build_param_widgets(macro)
         self.on_dirty()
 
@@ -126,9 +126,12 @@ class ComplexEditor(QtWidgets.QWidget):
         if row is None:
             for edit in self.pin_edits:
                 edit.clear()
+            macro = None
             if self.macro_combo.count():
                 self.macro_combo.setCurrentIndex(0)
-            macro = self.macro_map.get(int(self.macro_combo.currentData()))
+                data = self.macro_combo.currentData()
+                if data is not None:
+                    macro = self.macro_map.get(int(data))
             self._build_param_widgets(macro)
             self.xml_preview.clear()
             self.on_dirty()
@@ -192,7 +195,11 @@ class ComplexEditor(QtWidgets.QWidget):
                 self, "Error", "At least two unique pins required"
             )
             return
-        id_func = int(self.macro_combo.currentData())
+        data = self.macro_combo.currentData()
+        if data is None:
+            QtWidgets.QMessageBox.warning(self, "Error", "No macro selected")
+            return
+        id_func = int(data)
         macro_name = self.macro_combo.currentText()
         params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
         device = ComplexDevice(

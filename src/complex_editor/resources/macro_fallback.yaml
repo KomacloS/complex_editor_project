@@ -1,34 +1,201 @@
-# Minimal macro catalogue – extracted from “System Macros” manual
+# Minimal fallback catalogue – extracted from "VIVA System Macros MA-VI-VIVAMSEN-05" manual.
+# Add/extend entries as you need.
+
 macros:
   - id_function: 1
-    name: RESISTOR
+    name: "RESISTOR"
     params:
-      - {name: Value,        type: INT,   default: 1000,  min: 0,      max: 10000000}
-      - {name: TolPos,       type: INT,   default: 5,     min: 0,      max: 100}
-      - {name: TolNeg,       type: INT,   default: -5,    min: -100,   max: 0}
-      - {name: PinA,         type: STRING, default: null, min: null, max: null}
-      - {name: PinB,         type: STRING, default: null, min: null, max: null}
+      # ── main ───────────────────────────────────────────
+      - {name: Value,            type: INT,   unit: "Ohm"}
+      - {name: TolPos,           type: INT,   unit: "%"}
+      - {name: TolNeg,           type: INT,   unit: "%"}
+      - {name: Pin1,             type: PIN}
+      - {name: Pin2,             type: PIN}
+      # ── wiring / sensing ──────────────────────────────
+      - {name: SensePin1,        type: PIN}
+      - {name: SensePin2,        type: PIN}
+      - {name: GuardPin1,        type: PIN_LIST}
+      - {name: GuardPin2,        type: PIN_LIST}
+      - {name: SenseGuardPin1,   type: PIN}
+      - {name: SenseGuardPin2,   type: PIN}
+      # ── common control params (share across macros) ───
+      - {name: Wire,             type: ENUM,  choices: "Auto;2WIRE;3WIRE;4WIRE;6WIRE"}
+      - {name: Quality,          type: INT,   unit: "%"}
+      - {name: MeasureMode,      type: ENUM,  choices: "Auto;DC_ACTIVE;DC_PASSIVE;AC_PASSIVE"}
+      - {name: TestResult,       type: ENUM,  choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+      - {name: MeasureType,      type: ENUM,
+         choices: "Normal;Average;RecOnError;Maximum;Minimum;PeakToPeak"}
+      - {name: Recycle,          type: INT}
+      # ── timing / excitation ───────────────────────────
+      - {name: Time,             type: FLOAT, unit: "s"}
+      - {name: Frequency,        type: FLOAT, unit: "Hz"}
+      - {name: Volt,             type: FLOAT, unit: "V"}
+      - {name: SettlingWave,     type: INT}
+      # ── offsets / parasitics ──────────────────────────
+      - {name: BoardOffset,      type: FLOAT, unit: "Ohm"}
+      - {name: CapSer,           type: FLOAT, unit: "F"}
+      - {name: CapPar,           type: FLOAT, unit: "F"}
+      - {name: IndSer,           type: FLOAT, unit: "H"}
+      - {name: IndPar,           type: FLOAT, unit: "H"}
+      - {name: ResGuardPin1,     type: FLOAT, unit: "Ohm"}
+      - {name: CapGuardPin1,     type: FLOAT, unit: "F"}
+      - {name: ResGuardPin2,     type: FLOAT, unit: "Ohm"}
+      - {name: CapGuardPin2,     type: FLOAT, unit: "F"}
 
   - id_function: 2
-    name: CAPACITOR
+    name: "CAPACITOR"
     params:
-      - {name: Value,        type: FLOAT, default: 1e-6,  min: 1e-12,  max: 1e-1}
-      - {name: TolPos,       type: INT,   default: 10,    min: 0,      max: 100}
-      - {name: TolNeg,       type: INT,   default: -10,   min: -100,   max: 0}
-      - {name: PinA,         type: STRING, default: null, min: null, max: null}
-      - {name: PinB,         type: STRING, default: null, min: null, max: null}
+      - {name: Value,            type: FLOAT, unit: "F"}
+      - {name: TolPos,           type: INT,   unit: "%"}
+      - {name: TolNeg,           type: INT,   unit: "%"}
+      - {name: Pin1,             type: PIN}
+      - {name: Pin2,             type: PIN}
+      - {name: SensePin1,        type: PIN}
+      - {name: SensePin2,        type: PIN}
+      - {name: GuardPin1,        type: PIN_LIST}
+      - {name: GuardPin2,        type: PIN_LIST}
+      - {name: SenseGuardPin1,   type: PIN}
+      - {name: SenseGuardPin2,   type: PIN}
+      - {name: Wire,             type: ENUM,  choices: "Auto;2WIRE;3WIRE;4WIRE;6WIRE"}
+      - {name: Quality,          type: INT,   unit: "%"}
+      - {name: MeasureMode,      type: ENUM,
+         choices: "Auto;DC_ACTIVE;DC_PASSIVE;AC_PASSIVE"}
+      - {name: TestResult,       type: ENUM,
+         choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+      - {name: MeasureType,      type: ENUM,
+         choices: "Normal;Average;RecOnError;Maximum;Minimum;PeakToPeak"}
+      - {name: Recycle,          type: INT}
+      - {name: Time,             type: FLOAT, unit: "s"}
+      - {name: Frequency,        type: FLOAT, unit: "Hz"}
+      - {name: Volt,             type: FLOAT, unit: "V"}
+      - {name: SettlingWave,     type: INT}
+      - {name: BoardOffset,      type: FLOAT, unit: "F"}
+      - {name: ResSer,           type: FLOAT, unit: "Ohm"}
+      - {name: ResPar,           type: FLOAT, unit: "Ohm"}
+      - {name: ResGuardPin1,     type: FLOAT, unit: "Ohm"}
+      - {name: CapGuardPin1,     type: FLOAT, unit: "F"}
+      - {name: ResGuardPin2,     type: FLOAT, unit: "Ohm"}
+      - {name: CapGuardPin2,     type: FLOAT, unit: "F"}
 
   - id_function: 3
-    name: GATE
+    name: "GATE"
     params:
-      - {name: PathPin_A,    type: STRING, default: null, min: null, max: null}
-      - {name: PathPin_B,    type: STRING, default: null, min: null, max: null}
-      - {name: PathPin_C,    type: STRING, default: null, min: null, max: null}
+      - {name: Function,         type: ENUM,
+         choices: "2NAND;2NOR;2AND;2OR;2XOR;3NAND;3NOR;3AND;3OR;3XOR;NOT;NE_BUF;E_BUF;NE_NBUF;EN_BUF;BUF243;BUF245"}
+      - {name: Family,           type: ENUM,
+         choices: "Standard;L;S;H;LS;AS;ALS;F;C;HC;HCT;AHC;AHCT;FCT;AC;ACT;ACQ;ACTQ;ABT;GTL;GTLP;ALB;LV;LVC;LVCH;ALVC;LVT;ALVCR;ALVCH;LCX;VCX"}
+      - {name: Vcc,              type: FLOAT, unit: "V"}
+      - {name: Pin_A,            type: PIN}
+      - {name: Pin_B,            type: PIN}
+      - {name: Pin_C,            type: PIN}
+      - {name: Pin_D,            type: PIN}
+      - {name: PathPin_A,        type: STRING}
+      - {name: PathPin_B,        type: STRING}
+      - {name: PathPin_C,        type: STRING}
+      - {name: PathPin_D,        type: STRING}
+      - {name: Vi_H,             type: FLOAT, unit: "V"}
+      - {name: Vi_L,             type: FLOAT, unit: "V"}
+      - {name: Vo_H,             type: FLOAT, unit: "V"}
+      - {name: Vo_L,             type: FLOAT, unit: "V"}
+      - {name: TestResult,       type: ENUM,
+         choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+      - {name: MeasureType,      type: ENUM,
+         choices: "Normal;Average;RecOnError;Maximum;Minimum;PeakToPeak"}
+      - {name: Recycle,          type: INT}
+      - {name: Time,             type: FLOAT, unit: "s"}
+      - {name: Current,          type: FLOAT, unit: "A"}
+      - {name: Check_A,          type: STRING}
+      - {name: Check_B,          type: STRING}
+      - {name: Check_C,          type: STRING}
+      - {name: Check_D,          type: STRING}
+      - {name: AnalogView,       type: ENUM,  choices: "1;2;3;4"}
 
   - id_function: 4
-    name: RELAY
+    name: "DIGPIN"
     params:
-      - {name: CoilPins,     type: STRING, default: null, min: null, max: null}
-      - {name: ContactPins,  type: STRING, default: null, min: null, max: null}
-      - {name: CoilRes,      type: INT,   default: 500,   min: 0,      max: 10000}
-# (Enough to keep the GUI functional; extend later as needed.)
+      - {name: PinDig,           type: PIN}
+      - {name: ValueH,           type: FLOAT, unit: "A"}
+      - {name: TolH,             type: INT,   unit: "%"}
+      - {name: ValueL,           type: FLOAT, unit: "A"}
+      - {name: TolL,             type: INT,   unit: "%"}
+      - {name: ValueZ,           type: FLOAT, unit: "Ohm"}
+      - {name: TolZ,             type: INT,   unit: "%"}
+      - {name: ValueAnalog,      type: FLOAT, unit: "V"}
+      - {name: TolAnalog,        type: INT,   unit: "%"}
+      - {name: ValueFreq,        type: FLOAT, unit: "Hz"}
+      - {name: TolFreq,          type: INT,   unit: "%"}
+      - {name: TestResult,       type: ENUM,
+         choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+      - {name: MeasureType,      type: ENUM,
+         choices: "Normal;Average;RecOnError;Maximum;Minimum;PeakToPeak"}
+      - {name: Recycle,          type: INT}
+      - {name: StrobeTime,       type: FLOAT, unit: "s"}
+
+  - id_function: 5
+    name: "TRANSISTOR_BJT"
+    params:
+      - {name: Type,           type: ENUM,  choices: "NPN;PNP"}
+      - {name: Pin_E,          type: PIN}
+      - {name: Pin_B,          type: PIN}
+      - {name: Pin_C,          type: PIN}
+      - {name: BetaMin,        type: INT}
+      - {name: BetaMax,        type: INT}
+      - {name: Ic,             type: FLOAT, unit: "A"}
+      - {name: VceSat,         type: FLOAT, unit: "V"}
+      - {name: MeasureMode,    type: ENUM,
+         choices: "Auto;DC_ACTIVE;DC_PASSIVE"}
+      - {name: TestResult,     type: ENUM,
+         choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+
+  - id_function: 6
+    name: "DIODE_ZENER"
+    params:
+      - {name: Pin_A,          type: PIN}
+      - {name: Pin_K,          type: PIN}
+      - {name: Vz,             type: FLOAT, unit: "V"}
+      - {name: TolPos,         type: INT,   unit: "%"}
+      - {name: TolNeg,         type: INT,   unit: "%"}
+      - {name: Ir,             type: FLOAT, unit: "A"}
+      - {name: Vf,             type: FLOAT, unit: "V"}
+      - {name: MeasureMode,    type: ENUM,  choices: "Auto;DC_ACTIVE;DC_PASSIVE"}
+      - {name: TestResult,     type: ENUM,  choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+
+  - id_function: 7
+    name: "OPAMP"
+    params:
+      - {name: Pin_In+,        type: PIN}
+      - {name: Pin_In-,        type: PIN}
+      - {name: Pin_Out,        type: PIN}
+      - {name: Vcc_Pos,        type: PIN}
+      - {name: Vcc_Neg,        type: PIN}
+      - {name: Gbwp,           type: FLOAT, unit: "Hz"}
+      - {name: SlewRate,       type: FLOAT, unit: "V/s"}
+      - {name: Vos,            type: FLOAT, unit: "V"}
+      - {name: MeasureMode,    type: ENUM,  choices: "Auto;AC;DC"}
+      - {name: TestResult,     type: ENUM,  choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+
+  - id_function: 8
+    name: "RELAY_COIL_CONTACT"
+    params:
+      - {name: CoilPins,       type: PIN_LIST}
+      - {name: ContactPins,    type: PIN_LIST}
+      - {name: CoilRes,        type: INT,   unit: "Ohm"}
+      - {name: OperateVolt,    type: FLOAT, unit: "V"}
+      - {name: ReleaseVolt,    type: FLOAT, unit: "V"}
+      - {name: ContactRes,     type: INT,   unit: "Ohm"}
+      - {name: InsulationRes,  type: INT,   unit: "Ohm"}
+      - {name: TestResult,     type: ENUM,  choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
+
+  - id_function: 9
+    name: "VOLTAGE_REGULATOR"
+    params:
+      - {name: Pin_In,         type: PIN}
+      - {name: Pin_Out,        type: PIN}
+      - {name: Pin_Gnd,        type: PIN}
+      - {name: Vout,           type: FLOAT, unit: "V"}
+      - {name: TolPos,         type: INT,   unit: "%"}
+      - {name: TolNeg,         type: INT,   unit: "%"}
+      - {name: Imax,           type: FLOAT, unit: "A"}
+      - {name: Dropout,        type: FLOAT, unit: "V"}
+      - {name: MeasureMode,    type: ENUM,  choices: "Auto;LoadReg;LineReg"}
+      - {name: TestResult,     type: ENUM,  choices: "TestResult;ForcePass;ForceFail;ForceSkip"}
