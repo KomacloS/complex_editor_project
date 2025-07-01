@@ -45,7 +45,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.editor_panel.conn = self.conn
         self.editor_panel.dirtyChanged.connect(self._on_dirty)
         self.stack.addWidget(self.editor_panel)
-        self.list_panel.complexSelected.connect(self.editor_panel.load_complex)
+        self.list_panel.complexSelected.connect(self._open_editor)
         self.setCentralWidget(central)
         # Menu
         file_menu = self.menuBar().addMenu("File")
@@ -54,6 +54,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_act = file_menu.addAction("Save")
         self.save_act.triggered.connect(self.editor_panel.save_complex)
         self.save_act.setEnabled(False)
+
+    def _open_editor(self, row) -> None:
+        """Open the editor panel for the selected complex."""
+        self.editor_panel.load_complex(row)
+        self.stack.setCurrentWidget(self.editor_panel)
 
     def open_mdb(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
