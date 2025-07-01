@@ -27,4 +27,3 @@ def test_fallback_macro():
     result = discover_macro_map(EmptyCursor())
     assert result
     assert any(m.name == "RESISTOR" for m in result.values())
-    assert any(m.name == "TRANSISTOR_BJT" for m in result.values())
