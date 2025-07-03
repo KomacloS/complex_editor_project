@@ -8,7 +8,6 @@ from PyQt6 import QtWidgets
 from ..db import connect, discover_macro_map
 from .complex_list import ComplexListPanel
 from .complex_editor import ComplexEditor
-from .datasheet_viewer import DatasheetViewer
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -80,6 +79,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_dirty(self, dirty: bool) -> None:
         self.save_act.setEnabled(dirty)
+        base = "Complex Editor"
+        self.setWindowTitle(base + (" *" if dirty else ""))
 
 
 def run_gui(mdb_path: Optional[str] = None) -> None:

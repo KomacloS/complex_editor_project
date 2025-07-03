@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 import pyodbc
 
 from ..domain import (
     ComplexDevice,
     MacroDef,
     MacroInstance,
-    macro_to_xml,
     parse_param_xml,
 )
 from ..services import insert_complex
+from .pin_table import PinTable
 from ..db import make_backup
 
 
@@ -27,12 +27,16 @@ class ComplexEditor(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
-        self.pin_edits = [QtWidgets.QLineEdit() for _ in range(4)]
-        regex = QtCore.QRegularExpression("[A-Za-z0-9]+")
-        validator = QtGui.QRegularExpressionValidator(regex)
-        for i, edit in enumerate(self.pin_edits):
-            edit.setValidator(validator)
-            form.addRow(f"Pin {chr(65 + i)}", edit)
+        self.pin_table = PinTable()
+        pin_btn_layout = QtWidgets.QVBoxLayout()
+        pin_btn_layout.addWidget(self.pin_table.add_pin_btn)
+        pin_btn_layout.addWidget(self.pin_table.del_pin_btn)
+        pin_container = QtWidgets.QWidget()
+        pin_layout = QtWidgets.QHBoxLayout(pin_container)
+        pin_layout.setContentsMargins(0, 0, 0, 0)
+        pin_layout.addWidget(self.pin_table)
+        pin_layout.addLayout(pin_btn_layout)
+        form.addRow("Pins", pin_container)
         self.macro_combo = QtWidgets.QComboBox()
         form.addRow("Macro", self.macro_combo)
         layout.addLayout(form)
@@ -47,6 +51,13 @@ class ComplexEditor(QtWidgets.QWidget):
 
         self.save_btn.clicked.connect(self.save_complex)
         self.macro_combo.currentIndexChanged.connect(self._on_macro_change)
+        self.pin_table.add_pin_btn.clicked.connect(
+            lambda: (self.pin_table.add_row(), self.on_dirty())
+        )
+        self.pin_table.del_pin_btn.clicked.connect(
+            lambda: (self.pin_table.del_row(), self.on_dirty())
+        )
+        self.pin_table.itemChanged.connect(self.on_dirty)
         self.set_macro_map(self.macro_map)
 
     # ------------------------------------------------------------------ utils
@@ -66,6 +77,7 @@ class ComplexEditor(QtWidgets.QWidget):
         macro = self.macro_map.get(int(data)) if data is not None else None
         self._build_param_widgets(macro)
         self.on_dirty()
+        self._update_preview()
 
     def _build_param_widgets(self, macro: MacroDef | None) -> None:
         self._clear_params()
@@ -108,6 +120,14 @@ class ComplexEditor(QtWidgets.QWidget):
             else:
                 widget.textChanged.connect(self.on_dirty)
 
+    def _update_preview(self) -> None:
+        macro_name = self.macro_combo.currentText()
+        params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
+        placeholder = macro_name + "".join(
+            f"|{k}={v}" for k, v in params.items() if v
+        )
+        self.xml_preview.setPlainText(placeholder)
+
     def _widget_value(self, widget: QtWidgets.QWidget) -> str:
         if isinstance(widget, QtWidgets.QSpinBox):
             return str(widget.value())
@@ -124,8 +144,7 @@ class ComplexEditor(QtWidgets.QWidget):
     # ------------------------------------------------------------------ loading
     def load_complex(self, row) -> None:
         if row is None:
-            for edit in self.pin_edits:
-                edit.clear()
+            self.pin_table.set_pins([])
             macro = None
             if self.macro_combo.count():
                 self.macro_combo.setCurrentIndex(0)
@@ -141,8 +160,7 @@ class ComplexEditor(QtWidgets.QWidget):
             getattr(row, f"Pin{c}", row[i + 2]) if len(row) > i + 2 else None
             for i, c in enumerate("ABCD")
         ]
-        for edit, value in zip(self.pin_edits, pins):
-            edit.setText(str(value) if value else "")
+        self.pin_table.set_pins([p for p in pins if p])
         id_func = int(getattr(row, "IDFunction", row[1]))
         index = self.macro_combo.findData(id_func)
         if index >= 0:
@@ -174,6 +192,7 @@ class ComplexEditor(QtWidgets.QWidget):
                             w.addItem(str(val))
                 else:
                     w.setText(str(val) if val else "")
+        self._update_preview()
         self.dirty = False
         self.dirtyChanged.emit(False)
 
@@ -182,14 +201,14 @@ class ComplexEditor(QtWidgets.QWidget):
         if not self.dirty:
             self.dirty = True
             self.dirtyChanged.emit(True)
+        self._update_preview()
 
     # ------------------------------------------------------------------- save
     def save_complex(self) -> None:
         if not self.conn:
             QtWidgets.QMessageBox.warning(self, "Error", "No database open")
             return
-        pins = [e.text().strip() for e in self.pin_edits]
-        pins = [p for p in pins if p]
+        pins = self.pin_table.pins()
         if len(set(pins)) < 2:
             QtWidgets.QMessageBox.warning(
                 self, "Error", "At least two unique pins required"
@@ -202,13 +221,18 @@ class ComplexEditor(QtWidgets.QWidget):
         id_func = int(data)
         macro_name = self.macro_combo.currentText()
         params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
+        pin_s_str = (
+            f"{macro_name}" + "".join(f"|{k}={v}" for k, v in params.items() if v)
+        ).encode("utf-8")
         device = ComplexDevice(
-            id_function=id_func, pins=pins, macro=MacroInstance(macro_name, params)
+            id_function=id_func,
+            pins=pins,
+            macro=MacroInstance(macro_name, params),
         )
         db_path = self.conn.getinfo(pyodbc.SQL_DATABASE_NAME)
         bak = make_backup(db_path)
         try:
-            new_id = insert_complex(self.conn, device)
+            new_id = insert_complex(self.conn, device, pin_blob=pin_s_str)
         except Exception as exc:  # pragma: no cover - error path
             QtWidgets.QMessageBox.warning(self, "Error", str(exc))
             return

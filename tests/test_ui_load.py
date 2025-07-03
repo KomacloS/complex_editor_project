@@ -13,7 +13,7 @@ pyodbc.SQL_DATABASE_NAME = 0
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets  # noqa: E402
 from complex_editor.ui.main_window import MainWindow  # noqa: E402
 
 
@@ -88,11 +88,13 @@ def test_editor_save(qtbot, monkeypatch):
     window = MainWindow(conn)
     qtbot.addWidget(window)
     window.list_panel.complexSelected.emit(None)
-    window.editor_panel.pin_edits[0].setText("X1")
-    window.editor_panel.pin_edits[1].setText("X2")
+    table = window.editor_panel.pin_table
+    table.setItem(0, 1, QtWidgets.QTableWidgetItem("X1"))
+    table.setItem(1, 1, QtWidgets.QTableWidgetItem("X2"))
     window.editor_panel.macro_combo.setCurrentIndex(0)
     widget = window.editor_panel.param_widgets["P1"]
     widget.setValue(5)
+    assert window.windowTitle().endswith("*")
 
     def fake_insert(c, dev):
         window.list_panel.model.rows.append((3, dev.id_function, *dev.pins, b""))

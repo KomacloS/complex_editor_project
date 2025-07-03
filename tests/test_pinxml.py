@@ -10,7 +10,7 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from complex_editor import cli  # noqa: E402
-from complex_editor.domain import (
+from complex_editor.domain import (  # noqa: E402
     MacroInstance,
     macro_to_xml,
     parse_param_xml,
