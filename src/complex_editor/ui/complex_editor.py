@@ -7,6 +7,7 @@ from ..domain import (
     ComplexDevice,
     MacroDef,
     MacroInstance,
+    SubComponent,
     parse_param_xml,
 )
 from ..services import insert_complex
@@ -25,6 +26,18 @@ class ComplexEditor(QtWidgets.QWidget):
         self.dirty = False
 
         layout = QtWidgets.QVBoxLayout(self)
+        self.sub_group = QtWidgets.QGroupBox("Sub-components")
+        self.sub_group.setCheckable(True)
+        self.sub_group.setChecked(False)
+        sg_layout = QtWidgets.QVBoxLayout(self.sub_group)
+        self.sub_list = QtWidgets.QListWidget()
+        sg_layout.addWidget(self.sub_list)
+        self.sub_group.toggled.connect(self.sub_list.setVisible)
+        self.sub_list.setVisible(False)
+        self.sub_list.currentRowChanged.connect(self._on_sub_selected)
+        layout.addWidget(self.sub_group)
+        self.sub_components: list[SubComponent] = []
+
         form = QtWidgets.QFormLayout()
         self.pin_table = PinTable()
         form.addRow("Pins", self.pin_table)
@@ -55,6 +68,20 @@ class ComplexEditor(QtWidgets.QWidget):
         while self.param_form.rowCount():
             self.param_form.removeRow(0)
         self.param_widgets: dict[str, QtWidgets.QWidget] = {}
+
+    def set_sub_components(self, subs: list[SubComponent]) -> None:
+        self.sub_components = subs
+        self.sub_list.clear()
+        for sc in subs:
+            pins = ",".join(str(p) for p in sc.pins)
+            self.sub_list.addItem(f"{sc.macro.name} \N{RIGHTWARDS ARROW} {pins}")
+        self.pin_table.highlight_pins([])
+
+    def _on_sub_selected(self, row: int) -> None:
+        if 0 <= row < len(self.sub_components):
+            self.pin_table.highlight_pins(self.sub_components[row].pins)
+        else:
+            self.pin_table.highlight_pins([])
 
     def _on_macro_change(self) -> None:
         data = self.macro_combo.currentData()
@@ -90,6 +117,13 @@ class ComplexEditor(QtWidgets.QWidget):
                     widget.addItems(choices)
             else:
                 widget = QtWidgets.QLineEdit()
+            tip = f"{param.name}   "
+            if param.min is not None or param.max is not None:
+                tip += f"[{param.min or ''}-{param.max or ''}] "
+            unit = next((u for u in ["Ohm", "F", "H", "V", "A", "Hz", "°C", "%"]
+                          if param.name.endswith(u)), "")
+            tip = tip + unit if unit else tip.rstrip()
+            widget.setToolTip(tip.strip())
             self.param_widgets[param.name] = widget
             self.param_form.addRow(label, widget)
             if isinstance(widget, QtWidgets.QSpinBox):

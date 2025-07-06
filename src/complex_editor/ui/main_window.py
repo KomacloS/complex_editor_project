@@ -65,6 +65,7 @@ class MainWindow(QtWidgets.QMainWindow):
         wizard = NewComplexWizard(self.macro_map, self)
         if wizard.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             self.editor_panel.load_complex(None)
+            self.editor_panel.set_sub_components(wizard.sub_components)
             if wizard.sub_components:
                 sc = wizard.sub_components[0]
                 pins = [str(p) for p in sc.pins]
