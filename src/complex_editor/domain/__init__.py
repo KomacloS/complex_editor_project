@@ -5,6 +5,7 @@ from .models import (
     MacroDef,
     MacroInstance,
     MacroParam,
+    SubComponent,
 )
 from .pinxml import macro_to_xml, parse_param_xml
 
@@ -13,6 +14,7 @@ __all__ = [
     "MacroDef",
     "MacroInstance",
     "ComplexDevice",
+    "SubComponent",
     "macro_to_xml",
     "parse_param_xml",
 ]
