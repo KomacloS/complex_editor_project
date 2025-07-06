@@ -37,3 +37,11 @@ class ComplexDevice:
     macro: MacroInstance
 
 
+@dataclass
+class SubComponent:
+    """One macro instance mapped to specific pins within a complex."""
+
+    macro: MacroInstance
+    pins: list[int] = field(default_factory=list)
+
+
