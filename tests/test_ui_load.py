@@ -13,7 +13,7 @@ pyodbc.SQL_DATABASE_NAME = 0
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets  # noqa: E402
 from complex_editor.ui.main_window import MainWindow  # noqa: E402
 
 

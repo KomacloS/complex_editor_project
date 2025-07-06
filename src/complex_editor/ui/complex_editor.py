@@ -7,7 +7,6 @@ from ..domain import (
     ComplexDevice,
     MacroDef,
     MacroInstance,
-    macro_to_xml,
     parse_param_xml,
 )
 from ..services import insert_complex
