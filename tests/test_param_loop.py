@@ -37,3 +37,5 @@ def test_param_loop(qtbot):
     assert editor.param_form.rowCount() == first_count
     assert len(editor.param_widgets) >= 3
     assert editor.param_form.rowCount() > 1
+    for name, widget in editor.param_widgets.items():
+        assert name in widget.toolTip()

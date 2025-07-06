@@ -82,6 +82,7 @@ class ParamPage(QtWidgets.QWidget):
         while self.form.rowCount():
             self.form.removeRow(0)
         self.widgets: dict[str, QtWidgets.QWidget] = {}
+        self.required: set[str] = {p.name for p in macro.params if p.default is None}
         for p in macro.params:
             label = QtWidgets.QLabel(p.name)
             if p.type == "INT":
@@ -135,6 +136,15 @@ class ParamPage(QtWidgets.QWidget):
             elif isinstance(w, QtWidgets.QLineEdit):
                 result[name] = w.text()
         return result
+
+    def required_filled(self) -> bool:
+        for name in self.required:
+            w = self.widgets.get(name)
+            if isinstance(w, QtWidgets.QLineEdit) and not w.text().strip():
+                return False
+            if isinstance(w, QtWidgets.QComboBox) and not w.currentText():
+                return False
+        return True
 
 
 class CopyParamsDialog(QtWidgets.QDialog):
@@ -330,9 +340,15 @@ class NewComplexWizard(QtWidgets.QDialog):
 
     def _update_nav(self) -> None:
         page = self.stack.currentWidget()
-        self.back_btn.setEnabled(page is not self.basics_page)
-        if page is self.review_page:
+        self.back_btn.setEnabled(page is not self.basics_page or page is self.review_page)
+        if page is self.macro_page:
+            self.next_btn.setEnabled(len(self.macro_page.checked_pins()) > 0)
+        elif page is self.param_page:
+            self.next_btn.setEnabled(self.param_page.required_filled())
+        elif page is self.review_page:
             self.next_btn.setEnabled(False)
+            self.review_page.save_btn.setText("Finish")
         else:
             self.next_btn.setEnabled(True)
+            self.review_page.save_btn.setText("Save")
 

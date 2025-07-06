@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtGui, QtWidgets
 
 
 class PinTable(QtWidgets.QTableWidget):
@@ -25,3 +25,15 @@ class PinTable(QtWidgets.QTableWidget):
             item = self.item(i, 0)
             result.append(item.text() if item else "")
         return result
+
+    def highlight_pins(self, numbers: list[int]) -> None:
+        """Highlight given pin numbers with a yellow background."""
+        color = QtGui.QColor("yellow")
+        for row in range(self.rowCount()):
+            item = self.item(row, 0)
+            if not item:
+                continue
+            if (row + 1) in numbers:
+                item.setBackground(color)
+            else:
+                item.setBackground(QtGui.QColor("white"))
