@@ -8,6 +8,7 @@ from PyQt6 import QtWidgets
 from ..db import connect, discover_macro_map
 from .complex_list import ComplexListPanel
 from .complex_editor import ComplexEditor
+from .new_complex_wizard import NewComplexWizard
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -45,6 +46,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.editor_panel.dirtyChanged.connect(self._on_dirty)
         self.stack.addWidget(self.editor_panel)
         self.list_panel.complexSelected.connect(self._open_editor)
+        self.list_panel.newComplexRequested.connect(self._new_complex)
         self.setCentralWidget(central)
         # Menu
         file_menu = self.menuBar().addMenu("File")
@@ -58,6 +60,42 @@ class MainWindow(QtWidgets.QMainWindow):
         """Open the editor panel for the selected complex."""
         self.editor_panel.load_complex(row)
         self.stack.setCurrentWidget(self.editor_panel)
+
+    def _new_complex(self) -> None:
+        wizard = NewComplexWizard(self.macro_map, self)
+        if wizard.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.editor_panel.load_complex(None)
+            if wizard.sub_components:
+                sc = wizard.sub_components[0]
+                pins = [str(p) for p in sc.pins]
+                self.editor_panel.pin_table.set_pins(pins)
+                idx = self.editor_panel.macro_combo.findText(sc.macro.name)
+                if idx >= 0:
+                    self.editor_panel.macro_combo.setCurrentIndex(idx)
+                macro = next(
+                    (m for m in self.macro_map.values() if m.name == sc.macro.name),
+                    None,
+                )
+                if macro:
+                    self.editor_panel._build_param_widgets(macro)
+                for k, v in sc.macro.params.items():
+                    w = self.editor_panel.param_widgets.get(k)
+                    if isinstance(w, QtWidgets.QSpinBox):
+                        w.setValue(int(v))
+                    elif isinstance(w, QtWidgets.QDoubleSpinBox):
+                        w.setValue(float(v))
+                    elif isinstance(w, QtWidgets.QCheckBox):
+                        w.setChecked(str(v).lower() in ("1", "true", "yes"))
+                    elif isinstance(w, QtWidgets.QComboBox):
+                        idx = w.findText(str(v))
+                        if idx >= 0:
+                            w.setCurrentIndex(idx)
+                        elif w.count() == 0:
+                            w.addItem(str(v))
+                    elif isinstance(w, QtWidgets.QLineEdit):
+                        w.setText(str(v))
+                self.editor_panel.on_dirty()
+            self.stack.setCurrentWidget(self.editor_panel)
 
     def open_mdb(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

@@ -54,12 +54,13 @@ class ComplexListModel(QtCore.QAbstractTableModel):
 
 class ComplexListPanel(QtWidgets.QWidget):
     complexSelected = QtCore.pyqtSignal(object)
+    newComplexRequested = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QtWidgets.QVBoxLayout(self)
         btn_new = QtWidgets.QPushButton("New Complex")
-        btn_new.clicked.connect(lambda: self.complexSelected.emit(None))
+        btn_new.clicked.connect(self.newComplexRequested.emit)
         layout.addWidget(btn_new)
         self.view = QtWidgets.QTableView()
         self.model = ComplexListModel([])
