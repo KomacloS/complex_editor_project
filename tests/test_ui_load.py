@@ -88,8 +88,7 @@ def test_editor_save(qtbot, monkeypatch):
     window = MainWindow(conn)
     qtbot.addWidget(window)
     window.list_panel.complexSelected.emit(None)
-    window.editor_panel.pin_edits[0].setText("X1")
-    window.editor_panel.pin_edits[1].setText("X2")
+    window.editor_panel.pin_table.set_pins(["X1", "X2"])
     window.editor_panel.macro_combo.setCurrentIndex(0)
     widget = window.editor_panel.param_widgets["P1"]
     widget.setValue(5)
