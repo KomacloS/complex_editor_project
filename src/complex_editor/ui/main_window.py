@@ -8,7 +8,6 @@ from PyQt6 import QtWidgets
 from ..db import connect, discover_macro_map
 from .complex_list import ComplexListPanel
 from .complex_editor import ComplexEditor
-from .datasheet_viewer import DatasheetViewer
 
 
 class MainWindow(QtWidgets.QMainWindow):
