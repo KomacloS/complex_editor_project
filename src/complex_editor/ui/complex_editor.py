@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 import pyodbc
 
 from ..domain import (
@@ -11,7 +11,7 @@ from ..domain import (
 )
 from ..services import insert_complex
 from ..db import make_backup
-
+from .pin_table import PinTable
 
 class ComplexEditor(QtWidgets.QWidget):
     """Form for editing/creating a complex device."""
@@ -26,12 +26,8 @@ class ComplexEditor(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
-        self.pin_edits = [QtWidgets.QLineEdit() for _ in range(4)]
-        regex = QtCore.QRegularExpression("[A-Za-z0-9]+")
-        validator = QtGui.QRegularExpressionValidator(regex)
-        for i, edit in enumerate(self.pin_edits):
-            edit.setValidator(validator)
-            form.addRow(f"Pin {chr(65 + i)}", edit)
+        self.pin_table = PinTable()
+        form.addRow("Pins", self.pin_table)
         self.macro_combo = QtWidgets.QComboBox()
         form.addRow("Macro", self.macro_combo)
         layout.addLayout(form)
@@ -123,8 +119,7 @@ class ComplexEditor(QtWidgets.QWidget):
     # ------------------------------------------------------------------ loading
     def load_complex(self, row) -> None:
         if row is None:
-            for edit in self.pin_edits:
-                edit.clear()
+            self.pin_table.set_pins([])
             macro = None
             if self.macro_combo.count():
                 self.macro_combo.setCurrentIndex(0)
@@ -140,8 +135,7 @@ class ComplexEditor(QtWidgets.QWidget):
             getattr(row, f"Pin{c}", row[i + 2]) if len(row) > i + 2 else None
             for i, c in enumerate("ABCD")
         ]
-        for edit, value in zip(self.pin_edits, pins):
-            edit.setText(str(value) if value else "")
+        self.pin_table.set_pins([p for p in pins if p])
         id_func = int(getattr(row, "IDFunction", row[1]))
         index = self.macro_combo.findData(id_func)
         if index >= 0:
@@ -187,8 +181,7 @@ class ComplexEditor(QtWidgets.QWidget):
         if not self.conn:
             QtWidgets.QMessageBox.warning(self, "Error", "No database open")
             return
-        pins = [e.text().strip() for e in self.pin_edits]
-        pins = [p for p in pins if p]
+        pins = [p.strip() for p in self.pin_table.pins() if p.strip()]
         if len(set(pins)) < 2:
             QtWidgets.QMessageBox.warning(
                 self, "Error", "At least two unique pins required"

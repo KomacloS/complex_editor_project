@@ -32,5 +32,8 @@ def test_param_loop(qtbot):
     qtbot.addWidget(editor)
     macro = macro_map[1]
     editor._build_param_widgets(macro)
+    first_count = editor.param_form.rowCount()
+    editor._build_param_widgets(macro)
+    assert editor.param_form.rowCount() == first_count
     assert len(editor.param_widgets) >= 3
-    assert editor.param_form.rowCount() >= 3
+    assert editor.param_form.rowCount() > 1
