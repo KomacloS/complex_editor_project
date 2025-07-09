@@ -36,8 +36,8 @@ def test_wizard_flow(qtbot):
     wizard.list_page.add_btn.click()
     idx = wizard.macro_page.macro_combo.findText("RESISTOR")
     wizard.macro_page.macro_combo.setCurrentIndex(idx)
-    wizard.macro_page.pin_table.cellWidget(0, 1).setValue(1)
-    wizard.macro_page.pin_table.cellWidget(1, 1).setValue(2)
+    wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("1")
+    wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("2")
     wizard._next()  # to param page
     val_widget = wizard.param_page.widgets.get("Value")
     if isinstance(val_widget, QtWidgets.QSpinBox):
@@ -45,8 +45,8 @@ def test_wizard_flow(qtbot):
     wizard._next()  # save params back to list
     wizard.list_page.list.setCurrentRow(0)
     wizard.list_page.dup_btn.click()
-    wizard.macro_page.pin_table.cellWidget(2, 1).setValue(1)
-    wizard.macro_page.pin_table.cellWidget(3, 1).setValue(2)
+    wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("3")
+    wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("4")
     wizard._next()
     wizard.param_page.copy_btn.click()
     dlg = wizard.param_page._copy_dialog

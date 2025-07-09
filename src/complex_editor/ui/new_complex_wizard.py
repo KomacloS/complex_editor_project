@@ -61,63 +61,53 @@ class MacroPinsPage(QtWidgets.QWidget):
 
         # ── ordered-pin table ───────────────────────────────────────────
         self.pin_table = QtWidgets.QTableWidget(0, 2, self)
-        self.pin_table.setHorizontalHeaderLabels(["Pin", "Order #"])
+        self.pin_table.setHorizontalHeaderLabels(["Macro pin", "Pad #"])
         hdr = self.pin_table.horizontalHeader()
-        hdr.setSectionResizeMode(                 # PyQt-6 style enum
+        hdr.setSectionResizeMode(
             0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(
             1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         vbox.addWidget(self.pin_table)
 
-        # watch edits so the wizard can enable / disable “Next ▶”
-        self.pin_table.itemChanged.connect(self._on_table_change)
-
 
     # ------------------------------------------------------------------
     # public helpers used by the wizard
     # ------------------------------------------------------------------
-    def set_pin_count(self, total_pins: int, used: set[int]) -> None:
-        """
-        Fill the table with pin numbers 1 … total_pins and create a
-        `QSpinBox` in the *Order #* column so the user can decide the
-        mapping.  Already-used physical pads are disabled.
-        """
+    def set_pin_count(self, total_pads: int, used_by_other_subs: set[int]) -> None:
+        idfunc = self.macro_combo.currentData()
+        macro = self.macro_map.get(int(idfunc)) if idfunc is not None else None
+        logical_names = [
+            "Pin A",
+            "Pin B",
+            "Pin C",
+            "Pin D",
+        ] if not macro else [p.name for p in macro.params if p.name.startswith("Pin")]
+
         self.pin_table.blockSignals(True)
-        self.pin_table.setRowCount(total_pins)
-
-        for row in range(total_pins):
-            pin_no = row + 1
-
-            # column 0 – read-only pin number
-            num_item = QtWidgets.QTableWidgetItem(str(pin_no))
-            num_item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
-            self.pin_table.setItem(row, 0, num_item)
-
-            # column 1 – editable order spinner
-            spin = QtWidgets.QSpinBox()
-            spin.setRange(0, total_pins)
-            spin.setValue(0)
-            if pin_no in used:                    # pad already mapped elsewhere
-                spin.setEnabled(False)
-            self.pin_table.setCellWidget(row, 1, spin)
-
+        self.pin_table.setRowCount(len(logical_names))
+        for row, lname in enumerate(logical_names):
+            self.pin_table.setItem(row, 0, QtWidgets.QTableWidgetItem(lname))
+            combo = QtWidgets.QComboBox()
+            free = [
+                str(p) for p in range(1, total_pads + 1)
+                if p not in used_by_other_subs
+            ]
+            combo.addItems([""] + free)
+            combo.currentIndexChanged.connect(self._on_table_change)
+            self.pin_table.setCellWidget(row, 1, combo)
         self.pin_table.blockSignals(False)
-        self._on_table_change()                   # update validity immediately
+        self._on_table_change()
 
 
     def checked_pins(self) -> list[int]:
-        """
-        Return physical pin numbers **ordered by** the number the user entered.
-        Only entries >0 are taken into account.
-        """
-        mapping = {}
+        """Return selected pad numbers in logical order."""
+        result: list[int] = []
         for row in range(self.pin_table.rowCount()):
-            spin: QtWidgets.QSpinBox = self.pin_table.cellWidget(row, 1)
-            order = spin.value()
-            if order:
-                mapping[order] = row + 1      # order → real pin
-        # Ascending order list of real pins
-        return [mapping[i] for i in sorted(mapping)]
+            combo: QtWidgets.QComboBox = self.pin_table.cellWidget(row, 1)
+            text = combo.currentText()
+            if text:
+                result.append(int(text))
+        return result
 
     # ------------------------------------------------------------------
     # internal
@@ -128,25 +118,27 @@ class MacroPinsPage(QtWidgets.QWidget):
         flag (`self.parent().parent()._mapping_ok`) so the wizard
         can enable / disable its *Next* button.
         """
-        seen: dict[int, int] = {}         # order → row
+        seen: dict[int, int] = {}
         duplicates: set[int] = set()
+        all_selected = True
 
         for row in range(self.pin_table.rowCount()):
-            spin: QtWidgets.QSpinBox = self.pin_table.cellWidget(row, 1)
-            val = spin.value()
-            spin.setStyleSheet("")        # clear previous colour
+            combo: QtWidgets.QComboBox = self.pin_table.cellWidget(row, 1)
+            text = combo.currentText()
+            combo.setStyleSheet("")
 
-            if val == 0:
-                continue                  # 0 means “unused”
+            if not text:
+                all_selected = False
+                continue
+            val = int(text)
             if val in seen:
                 duplicates.update({row, seen[val]})
             seen[val] = row
 
-        # Colour duplicates red
         for row in duplicates:
             self.pin_table.cellWidget(row, 1).setStyleSheet("background:#FFCCCC;")
 
-        mapping_ok = bool(seen) and not duplicates
+        mapping_ok = all_selected and not duplicates
         wiz = self.parentWidget().parent()        # the QDialog
         wiz._mapping_ok = mapping_ok
         wiz._update_nav()

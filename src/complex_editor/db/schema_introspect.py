@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict
+from pathlib import Path
 
 from ..domain import MacroDef, MacroParam
 
@@ -74,9 +75,13 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     if not macro_map:
         import importlib.resources
         import yaml
-        data = importlib.resources.files(
-            "complex_editor.resources"
-        ).joinpath("macro_fallback.yaml").read_text()
+        res_files = importlib.resources.files("complex_editor.resources")
+        yaml_path = res_files.joinpath("macro_fallback.yaml")
+        if not yaml_path.is_file():
+            alt = Path.cwd() / "macro_fallback.yaml"
+            if alt.is_file():
+                yaml_path = alt
+        data = yaml_path.read_text()
         for entry in yaml.safe_load(data)["macros"]:
             params = [
                 MacroParam(
