@@ -27,15 +27,18 @@ class PinTable(QtWidgets.QTableWidget):
         return result
 
     def highlight_pins(self, numbers: list[int]) -> None:
-        """Highlight given pin numbers with a yellow background."""
-        color = QtGui.QColor("yellow")
+        """
+        Highlight the given *physical* pin rows (1-based) in yellow and
+        bold text; clear formatting for all others.
+        """
+        yellow = QtGui.QColor("yellow")
         for row in range(self.rowCount()):
             item = self.item(row, 0)
-            if not item:
+            if item is None:
                 continue
             font = item.font()
             if (row + 1) in numbers:
-                item.setBackground(color)
+                item.setBackground(yellow)
                 font.setBold(True)
             else:
                 item.setBackground(QtGui.QColor("white"))

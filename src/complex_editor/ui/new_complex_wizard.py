@@ -38,71 +38,118 @@ class SubCompListPage(QtWidgets.QWidget):
         layout.addLayout(btns)
 
 
+# ────────── MacroPinsPage ──────────────────────────────────────────
 class MacroPinsPage(QtWidgets.QWidget):
+    """Pick a macro and map its logical pins to physical pads."""
+
     def __init__(self, macro_map: dict[int, MacroDef]) -> None:
         super().__init__()
-        self.macro_map = macro_map
-        self._has_valid_order = False
-        layout = QtWidgets.QVBoxLayout(self)
-        self.macro_combo = QtWidgets.QComboBox()
-        for id_func, macro in sorted(macro_map.items()):
-            self.macro_combo.addItem(macro.name, id_func)
-        layout.addWidget(self.macro_combo)
-        self.pin_table = QtWidgets.QTableWidget(0, 2)
-        self.pin_table.setHorizontalHeaderLabels(["Pin", "Order #"])
-        self.pin_table.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.ResizeMode.Stretch
-        )
-        layout.addWidget(self.pin_table)
+        self.macro_map = macro_map or {}
 
-    def set_pin_count(self, count: int, used: set[int]) -> None:
-        self.pin_table.setRowCount(count)
-        for i in range(1, count + 1):
-            item = QtWidgets.QTableWidgetItem(str(i))
-            item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
-            self.pin_table.setItem(i - 1, 0, item)
+        vbox = QtWidgets.QVBoxLayout(self)
+
+        # ── macro selector ──────────────────────────────────────────────
+        self.macro_combo = QtWidgets.QComboBox()
+        if not self.macro_map:                      # nothing loaded yet
+            self.macro_combo.addItem("⚠  No macros loaded")
+            self.macro_combo.setEnabled(False)
+        else:
+            for id_func, macro in sorted(self.macro_map.items()):
+                self.macro_combo.addItem(macro.name, id_func)
+            self.macro_combo.setCurrentIndex(0)
+        vbox.addWidget(self.macro_combo)
+
+        # ── ordered-pin table ───────────────────────────────────────────
+        self.pin_table = QtWidgets.QTableWidget(0, 2, self)
+        self.pin_table.setHorizontalHeaderLabels(["Pin", "Order #"])
+        hdr = self.pin_table.horizontalHeader()
+        hdr.setSectionResizeMode(                 # PyQt-6 style enum
+            0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        vbox.addWidget(self.pin_table)
+
+        # watch edits so the wizard can enable / disable “Next ▶”
+        self.pin_table.itemChanged.connect(self._on_table_change)
+
+
+    # ------------------------------------------------------------------
+    # public helpers used by the wizard
+    # ------------------------------------------------------------------
+    def set_pin_count(self, total_pins: int, used: set[int]) -> None:
+        """
+        Fill the table with pin numbers 1 … total_pins and create a
+        `QSpinBox` in the *Order #* column so the user can decide the
+        mapping.  Already-used physical pads are disabled.
+        """
+        self.pin_table.blockSignals(True)
+        self.pin_table.setRowCount(total_pins)
+
+        for row in range(total_pins):
+            pin_no = row + 1
+
+            # column 0 – read-only pin number
+            num_item = QtWidgets.QTableWidgetItem(str(pin_no))
+            num_item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+            self.pin_table.setItem(row, 0, num_item)
+
+            # column 1 – editable order spinner
             spin = QtWidgets.QSpinBox()
-            spin.setRange(0, count)
-            if i in used:
+            spin.setRange(0, total_pins)
+            spin.setValue(0)
+            if pin_no in used:                    # pad already mapped elsewhere
                 spin.setEnabled(False)
-            else:
-                spin.valueChanged.connect(self._validate)
-            self.pin_table.setCellWidget(i - 1, 1, spin)
-        self._validate()
+            self.pin_table.setCellWidget(row, 1, spin)
+
+        self.pin_table.blockSignals(False)
+        self._on_table_change()                   # update validity immediately
+
 
     def checked_pins(self) -> list[int]:
-        ordered: list[tuple[int, int]] = []
+        """
+        Return physical pin numbers **ordered by** the number the user entered.
+        Only entries >0 are taken into account.
+        """
+        mapping = {}
         for row in range(self.pin_table.rowCount()):
-            spin = self.pin_table.cellWidget(row, 1)
-            if isinstance(spin, QtWidgets.QSpinBox):
-                val = spin.value()
-                if val:
-                    ordered.append((val, row + 1))
-        ordered.sort()
-        return [pin for _, pin in ordered]
+            spin: QtWidgets.QSpinBox = self.pin_table.cellWidget(row, 1)
+            order = spin.value()
+            if order:
+                mapping[order] = row + 1      # order → real pin
+        # Ascending order list of real pins
+        return [mapping[i] for i in sorted(mapping)]
 
-    # -------------------------------------------------------------- validation
-    def _validate(self) -> None:
-        seen: dict[int, int] = {}
-        dup = False
+    # ------------------------------------------------------------------
+    # internal
+    # ------------------------------------------------------------------
+    def _on_table_change(self) -> None:
+        """
+        Mark duplicate order numbers in red and expose a boolean
+        flag (`self.parent().parent()._mapping_ok`) so the wizard
+        can enable / disable its *Next* button.
+        """
+        seen: dict[int, int] = {}         # order → row
+        duplicates: set[int] = set()
+
         for row in range(self.pin_table.rowCount()):
-            spin = self.pin_table.cellWidget(row, 1)
-            if not isinstance(spin, QtWidgets.QSpinBox):
-                continue
+            spin: QtWidgets.QSpinBox = self.pin_table.cellWidget(row, 1)
             val = spin.value()
-            pal = self.pin_table.palette()
-            base = pal.color(QtGui.QPalette.ColorRole.Base)
-            color = base
-            if val > 0:
-                if val in seen:
-                    dup = True
-                    color = QtGui.QColor("red")
-                    self.pin_table.cellWidget(seen[val], 1).setStyleSheet(
-                        "background:red"
-                    )
-                seen[val] = row
-            spin.setStyleSheet(f"background:{color.name()}")
-        self._has_valid_order = not dup and bool(seen)
+            spin.setStyleSheet("")        # clear previous colour
+
+            if val == 0:
+                continue                  # 0 means “unused”
+            if val in seen:
+                duplicates.update({row, seen[val]})
+            seen[val] = row
+
+        # Colour duplicates red
+        for row in duplicates:
+            self.pin_table.cellWidget(row, 1).setStyleSheet("background:#FFCCCC;")
+
+        mapping_ok = bool(seen) and not duplicates
+        wiz = self.parentWidget().parent()        # the QDialog
+        wiz._mapping_ok = mapping_ok
+        wiz._update_nav()
 
 
 class ParamPage(QtWidgets.QWidget):
@@ -261,6 +308,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.del_btn.clicked.connect(self._del_sub)
         self.param_page.copy_btn.clicked.connect(self._copy_params)
         self.review_page.save_btn.clicked.connect(self._finish)
+        self._mapping_ok = False     # ② flag updated by pin-table
 
         self._update_nav()
 
@@ -375,11 +423,13 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.accept()
 
     def _update_nav(self) -> None:
+        """Enable/disable Back & Next based on current page content."""
         page = self.stack.currentWidget()
         self.back_btn.setEnabled(page is not self.basics_page or page is self.review_page)
+
         if page is self.macro_page:
-            self.macro_page._validate()
-            self.next_btn.setEnabled(self.macro_page._has_valid_order)
+            # macro must be chosen and mapping valid
+            self.next_btn.setEnabled(self._mapping_ok)
         elif page is self.param_page:
             self.next_btn.setEnabled(self.param_page.required_filled())
         elif page is self.review_page:
