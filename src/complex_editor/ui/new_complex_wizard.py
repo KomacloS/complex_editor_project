@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+import importlib.resources
 
 from ..domain import MacroDef, MacroInstance, SubComponent, ComplexDevice
 
@@ -50,13 +51,25 @@ class MacroPinsPage(QtWidgets.QWidget):
 
         # ── macro selector ──────────────────────────────────────────────
         self.macro_combo = QtWidgets.QComboBox()
-        if not self.macro_map:                      # nothing loaded yet
+        names: list[str] = []
+        try:
+            res_root = importlib.resources.files("complex_editor.resources")
+            txt_path = res_root.joinpath("functions_ref.txt")
+            with txt_path.open("r", encoding="utf-8") as fh:
+                names = [ln.strip() for ln in fh if ln.strip()]
+        except Exception:
+            names = []
+
+        if names:
+            self.macro_combo.addItems(names)
+            # default to first name that exists in macro_map
+            for i, name in enumerate(names):
+                if any(m.name == name for m in self.macro_map.values()):
+                    self.macro_combo.setCurrentIndex(i)
+                    break
+        else:
             self.macro_combo.addItem("⚠  No macros loaded")
             self.macro_combo.setEnabled(False)
-        else:
-            for id_func, macro in sorted(self.macro_map.items()):
-                self.macro_combo.addItem(macro.name, id_func)
-            self.macro_combo.setCurrentIndex(0)
         vbox.addWidget(self.macro_combo)
 
         # ── ordered-pin table ───────────────────────────────────────────
@@ -74,8 +87,8 @@ class MacroPinsPage(QtWidgets.QWidget):
     # public helpers used by the wizard
     # ------------------------------------------------------------------
     def set_pin_count(self, total_pads: int, used_by_other_subs: set[int]) -> None:
-        idfunc = self.macro_combo.currentData()
-        macro = self.macro_map.get(int(idfunc)) if idfunc is not None else None
+        name = self.macro_combo.currentText()
+        macro = next((m for m in self.macro_map.values() if m.name == name), None)
         logical_names = [
             "Pin A",
             "Pin B",
@@ -341,9 +354,9 @@ class NewComplexWizard(QtWidgets.QDialog):
         self._update_nav()
 
     def _open_param_page(self) -> None:
-        index = self.macro_page.macro_combo.currentData()
-        macro = self.macro_map.get(int(index)) if index is not None else None
-        if not macro:
+        name = self.macro_page.macro_combo.currentText()
+        macro = next((m for m in self.macro_map.values() if m.name == name), None)
+        if not macro and self.macro_map:
             macro = list(self.macro_map.values())[0]
         pins = self.macro_page.checked_pins()
         sc = self.sub_components[self.current_index]
