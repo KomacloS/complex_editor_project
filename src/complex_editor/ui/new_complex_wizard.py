@@ -133,7 +133,6 @@ class MacroPinsPage(QtWidgets.QWidget):
         """
         seen: dict[int, int] = {}
         duplicates: set[int] = set()
-        all_selected = True
 
         for row in range(self.pin_table.rowCount()):
             combo: QtWidgets.QComboBox = self.pin_table.cellWidget(row, 1)
@@ -141,7 +140,6 @@ class MacroPinsPage(QtWidgets.QWidget):
             combo.setStyleSheet("")
 
             if not text:
-                all_selected = False
                 continue
             val = int(text)
             if val in seen:
@@ -151,7 +149,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         for row in duplicates:
             self.pin_table.cellWidget(row, 1).setStyleSheet("background:#FFCCCC;")
 
-        mapping_ok = all_selected and not duplicates
+        mapping_ok = not duplicates
         wiz = self.parentWidget().parent()        # the QDialog
         wiz._mapping_ok = mapping_ok
         wiz._update_nav()
