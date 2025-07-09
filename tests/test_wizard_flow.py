@@ -10,7 +10,7 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from PyQt6 import QtCore, QtWidgets  # noqa: E402
+from PyQt6 import QtWidgets  # noqa: E402
 from complex_editor.ui.new_complex_wizard import NewComplexWizard  # noqa: E402
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
 
@@ -36,8 +36,8 @@ def test_wizard_flow(qtbot):
     wizard.list_page.add_btn.click()
     idx = wizard.macro_page.macro_combo.findText("RESISTOR")
     wizard.macro_page.macro_combo.setCurrentIndex(idx)
-    wizard.macro_page.pin_list.item(0).setCheckState(QtCore.Qt.CheckState.Checked)
-    wizard.macro_page.pin_list.item(1).setCheckState(QtCore.Qt.CheckState.Checked)
+    wizard.macro_page.pin_table.cellWidget(0, 1).setValue(1)
+    wizard.macro_page.pin_table.cellWidget(1, 1).setValue(2)
     wizard._next()  # to param page
     val_widget = wizard.param_page.widgets.get("Value")
     if isinstance(val_widget, QtWidgets.QSpinBox):
@@ -45,8 +45,8 @@ def test_wizard_flow(qtbot):
     wizard._next()  # save params back to list
     wizard.list_page.list.setCurrentRow(0)
     wizard.list_page.dup_btn.click()
-    wizard.macro_page.pin_list.item(2).setCheckState(QtCore.Qt.CheckState.Checked)
-    wizard.macro_page.pin_list.item(3).setCheckState(QtCore.Qt.CheckState.Checked)
+    wizard.macro_page.pin_table.cellWidget(2, 1).setValue(1)
+    wizard.macro_page.pin_table.cellWidget(3, 1).setValue(2)
     wizard._next()
     wizard.param_page.copy_btn.click()
     dlg = wizard.param_page._copy_dialog

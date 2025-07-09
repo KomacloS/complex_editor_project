@@ -42,6 +42,7 @@ class ComplexEditor(QtWidgets.QWidget):
         self.pin_table = PinTable()
         form.addRow("Pins", self.pin_table)
         self.macro_combo = QtWidgets.QComboBox()
+        self._last_idx = -1
         form.addRow("Macro", self.macro_combo)
         layout.addLayout(form)
         self.param_form = QtWidgets.QFormLayout()
@@ -84,6 +85,9 @@ class ComplexEditor(QtWidgets.QWidget):
             self.pin_table.highlight_pins([])
 
     def _on_macro_change(self) -> None:
+        if self.macro_combo.currentIndex() == self._last_idx:
+            return
+        self._last_idx = self.macro_combo.currentIndex()
         data = self.macro_combo.currentData()
         macro = self.macro_map.get(int(data)) if data is not None else None
         self._build_param_widgets(macro)

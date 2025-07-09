@@ -10,7 +10,6 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from PyQt6 import QtCore  # noqa: E402
 from complex_editor.ui.new_complex_wizard import NewComplexWizard  # noqa: E402
 from complex_editor.ui.main_window import MainWindow  # noqa: E402
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
@@ -42,8 +41,8 @@ def test_wizard_creates_editor_state(qtbot):
     wizard.list_page.add_btn.click()
     idx = wizard.macro_page.macro_combo.findText("RESISTOR")
     wizard.macro_page.macro_combo.setCurrentIndex(idx)
-    wizard.macro_page.pin_list.item(0).setCheckState(QtCore.Qt.CheckState.Checked)
-    wizard.macro_page.pin_list.item(1).setCheckState(QtCore.Qt.CheckState.Checked)
+    wizard.macro_page.pin_table.cellWidget(0, 1).setValue(1)
+    wizard.macro_page.pin_table.cellWidget(1, 1).setValue(2)
     wizard._next()
     wizard._next()  # param -> list
     wizard._next()  # list -> review
