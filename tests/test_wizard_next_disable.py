@@ -10,7 +10,6 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from PyQt6 import QtCore  # noqa: E402
 from complex_editor.ui.new_complex_wizard import NewComplexWizard  # noqa: E402
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
 
@@ -35,6 +34,12 @@ def test_next_disabled_until_pin_checked(qtbot):
     wiz._next()  # to list
     wiz.list_page.add_btn.click()
     assert not wiz.next_btn.isEnabled()
-    wiz.macro_page.pin_list.item(0).setCheckState(QtCore.Qt.CheckState.Checked)
+    wiz.macro_page.pin_table.cellWidget(0, 1).setValue(1)
+    wiz._update_nav()
+    assert wiz.next_btn.isEnabled()
+    wiz.macro_page.pin_table.cellWidget(1, 1).setValue(1)
+    wiz._update_nav()
+    assert not wiz.next_btn.isEnabled()
+    wiz.macro_page.pin_table.cellWidget(1, 1).setValue(2)
     wiz._update_nav()
     assert wiz.next_btn.isEnabled()

@@ -33,7 +33,11 @@ class PinTable(QtWidgets.QTableWidget):
             item = self.item(row, 0)
             if not item:
                 continue
+            font = item.font()
             if (row + 1) in numbers:
                 item.setBackground(color)
+                font.setBold(True)
             else:
                 item.setBackground(QtGui.QColor("white"))
+                font.setBold(False)
+            item.setFont(font)

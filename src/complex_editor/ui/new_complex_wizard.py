@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..domain import MacroDef, MacroInstance, SubComponent, ComplexDevice
 
@@ -42,31 +42,67 @@ class MacroPinsPage(QtWidgets.QWidget):
     def __init__(self, macro_map: dict[int, MacroDef]) -> None:
         super().__init__()
         self.macro_map = macro_map
+        self._has_valid_order = False
         layout = QtWidgets.QVBoxLayout(self)
         self.macro_combo = QtWidgets.QComboBox()
         for id_func, macro in sorted(macro_map.items()):
             self.macro_combo.addItem(macro.name, id_func)
         layout.addWidget(self.macro_combo)
-        self.pin_list = QtWidgets.QListWidget()
-        layout.addWidget(self.pin_list)
+        self.pin_table = QtWidgets.QTableWidget(0, 2)
+        self.pin_table.setHorizontalHeaderLabels(["Pin", "Order #"])
+        self.pin_table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.Stretch
+        )
+        layout.addWidget(self.pin_table)
 
     def set_pin_count(self, count: int, used: set[int]) -> None:
-        self.pin_list.clear()
+        self.pin_table.setRowCount(count)
         for i in range(1, count + 1):
-            item = QtWidgets.QListWidgetItem(str(i))
-            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.CheckState.Unchecked)
+            item = QtWidgets.QTableWidgetItem(str(i))
+            item.setFlags(QtCore.Qt.ItemFlag.ItemIsEnabled)
+            self.pin_table.setItem(i - 1, 0, item)
+            spin = QtWidgets.QSpinBox()
+            spin.setRange(0, count)
             if i in used:
-                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
-            self.pin_list.addItem(item)
+                spin.setEnabled(False)
+            else:
+                spin.valueChanged.connect(self._validate)
+            self.pin_table.setCellWidget(i - 1, 1, spin)
+        self._validate()
 
     def checked_pins(self) -> list[int]:
-        pins: list[int] = []
-        for i in range(self.pin_list.count()):
-            it = self.pin_list.item(i)
-            if it.checkState() == QtCore.Qt.CheckState.Checked:
-                pins.append(i + 1)
-        return pins
+        ordered: list[tuple[int, int]] = []
+        for row in range(self.pin_table.rowCount()):
+            spin = self.pin_table.cellWidget(row, 1)
+            if isinstance(spin, QtWidgets.QSpinBox):
+                val = spin.value()
+                if val:
+                    ordered.append((val, row + 1))
+        ordered.sort()
+        return [pin for _, pin in ordered]
+
+    # -------------------------------------------------------------- validation
+    def _validate(self) -> None:
+        seen: dict[int, int] = {}
+        dup = False
+        for row in range(self.pin_table.rowCount()):
+            spin = self.pin_table.cellWidget(row, 1)
+            if not isinstance(spin, QtWidgets.QSpinBox):
+                continue
+            val = spin.value()
+            pal = self.pin_table.palette()
+            base = pal.color(QtGui.QPalette.ColorRole.Base)
+            color = base
+            if val > 0:
+                if val in seen:
+                    dup = True
+                    color = QtGui.QColor("red")
+                    self.pin_table.cellWidget(seen[val], 1).setStyleSheet(
+                        "background:red"
+                    )
+                seen[val] = row
+            spin.setStyleSheet(f"background:{color.name()}")
+        self._has_valid_order = not dup and bool(seen)
 
 
 class ParamPage(QtWidgets.QWidget):
@@ -342,7 +378,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         page = self.stack.currentWidget()
         self.back_btn.setEnabled(page is not self.basics_page or page is self.review_page)
         if page is self.macro_page:
-            self.next_btn.setEnabled(len(self.macro_page.checked_pins()) > 0)
+            self.macro_page._validate()
+            self.next_btn.setEnabled(self.macro_page._has_valid_order)
         elif page is self.param_page:
             self.next_btn.setEnabled(self.param_page.required_filled())
         elif page is self.review_page:
