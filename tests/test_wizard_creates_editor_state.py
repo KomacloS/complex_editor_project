@@ -41,8 +41,8 @@ def test_wizard_creates_editor_state(qtbot):
     wizard.list_page.add_btn.click()
     idx = wizard.macro_page.macro_combo.findText("RESISTOR")
     wizard.macro_page.macro_combo.setCurrentIndex(idx)
-    wizard.macro_page.pin_table.cellWidget(0, 1).setValue(1)
-    wizard.macro_page.pin_table.cellWidget(1, 1).setValue(2)
+    wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("1")
+    wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("2")
     wizard._next()
     wizard._next()  # param -> list
     wizard._next()  # list -> review

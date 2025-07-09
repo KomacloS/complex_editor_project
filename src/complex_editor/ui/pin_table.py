@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Iterable
 from PyQt6 import QtGui, QtWidgets
 
 
@@ -26,21 +27,13 @@ class PinTable(QtWidgets.QTableWidget):
             result.append(item.text() if item else "")
         return result
 
-    def highlight_pins(self, numbers: list[int]) -> None:
-        """
-        Highlight the given *physical* pin rows (1-based) in yellow and
-        bold text; clear formatting for all others.
-        """
+    def highlight_pins(self, pad_numbers: Iterable[int]) -> None:
+        """Color given pad rows yellow, others white."""
         yellow = QtGui.QColor("yellow")
+        white = QtGui.QColor("white")
+        numbers = set(pad_numbers)
         for row in range(self.rowCount()):
             item = self.item(row, 0)
-            if item is None:
+            if not item:
                 continue
-            font = item.font()
-            if (row + 1) in numbers:
-                item.setBackground(yellow)
-                font.setBold(True)
-            else:
-                item.setBackground(QtGui.QColor("white"))
-                font.setBold(False)
-            item.setFont(font)
+            item.setBackground(yellow if (row + 1) in numbers else white)

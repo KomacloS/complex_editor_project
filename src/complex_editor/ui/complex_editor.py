@@ -76,7 +76,7 @@ class ComplexEditor(QtWidgets.QWidget):
         for sc in subs:
             pins = ",".join(str(p) for p in sc.pins)
             self.sub_list.addItem(f"{sc.macro.name} \N{RIGHTWARDS ARROW} {pins}")
-        self.pin_table.highlight_pins([])
+        self._on_sub_selected(self.sub_list.currentRow())
 
     def _on_sub_selected(self, row: int) -> None:
         if 0 <= row < len(self.sub_components):
