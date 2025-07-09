@@ -109,8 +109,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_data()
 
     def load_data(self) -> None:
-        if not self.cursor:
-            return
+        """
+        Load all lookups and tree/list data from the database cursor.
+        Always attempt to load macros (DB first, then fallback YAML).
+        """
         self.macro_map = discover_macro_map(self.cursor)
         self.list_panel.load_rows(self.cursor, self.macro_map)
         self.editor_panel.conn = self.conn

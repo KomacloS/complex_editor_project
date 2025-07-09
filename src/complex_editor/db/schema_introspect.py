@@ -22,6 +22,39 @@ def _fetch_param_rows(cursor, table: str):
 
 def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     """Discover mapping from IDFunction to :class:`MacroDef`."""
+    # If there’s no DB connection, just load the YAML fallback immediately.
+    if cursor is None:
+        from pathlib import Path
+        import yaml, importlib.resources
+
+        pkg_files = importlib.resources.files("complex_editor.resources")
+        yaml_path = pkg_files.joinpath("macro_fallback.yaml")
+        if not yaml_path.is_file():
+            alt = Path.cwd() / "macro_fallback.yaml"
+            if alt.is_file():
+                yaml_path = alt
+
+        data = yaml_path.read_text()
+        raw = yaml.safe_load(data).get("macros", [])
+        macro_map: Dict[int, MacroDef] = {}
+        for entry in raw:
+            params = [
+                MacroParam(
+                    name=p.get("name"),
+                    type=p.get("type"),
+                    default=p.get("default"),
+                    min=p.get("min"),
+                    max=p.get("max"),
+                )
+                for p in entry.get("params", [])
+            ]
+            macro_map[entry["id_function"]] = MacroDef(
+                id_function=entry["id_function"],
+                name=entry["name"],
+                params=params,
+            )
+        return macro_map
+
     macro_map: Dict[int, MacroDef] = {}
     tables = {}
     for t in cursor.tables(tableType="TABLE"):
