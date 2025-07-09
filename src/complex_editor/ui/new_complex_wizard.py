@@ -60,16 +60,24 @@ class MacroPinsPage(QtWidgets.QWidget):
         except Exception:
             names = []
 
-        if names:
-            self.macro_combo.addItems(names)
-            # default to first name that exists in macro_map
-            for i, name in enumerate(names):
-                if any(m.name == name for m in self.macro_map.values()):
-                    self.macro_combo.setCurrentIndex(i)
-                    break
-        else:
+        base_map = self.macro_map
+        existing_names = {m.name for m in base_map.values()}
+        next_id = -1
+        for name in names:
+            if name not in existing_names:
+                while next_id in base_map:
+                    next_id -= 1
+                base_map[next_id] = MacroDef(id_function=next_id, name=name, params=[])
+                next_id -= 1
+        self.macro_map = base_map
+
+        if not self.macro_map:
             self.macro_combo.addItem("⚠  No macros loaded")
             self.macro_combo.setEnabled(False)
+        else:
+            for id_func, macro in self.macro_map.items():
+                self.macro_combo.addItem(macro.name, id_func)
+            self.macro_combo.setCurrentIndex(0)
         vbox.addWidget(self.macro_combo)
 
         # ── ordered-pin table ───────────────────────────────────────────
@@ -87,8 +95,8 @@ class MacroPinsPage(QtWidgets.QWidget):
     # public helpers used by the wizard
     # ------------------------------------------------------------------
     def set_pin_count(self, total_pads: int, used_by_other_subs: set[int]) -> None:
-        name = self.macro_combo.currentText()
-        macro = next((m for m in self.macro_map.values() if m.name == name), None)
+        idfunc = self.macro_combo.currentData()
+        macro = self.macro_map.get(int(idfunc)) if idfunc is not None else None
         logical_names = [
             "Pin A",
             "Pin B",
@@ -352,8 +360,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         self._update_nav()
 
     def _open_param_page(self) -> None:
-        name = self.macro_page.macro_combo.currentText()
-        macro = next((m for m in self.macro_map.values() if m.name == name), None)
+        index = self.macro_page.macro_combo.currentData()
+        macro = self.macro_map.get(int(index)) if index is not None else None
         if not macro and self.macro_map:
             macro = list(self.macro_map.values())[0]
         pins = self.macro_page.checked_pins()
