@@ -45,7 +45,9 @@ class MacroPinsPage(QtWidgets.QWidget):
 
     def __init__(self, macro_map: dict[int, MacroDef]) -> None:
         super().__init__()
-        self.macro_map = macro_map or {}
+        # Preserve the passed-in dictionary even if empty so updates
+        # remain visible to the caller.
+        self.macro_map = macro_map if macro_map is not None else {}
 
         vbox = QtWidgets.QVBoxLayout(self)
 
@@ -97,12 +99,12 @@ class MacroPinsPage(QtWidgets.QWidget):
     def set_pin_count(self, total_pads: int, used_by_other_subs: set[int]) -> None:
         idfunc = self.macro_combo.currentData()
         macro = self.macro_map.get(int(idfunc)) if idfunc is not None else None
-        logical_names = [
-            "Pin A",
-            "Pin B",
-            "Pin C",
-            "Pin D",
-        ] if not macro else [p.name for p in macro.params if p.name.startswith("Pin")]
+        if not macro or not macro.params:
+            logical_names = ["Pin A", "Pin B", "Pin C", "Pin D"]
+        else:
+            logical_names = [p.name for p in macro.params if p.name.startswith("Pin")]
+            if not logical_names:
+                logical_names = ["Pin A", "Pin B", "Pin C", "Pin D"]
 
         self.pin_table.blockSignals(True)
         self.pin_table.setRowCount(len(logical_names))
@@ -285,6 +287,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("New Complex")
         self.resize(600, 500)
+        # `MacroPinsPage` may extend the passed-in macro map with dummy
+        # entries, so keep a reference and update after constructing it.
         self.macro_map = macro_map
         self.sub_components: list[SubComponent] = []
         self.current_index: Optional[int] = None
@@ -303,6 +307,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.basics_page = BasicsPage()
         self.list_page = SubCompListPage()
         self.macro_page = MacroPinsPage(macro_map)
+        # update macro_map in case dummy entries were added
+        self.macro_map = self.macro_page.macro_map
         self.param_page = ParamPage()
         self.review_page = ReviewPage()
 
