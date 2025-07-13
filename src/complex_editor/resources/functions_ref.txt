@@ -1,3 +1,6 @@
+objectivec
+Copy
+Edit
 CAPACITOR
 COMPARATOR
 CONNECTOR
