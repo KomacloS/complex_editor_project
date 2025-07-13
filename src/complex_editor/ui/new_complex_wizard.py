@@ -96,7 +96,7 @@ class MacroPinsPage(QtWidgets.QWidget):
     # ------------------------------------------------------------------
     # public helpers used by the wizard
     # ------------------------------------------------------------------
-    def set_pin_count(self, total_pads: int, used_by_other_subs: set[int]) -> None:
+    def set_pin_count(self, total_pads: int) -> None:
         idfunc = self.macro_combo.currentData()
         macro = self.macro_map.get(int(idfunc)) if idfunc is not None else None
         if not macro or not macro.params:
@@ -111,10 +111,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         for row, lname in enumerate(logical_names):
             self.pin_table.setItem(row, 0, QtWidgets.QTableWidgetItem(lname))
             combo = QtWidgets.QComboBox()
-            free = [
-                str(p) for p in range(1, total_pads + 1)
-                if p not in used_by_other_subs
-            ]
+            free = [str(p) for p in range(1, total_pads + 1)]
             combo.addItems([""] + free)
             combo.currentIndexChanged.connect(self._on_table_change)
             self.pin_table.setCellWidget(row, 1, combo)
@@ -354,10 +351,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.list.takeItem(row)
 
     def _open_macro_page(self) -> None:
-        used = {p for i, sc in enumerate(self.sub_components)
-                if i != self.current_index for p in sc.pins}
         count = self.basics_page.pin_spin.value()
-        self.macro_page.set_pin_count(count, used)
+        self.macro_page.set_pin_count(count)
         self.stack.setCurrentWidget(self.macro_page)
         self._update_nav()
 
