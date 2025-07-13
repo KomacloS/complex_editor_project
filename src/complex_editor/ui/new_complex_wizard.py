@@ -97,12 +97,12 @@ class MacroPinsPage(QtWidgets.QWidget):
     def set_pin_count(self, total_pads: int, used_by_other_subs: set[int]) -> None:
         idfunc = self.macro_combo.currentData()
         macro = self.macro_map.get(int(idfunc)) if idfunc is not None else None
-        if not macro or not macro.params:
-            logical_names = ["Pin A", "Pin B", "Pin C", "Pin D"]
-        else:
-            logical_names = [p.name for p in macro.params if p.name.startswith("Pin")]
-            if not logical_names:
-                logical_names = ["Pin A", "Pin B", "Pin C", "Pin D"]
+        logical_names = [
+            "Pin A",
+            "Pin B",
+            "Pin C",
+            "Pin D",
+        ] if not macro else [p.name for p in macro.params if p.name.startswith("Pin")]
 
         self.pin_table.blockSignals(True)
         self.pin_table.setRowCount(len(logical_names))
