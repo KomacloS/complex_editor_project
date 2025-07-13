@@ -39,7 +39,4 @@ def test_next_disabled_until_pin_checked(qtbot):
     assert wiz.next_btn.isEnabled()
     wiz.macro_page.pin_table.cellWidget(1, 1).setCurrentText("1")
     wiz._update_nav()
-    assert not wiz.next_btn.isEnabled()
-    wiz.macro_page.pin_table.cellWidget(1, 1).setCurrentText("2")
-    wiz._update_nav()
     assert wiz.next_btn.isEnabled()

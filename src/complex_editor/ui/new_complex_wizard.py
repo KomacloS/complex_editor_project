@@ -136,11 +136,7 @@ class MacroPinsPage(QtWidgets.QWidget):
     # internal
     # ------------------------------------------------------------------
     def _on_table_change(self) -> None:
-        """
-        Mark duplicate order numbers in red and expose a boolean
-        flag (`self.parent().parent()._mapping_ok`) so the wizard
-        can enable / disable its *Next* button.
-        """
+        """Highlight duplicate order numbers but allow them."""
         seen: dict[int, int] = {}
         duplicates: set[int] = set()
 
@@ -159,7 +155,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         for row in duplicates:
             self.pin_table.cellWidget(row, 1).setStyleSheet("background:#FFCCCC;")
 
-        mapping_ok = not duplicates
+        mapping_ok = True  # duplicates allowed
         wiz = self.parentWidget().parent()        # the QDialog
         wiz._mapping_ok = mapping_ok
         wiz._update_nav()
