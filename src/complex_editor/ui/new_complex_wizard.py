@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6 import QtCore, QtGui, QtWidgets
-import importlib.resources
+import yaml, importlib.resources
+
+with importlib.resources.files("complex_editor.resources").joinpath(
+    "function_param_allowed.yaml"
+).open("r") as fh:
+    ALLOWED_PARAMS = yaml.safe_load(fh)
 
 from ..domain import MacroDef, MacroInstance, SubComponent, ComplexDevice
 
@@ -172,29 +177,64 @@ class ParamPage(QtWidgets.QWidget):
             self.form.removeRow(0)
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         self.required: set[str] = {p.name for p in macro.params if p.default is None}
+        allowed = ALLOWED_PARAMS.get(macro.name, {})
         for p in macro.params:
             label = QtWidgets.QLabel(p.name)
-            if p.type == "INT":
-                w = QtWidgets.QSpinBox()
-                if p.min is not None:
-                    w.setMinimum(int(p.min))
-                if p.max is not None:
-                    w.setMaximum(int(p.max))
-            elif p.type == "FLOAT":
-                w = QtWidgets.QDoubleSpinBox()
-                if p.min is not None:
-                    w.setMinimum(float(p.min))
-                if p.max is not None:
-                    w.setMaximum(float(p.max))
-            elif p.type == "BOOL":
-                w = QtWidgets.QCheckBox()
-            elif p.type == "ENUM":
+            spec = allowed.get(p.name)
+            w: QtWidgets.QWidget
+            if isinstance(spec, dict) and (
+                "min" in spec or "max" in spec
+            ):
+                min_val = spec.get("min")
+                max_val = spec.get("max")
+                use_int = all(
+                    v is not None and float(v).is_integer() for v in (min_val, max_val)
+                )
+                if use_int:
+                    w = QtWidgets.QSpinBox()
+                    if min_val is not None:
+                        w.setMinimum(int(min_val))
+                    if max_val is not None:
+                        w.setMaximum(int(max_val))
+                else:
+                    w = QtWidgets.QDoubleSpinBox()
+                    if min_val is not None:
+                        w.setMinimum(float(min_val))
+                    if max_val is not None:
+                        w.setMaximum(float(max_val))
+                init = p.default if p.default is not None else min_val
+                if isinstance(w, QtWidgets.QSpinBox) and init is not None:
+                    w.setValue(int(float(init)))
+                elif isinstance(w, QtWidgets.QDoubleSpinBox) and init is not None:
+                    w.setValue(float(init))
+            elif isinstance(spec, list):
                 w = QtWidgets.QComboBox()
-                choices = (p.default or p.min or "").split(";")
-                if len(choices) > 1:
-                    w.addItems(choices)
+                w.addItems([str(s) for s in spec])
+                if p.default is not None and str(p.default) in [str(s) for s in spec]:
+                    idx = [str(s) for s in spec].index(str(p.default))
+                    w.setCurrentIndex(idx)
             else:
-                w = QtWidgets.QLineEdit()
+                if p.type == "INT":
+                    w = QtWidgets.QSpinBox()
+                    if p.min is not None:
+                        w.setMinimum(int(p.min))
+                    if p.max is not None:
+                        w.setMaximum(int(p.max))
+                elif p.type == "FLOAT":
+                    w = QtWidgets.QDoubleSpinBox()
+                    if p.min is not None:
+                        w.setMinimum(float(p.min))
+                    if p.max is not None:
+                        w.setMaximum(float(p.max))
+                elif p.type == "BOOL":
+                    w = QtWidgets.QCheckBox()
+                elif p.type == "ENUM":
+                    w = QtWidgets.QComboBox()
+                    choices = (p.default or p.min or "").split(";")
+                    if len(choices) > 1:
+                        w.addItems(choices)
+                else:
+                    w = QtWidgets.QLineEdit()
             self.widgets[p.name] = w
             self.form.addRow(label, w)
             val = params.get(p.name, p.default)
