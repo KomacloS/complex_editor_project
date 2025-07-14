@@ -1,0 +1,29 @@
+macros:
+  - id_function: 1
+    name: RESISTOR
+    params:
+      - name: Value
+        type: INT
+        default: "0"
+        min: "0"
+        max: "100"
+  - id_function: 2
+    name: CAPACITOR
+    params:
+      - name: Value
+        type: FLOAT
+        default: "0.0"
+        min: "0"
+        max: "1"
+  - id_function: 3
+    name: GATE
+    params:
+      - name: PathPin_A
+        type: ENUM
+        default: "0101"
+  - id_function: 4
+    name: TRANSISTOR_BJT
+    params: []
+  - id_function: 5
+    name: VOLTAGE_REGULATOR
+    params: []
