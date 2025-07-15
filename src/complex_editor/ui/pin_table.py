@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, cast
 from PyQt6 import QtGui, QtWidgets
 
 
@@ -10,9 +10,8 @@ class PinTable(QtWidgets.QTableWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(0, 1, parent)
         self.setHorizontalHeaderLabels(["Pin"])
-        self.horizontalHeader().setSectionResizeMode(
-            QtWidgets.QHeaderView.ResizeMode.Stretch
-        )
+        hdr = cast(QtWidgets.QHeaderView, self.horizontalHeader())
+        hdr.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
 
     def set_pins(self, pins: list[str]) -> None:
         self.setRowCount(len(pins))

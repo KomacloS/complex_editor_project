@@ -45,7 +45,6 @@ def test_wizard_creates_editor_state(qtbot):
     wizard.macro_page.macro_combo.setCurrentIndex(idx)
     wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("1")
     wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("2")
-    wizard._next()
     wizard._next()  # param -> list
     wizard._next()  # list -> review
     wizard.review_page.save_btn.click()

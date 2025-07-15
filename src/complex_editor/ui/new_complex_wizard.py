@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib.resources
-from typing import Optional
+from typing import Optional, cast
 
 from PyQt6 import QtWidgets
 
@@ -86,7 +86,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         # ── ordered-pin table ───────────────────────────────────────────
         self.pin_table = QtWidgets.QTableWidget(0, 2, self)
         self.pin_table.setHorizontalHeaderLabels(["Macro pin", "Pad #"])
-        hdr = self.pin_table.horizontalHeader()
+        hdr = cast(QtWidgets.QHeaderView, self.pin_table.horizontalHeader())
         hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         vbox.addWidget(self.pin_table)
@@ -120,7 +120,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         """Return selected pad numbers in logical order."""
         result: list[int] = []
         for row in range(self.pin_table.rowCount()):
-            combo: QtWidgets.QComboBox = self.pin_table.cellWidget(row, 1)
+            combo = cast(QtWidgets.QComboBox, self.pin_table.cellWidget(row, 1))
             text = combo.currentText()
             if text:
                 result.append(int(text))
@@ -135,7 +135,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         duplicates: set[int] = set()
 
         for row in range(self.pin_table.rowCount()):
-            combo: QtWidgets.QComboBox = self.pin_table.cellWidget(row, 1)
+            combo = cast(QtWidgets.QComboBox, self.pin_table.cellWidget(row, 1))
             text = combo.currentText()
             combo.setStyleSheet("")
 
@@ -147,12 +147,24 @@ class MacroPinsPage(QtWidgets.QWidget):
             seen[val] = row
 
         for row in duplicates:
-            self.pin_table.cellWidget(row, 1).setStyleSheet("background:#FFCCCC;")
+            widget = self.pin_table.cellWidget(row, 1)
+            if widget is not None:
+                widget.setStyleSheet("background:#FFCCCC;")
 
         mapping_ok = True  # duplicates allowed
-        wiz = self.parentWidget().parent()  # the QDialog
+        parent = self.parentWidget()
+        if parent is None or parent.parent() is None:
+            return
+        wiz = cast(NewComplexWizard, parent.parent())  # the QDialog
         wiz._mapping_ok = mapping_ok
         wiz._update_nav()
+
+        all_set = all(
+            cast(QtWidgets.QComboBox, self.pin_table.cellWidget(r, 1)).currentText()
+            for r in range(self.pin_table.rowCount())
+        )
+        if all_set and hasattr(wiz, "_goto_param_page"):
+            wiz._goto_param_page()
 
 
 class ParamPage(QtWidgets.QWidget):
@@ -346,7 +358,7 @@ class ParamPage(QtWidgets.QWidget):
                 widget.setStyleSheet("background:#FFCCCC;")
         wiz_parent = self.parentWidget()
         if wiz_parent is not None and wiz_parent.parent() is not None:
-            wiz = wiz_parent.parent()
+            wiz = cast(NewComplexWizard, wiz_parent.parent())
             wiz._params_ok = self_valid
             wiz._update_nav()
 
@@ -433,12 +445,21 @@ class NewComplexWizard(QtWidgets.QDialog):
             return
         orig = self.sub_components[row]
         new_sc = SubComponent(
-            MacroInstance(orig.macro.name, orig.macro.params.copy()), []
+            MacroInstance(orig.macro.name, orig.macro.params.copy()), orig.pins.copy()
         )
         self.sub_components.append(new_sc)
         self.list_page.list.addItem("<dup>")
         self.current_index = len(self.sub_components) - 1
+        self.list_page.list.setCurrentRow(self.current_index)
         self._open_macro_page()
+        idx = self.macro_page.macro_combo.findText(orig.macro.name)
+        if idx >= 0:
+            self.macro_page.macro_combo.setCurrentIndex(idx)
+        for r, pin in enumerate(orig.pins):
+            if r >= self.macro_page.pin_table.rowCount():
+                break
+            combo = cast(QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1))
+            combo.setCurrentText(str(pin))
 
     def _del_sub(self) -> None:
         row = self.list_page.list.currentRow()
@@ -473,6 +494,16 @@ class NewComplexWizard(QtWidgets.QDialog):
             self.stack.setCurrentWidget(self.review_page)
         self._update_nav()
 
+    def _goto_param_page(self) -> None:
+        """Switch to the parameter page if appropriate."""
+        if self.stack.currentWidget() is self.param_page:
+            return
+        if self.stack.currentWidget() is not self.macro_page:
+            return
+        if not self._mapping_ok:
+            return
+        self._open_param_page()
+
     def _save_params(self) -> None:
         assert self.current_index is not None
         sc = self.sub_components[self.current_index]
@@ -497,7 +528,9 @@ class NewComplexWizard(QtWidgets.QDialog):
                     overrides.append((p.name, str(cur)))
         sc.macro.overrides = overrides
         text = f"{sc.macro.name} ({','.join(str(p) for p in sc.pins)})"
-        self.list_page.list.item(self.current_index).setText(text)
+        item = self.list_page.list.item(self.current_index)
+        if item is not None:
+            item.setText(text)
 
     def _back(self) -> None:
         page = self.stack.currentWidget()
