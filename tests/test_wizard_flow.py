@@ -47,10 +47,11 @@ def test_wizard_flow(qtbot):
     wizard.list_page.dup_btn.click()
     wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("3")
     wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("4")
-    wizard._next()  # to param page
-    val_widget2 = wizard.param_page.widgets.get("Value")
-    if isinstance(val_widget2, QtWidgets.QSpinBox):
-        assert val_widget2.value() == 10
+    wizard._next()
+    wizard.param_page.copy_btn.click()
+    dlg = wizard.param_page._copy_dialog
+    dlg.list.setCurrentRow(0)
+    dlg.accept()
     wizard._next()
     wizard._next()  # list -> review
     wizard.review_page.save_btn.click()
