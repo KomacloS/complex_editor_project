@@ -1,24 +1,30 @@
 from __future__ import annotations
 
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 from PyQt6 import QtWidgets
 
 from ..db import connect, discover_macro_map
-from .complex_list import ComplexListPanel
+from ..domain import MacroDef
 from .complex_editor import ComplexEditor
+from .complex_list import ComplexListPanel
 from .new_complex_wizard import NewComplexWizard
 
 
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window."""
 
-    def __init__(self, conn: Optional[object] = None) -> None:
+    cursor: Any | None
+    macro_map: dict[int, MacroDef]
+    stack: QtWidgets.QStackedWidget
+    list_panel: ComplexListPanel
+
+    def __init__(self, conn: Optional[Any] = None) -> None:
         super().__init__()
         self.conn = conn
-        self.cursor = conn.cursor() if conn else None
-        self.macro_map = {}
+        self.cursor: Any | None = conn.cursor() if conn else None
+        self.macro_map: dict[int, MacroDef] = {}
         self.setWindowTitle("Complex Editor")
         self._build_ui()
         if self.cursor:
@@ -32,14 +38,16 @@ class MainWindow(QtWidgets.QMainWindow):
         nav_widget.setStyleSheet("background:#003D66;color:white")
         nav_layout = QtWidgets.QVBoxLayout(nav_widget)
         btn_program = QtWidgets.QPushButton("Program Configuration")
-        btn_program.clicked.connect(lambda: self.stack.setCurrentWidget(self.list_panel))
+        btn_program.clicked.connect(
+            lambda: self.stack.setCurrentWidget(self.list_panel)
+        )
         nav_layout.addWidget(btn_program)
         nav_layout.addStretch()
         main_layout.addWidget(nav_widget)
         # Stacked area
-        self.stack = QtWidgets.QStackedWidget()
+        self.stack: QtWidgets.QStackedWidget = QtWidgets.QStackedWidget()
         main_layout.addWidget(self.stack, 1)
-        self.list_panel = ComplexListPanel()
+        self.list_panel: ComplexListPanel = ComplexListPanel()
         self.stack.addWidget(self.list_panel)
         self.editor_panel = ComplexEditor(self.macro_map)
         self.editor_panel.conn = self.conn

@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-from typing import Dict
 from pathlib import Path
+from typing import Dict
+
+from complex_editor.param_spec import ALLOWED_PARAMS
 
 from ..domain import MacroDef, MacroParam
-
 from .access_driver import fetch_macro_pairs
-
 
 CANDIDATE_MACRO_COLS = ["MacroName", "FunctionName", "Macro", "Function"]
 
-
 # Only the first three columns are mandatory. Min/Max are nice-to-have.
 CORE_PARAM_COLS = {"ParamName", "ParamType", "DefValue"}
+# Helper list used for SELECT queries
+PARAM_COLS = ["ParamName", "ParamType", "DefValue", "MinValue", "MaxValue"]
 
 
-def _fetch_param_rows(cursor, table: str):
+def _fetch_param_rows(cursor, table: str) -> list[tuple]:
     cols = ", ".join(["IDFunction"] + PARAM_COLS)
     query = f"SELECT {cols} FROM [{table}]"
     return cursor.execute(query).fetchall()
@@ -23,40 +24,28 @@ def _fetch_param_rows(cursor, table: str):
 
 def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     """Discover mapping from IDFunction to :class:`MacroDef`."""
-    # If there’s no DB connection, just load the YAML fallback immediately.
+    macro_map: Dict[int, MacroDef] = {}
+    # If there's no DB connection, build the macro map solely from YAML.
     if cursor is None:
-        import yaml
-        import importlib.resources
-
-        pkg_files = importlib.resources.files("complex_editor.resources")
-        yaml_path = pkg_files.joinpath("macro_fallback.yaml")
-        if not yaml_path.is_file():
-            alt = Path.cwd() / "macro_fallback.yaml"
-            if alt.is_file():
-                yaml_path = alt
-
-        data = yaml_path.read_text()
-        raw = yaml.safe_load(data).get("macros", [])
-        macro_map: Dict[int, MacroDef] = {}
-        for entry in raw:
-            params = [
-                MacroParam(
-                    name=p.get("name"),
-                    type=p.get("type"),
-                    default=p.get("default"),
-                    min=p.get("min"),
-                    max=p.get("max"),
-                )
-                for p in entry.get("params", [])
-            ]
-            macro_map[entry["id_function"]] = MacroDef(
-                id_function=entry["id_function"],
-                name=entry["name"],
-                params=params,
+        next_id = 1
+        for name, spec in ALLOWED_PARAMS.items():
+            macro_map[next_id] = MacroDef(
+                id_function=next_id,
+                name=name,
+                params=[
+                    MacroParam(
+                        name=pname,
+                        type=spec[pname].get("type", "STR"),
+                        default=spec[pname].get("default"),
+                        min=spec[pname].get("min"),
+                        max=spec[pname].get("max"),
+                    )
+                    for pname in spec
+                ],
             )
+            next_id += 1
         return macro_map
 
-    macro_map: Dict[int, MacroDef] = {}
     tables = {}
     for t in cursor.tables(tableType="TABLE"):
         table = t.table_name
@@ -66,8 +55,7 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     macro_tables = [
         (table, next((c for c in CANDIDATE_MACRO_COLS if c in cols), None))
         for table, cols in tables.items()
-        if "IDFunction" in cols
-        and any(c in cols for c in CANDIDATE_MACRO_COLS)
+        if "IDFunction" in cols and any(c in cols for c in CANDIDATE_MACRO_COLS)
     ]
 
     param_tables = [
@@ -92,87 +80,62 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
             if id_func not in macro_map:
                 continue
             param = MacroParam(
-                name=str(getattr(row, "ParamName", row[1])) if getattr(row, "ParamName", row[1]) is not None else None,
-                type=str(getattr(row, "ParamType", row[2])) if getattr(row, "ParamType", row[2]) is not None else None,
+                name=str(getattr(row, "ParamName", row[1]) or ""),
+                type=str(getattr(row, "ParamType", row[2]) or ""),
                 default=(
-                    str(getattr(row, "DefValue", row[3])) if getattr(row, "DefValue", row[3]) is not None else None
+                    str(getattr(row, "DefValue", row[3]))
+                    if getattr(row, "DefValue", row[3]) is not None
+                    else None
                 ),
                 min=(
-                    str(getattr(row, "MinValue", row[4])) if getattr(row, "MinValue", row[4]) is not None else None
+                    str(getattr(row, "MinValue", row[4]))
+                    if getattr(row, "MinValue", row[4]) is not None
+                    else None
                 ),
                 max=(
-                    str(getattr(row, "MaxValue", row[5])) if getattr(row, "MaxValue", row[5]) is not None else None
+                    str(getattr(row, "MaxValue", row[5]))
+                    if getattr(row, "MaxValue", row[5]) is not None
+                    else None
                 ),
             )
             macro_map[id_func].params.append(param)
 
-    # If any macros were discovered without parameter definitions, fall back to
-    # the bundled YAML to populate them so the wizard isn't blank.
-    missing = [m for m in macro_map.values() if not m.params]
-    if missing:
-        import importlib.resources
-        import yaml
-
-        pkg_files = importlib.resources.files("complex_editor.resources")
-        yaml_path = pkg_files.joinpath("macro_fallback.yaml")
-        if not yaml_path.is_file():
-            alt = Path.cwd() / "macro_fallback.yaml"
-            if alt.is_file():
-                yaml_path = alt
-        raw = yaml.safe_load(yaml_path.read_text()).get("macros", [])
-        fb_map = {entry["name"]: entry for entry in raw}
-        for macro in missing:
-            data = fb_map.get(macro.name)
-            if not data:
-                continue
-            macro.params = [
-                MacroParam(
-                    name=p.get("name"),
-                    type=p.get("type"),
-                    default=p.get("default"),
-                    min=p.get("min"),
-                    max=p.get("max"),
-                )
-                for p in data.get("params", [])
-            ]
-
-    if not macro_map:
-        import importlib.resources
-        import yaml
-        res_files = importlib.resources.files("complex_editor.resources")
-        yaml_path = res_files.joinpath("macro_fallback.yaml")
-        if not yaml_path.is_file():
-            alt = Path.cwd() / "macro_fallback.yaml"
-            if alt.is_file():
-                yaml_path = alt
-        data = yaml_path.read_text()
-        for entry in yaml.safe_load(data)["macros"]:
-            params = [
-                MacroParam(
-                    name=p.get("name"),
-                    type=p.get("type"),
-                    default=p.get("default"),
-                    min=p.get("min"),
-                    max=p.get("max"),
-                )
-                for p in entry.get("params", [])
-            ]
-            macro_map[entry["id_function"]] = MacroDef(
-                id_function=entry["id_function"],
-                name=entry["name"],
-                params=params,
+    for m in macro_map.values():
+        if m.params:
+            continue
+        spec = ALLOWED_PARAMS.get(m.name, {})
+        if not spec:
+            continue
+        m.params = [
+            MacroParam(
+                name=pname,
+                type=spec[pname].get("type", "STR"),
+                default=spec[pname].get("default"),
+                min=spec[pname].get("min"),
+                max=spec[pname].get("max"),
             )
-     # ───────────────── DB introspection finished ──────────────────
+            for pname in spec
+        ]
 
-    # ── merge YAML fallback for macros that are missing or param-less
-    import importlib.resources, yaml
-    yaml_path = importlib.resources.files("complex_editor.resources") / "macro_fallback.yaml"
-    fallback = yaml.safe_load(yaml_path.read_text())["macros"]
-    for entry in fallback:
-        if entry["id_function"] not in macro_map or not macro_map[entry["id_function"]].params:
-            macro_map[entry["id_function"]] = MacroDef(
-                entry["id_function"],
-                entry["name"],
-                [MacroParam(**p) for p in entry.get("params", [])],
-            )
+    existing = {m.name for m in macro_map.values()}
+    next_id = max(macro_map.keys(), default=0) + 1
+    for name, spec in ALLOWED_PARAMS.items():
+        if name in existing:
+            continue
+        macro_map[next_id] = MacroDef(
+            id_function=next_id,
+            name=name,
+            params=[
+                MacroParam(
+                    name=pname,
+                    type=spec[pname].get("type", "STR"),
+                    default=spec[pname].get("default"),
+                    min=spec[pname].get("min"),
+                    max=spec[pname].get("max"),
+                )
+                for pname in spec
+            ],
+        )
+        next_id += 1
+
     return macro_map

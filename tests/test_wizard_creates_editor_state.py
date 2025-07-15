@@ -8,11 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
-from complex_editor.ui.new_complex_wizard import NewComplexWizard  # noqa: E402
-from complex_editor.ui.main_window import MainWindow  # noqa: E402
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
+from complex_editor.ui.main_window import MainWindow  # noqa: E402
+from complex_editor.ui.new_complex_wizard import NewComplexWizard  # noqa: E402
 
 
 class FakeCursorNoTables:
@@ -50,6 +52,7 @@ def test_wizard_creates_editor_state(qtbot):
 
     pins = [str(p) for p in wizard.sub_components[0].pins]
     window.editor_panel.pin_table.set_pins(pins)
-    window.editor_panel._build_param_widgets(macro_map[1])
+    macro = next(m for m in macro_map.values() if m.name == "RESISTOR")
+    window.editor_panel._build_param_widgets(macro)
     assert window.editor_panel.pin_table.pins() == pins
     assert window.editor_panel.param_form.rowCount() > 1
