@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtGui
 
 from ..db import connect, discover_macro_map
 from ..domain import MacroDef
@@ -15,7 +15,7 @@ from .new_complex_wizard import NewComplexWizard
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window."""
 
-    cursor: Any | None
+    db_cursor: Any | None
     macro_map: dict[int, MacroDef]
     stack: QtWidgets.QStackedWidget
     list_panel: ComplexListPanel
@@ -23,11 +23,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, conn: Optional[Any] = None) -> None:
         super().__init__()
         self.conn = conn
-        self.cursor: Any | None = conn.cursor() if conn else None
+        self.db_cursor: Any | None = conn.cursor() if conn else None
         self.macro_map: dict[int, MacroDef] = {}
         self.setWindowTitle("Complex Editor")
         self._build_ui()
-        if self.cursor:
+        if self.db_cursor:
             self.load_data()
 
     def _build_ui(self) -> None:
@@ -57,10 +57,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list_panel.newComplexRequested.connect(self._new_complex)
         self.setCentralWidget(central)
         # Menu
-        file_menu = self.menuBar().addMenu("File")
-        open_act = file_menu.addAction("Open…")
+        menubar = cast(QtWidgets.QMenuBar, self.menuBar())
+        file_menu = cast(QtWidgets.QMenu, menubar.addMenu("File"))
+        open_act = cast(QtGui.QAction, file_menu.addAction("Open…"))
         open_act.triggered.connect(self.open_mdb)
-        self.save_act = file_menu.addAction("Save")
+        self.save_act = cast(QtGui.QAction, file_menu.addAction("Save"))
         self.save_act.triggered.connect(self.editor_panel.save_complex)
         self.save_act.setEnabled(False)
 
@@ -113,7 +114,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not path:
             return
         self.conn = connect(path)
-        self.cursor = self.conn.cursor()
+        self.db_cursor = self.conn.cursor()
         self.load_data()
 
     def load_data(self) -> None:
@@ -121,8 +122,8 @@ class MainWindow(QtWidgets.QMainWindow):
         Load all lookups and tree/list data from the database cursor.
         Always attempt to load macros (DB first, then fallback YAML).
         """
-        self.macro_map = discover_macro_map(self.cursor)
-        self.list_panel.load_rows(self.cursor, self.macro_map)
+        self.macro_map = discover_macro_map(self.db_cursor)
+        self.list_panel.load_rows(self.db_cursor, self.macro_map)
         self.editor_panel.conn = self.conn
         self.editor_panel.set_macro_map(self.macro_map)
 
