@@ -13,7 +13,11 @@
 ```bash
 git clone https://github.com/your‑org/complex‑editor.git
 cd complex‑editor
-python -m venv .venv && source .venv/bin/activate      # Windows: .\.venv\Scripts\activate
+
+# optional: start fresh
+rm -rf .venv                 # PowerShell: Remove-Item -Recurse -Force .venv
+py -3.12 -m venv .venv
+source .venv/Scripts/activate
 pip install -r requirements.txt
 python -m complex_editor.cli --help
 python ui_skeleton.py          # works from project root without PYTHONPATH hacks
