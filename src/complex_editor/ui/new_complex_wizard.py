@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.resources
+import traceback
 from typing import Optional, cast
 
 from PyQt6 import QtWidgets
@@ -175,118 +176,138 @@ class ParamPage(QtWidgets.QWidget):
     def __init__(self) -> None:
         super().__init__()
         layout = QtWidgets.QVBoxLayout(self)
+        self.heading = QtWidgets.QLabel()
+        font = self.heading.font()
+        font.setBold(True)
+        self.heading.setFont(font)
+        layout.addWidget(self.heading)
+
+        self.group_box = QtWidgets.QGroupBox()
         self.form = QtWidgets.QFormLayout()
-        layout.addLayout(self.form)
+        self.form.setHorizontalSpacing(20)
+        self.form.setVerticalSpacing(10)
+        self.group_box.setLayout(self.form)
+        self.group_box.setContentsMargins(10, 10, 10, 10)
+        self.group_box.setMinimumWidth(300)
+        layout.addWidget(self.group_box)
         # copy button removed – params are edited directly
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         self.required: set[str] = set()
         self.macro_name: str = ""
 
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
-        while self.form.rowCount():
-            self.form.removeRow(0)
-        self.widgets = {}
-        self.required = set()
-        self.macro_name = macro.name
-        if not macro.params:
-            self.form.addRow(QtWidgets.QLabel("This macro has no editable parameters."))
-            return
-        self.required = {p.name for p in macro.params if p.default is None}
-        allowed = ALLOWED_PARAMS.get(macro.name, {})
-        for p in macro.params:
-            label = QtWidgets.QLabel(p.name)
-            spec = allowed.get(p.name)
-            w: QtWidgets.QWidget
-            if isinstance(spec, dict) and ("min" in spec or "max" in spec):
-                min_val = spec.get("min")
-                max_val = spec.get("max")
-                use_int = all(
-                    v is not None and float(v).is_integer() for v in (min_val, max_val)
-                ) and all(
-                    v is None or -2147483648 <= int(float(v)) <= 2147483647
-                    for v in (min_val, max_val)
-                )
-                if use_int:
-                    w = QtWidgets.QSpinBox()
-                    if min_val is not None:
-                        w.setMinimum(int(float(min_val)))
-                    if max_val is not None:
-                        w.setMaximum(int(float(max_val)))
-                else:
-                    w = QtWidgets.QDoubleSpinBox()
-                    if min_val is not None:
-                        w.setMinimum(float(min_val))
-                    if max_val is not None:
-                        w.setMaximum(float(max_val))
-                init = p.default if p.default is not None else min_val
-                if isinstance(w, QtWidgets.QSpinBox) and init is not None:
-                    w.setValue(int(float(init)))
-                elif isinstance(w, QtWidgets.QDoubleSpinBox) and init is not None:
-                    w.setValue(float(init))
-            elif isinstance(spec, list):
-                w = QtWidgets.QComboBox()
-                w.addItems([str(s) for s in spec])
-                if p.default is not None and str(p.default) in [str(s) for s in spec]:
-                    idx = [str(s) for s in spec].index(str(p.default))
-                    w.setCurrentIndex(idx)
-            elif isinstance(spec, dict) and "choices" in spec:
-                w = QtWidgets.QComboBox()
-                w.addItems([str(c) for c in spec.get("choices", [])])
-                if p.default is not None and str(p.default) in [
-                    str(c) for c in spec.get("choices", [])
-                ]:
-                    idx = [str(c) for c in spec.get("choices", [])].index(
-                        str(p.default)
+        try:
+            while self.form.rowCount():
+                self.form.removeRow(0)
+            self.widgets = {}
+            self.required = set()
+            self.macro_name = macro.name
+            self.heading.setText(macro.name)
+            self.group_box.setTitle(macro.name)
+            if not macro.params:
+                self.form.addRow(QtWidgets.QLabel("This macro has no editable parameters."))
+                return
+            self.required = {p.name for p in macro.params if p.default is None}
+            allowed = ALLOWED_PARAMS.get(macro.name, {})
+            for p in macro.params:
+                label = QtWidgets.QLabel(p.name)
+                spec = allowed.get(p.name)
+                w: QtWidgets.QWidget
+                if isinstance(spec, dict) and ("min" in spec or "max" in spec):
+                    min_val = spec.get("min")
+                    max_val = spec.get("max")
+                    use_int = all(
+                        v is not None and float(v).is_integer() for v in (min_val, max_val)
+                    ) and all(
+                        v is None or -2147483648 <= int(float(v)) <= 2147483647
+                        for v in (min_val, max_val)
                     )
-                    w.setCurrentIndex(idx)
-            else:
-                if p.type == "INT":
-                    w = QtWidgets.QSpinBox()
-                    if p.min is not None:
-                        w.setMinimum(int(p.min))
-                    if p.max is not None:
-                        w.setMaximum(int(p.max))
-                elif p.type == "FLOAT":
-                    w = QtWidgets.QDoubleSpinBox()
-                    if p.min is not None:
-                        w.setMinimum(float(p.min))
-                    if p.max is not None:
-                        w.setMaximum(float(p.max))
-                elif p.type == "BOOL":
-                    w = QtWidgets.QCheckBox()
-                elif p.type == "ENUM":
+                    if use_int:
+                        w = QtWidgets.QSpinBox()
+                        if min_val is not None:
+                            w.setMinimum(int(float(min_val)))
+                        if max_val is not None:
+                            w.setMaximum(int(float(max_val)))
+                    else:
+                        w = QtWidgets.QDoubleSpinBox()
+                        if min_val is not None:
+                            w.setMinimum(float(min_val))
+                        if max_val is not None:
+                            w.setMaximum(float(max_val))
+                    init = p.default if p.default is not None else min_val
+                    if isinstance(w, QtWidgets.QSpinBox) and init is not None:
+                        w.setValue(int(float(init)))
+                    elif isinstance(w, QtWidgets.QDoubleSpinBox) and init is not None:
+                        w.setValue(float(init))
+                elif isinstance(spec, list):
                     w = QtWidgets.QComboBox()
-                    choices = (p.default or p.min or "").split(";")
-                    if len(choices) > 1:
-                        w.addItems(choices)
+                    w.addItems([str(s) for s in spec])
+                    if p.default is not None and str(p.default) in [str(s) for s in spec]:
+                        idx = [str(s) for s in spec].index(str(p.default))
+                        w.setCurrentIndex(idx)
+                elif isinstance(spec, dict) and "choices" in spec:
+                    w = QtWidgets.QComboBox()
+                    w.addItems([str(c) for c in spec.get("choices", [])])
+                    if p.default is not None and str(p.default) in [
+                        str(c) for c in spec.get("choices", [])
+                    ]:
+                        idx = [str(c) for c in spec.get("choices", [])].index(str(p.default))
+                        w.setCurrentIndex(idx)
                 else:
-                    w = QtWidgets.QLineEdit()
-            self.widgets[p.name] = w
-            self.form.addRow(label, w)
-            val = params.get(p.name, p.default)
-            if isinstance(w, QtWidgets.QSpinBox) and val is not None:
-                w.setValue(int(float(val)))
-            elif isinstance(w, QtWidgets.QDoubleSpinBox) and val is not None:
-                w.setValue(float(val))
-            elif isinstance(w, QtWidgets.QCheckBox):
-                w.setChecked(str(val).lower() in ("1", "true", "yes"))
-            elif isinstance(w, QtWidgets.QComboBox) and val is not None:
-                idx = w.findText(str(val))
-                if idx >= 0:
-                    w.setCurrentIndex(idx)
-            elif isinstance(w, QtWidgets.QLineEdit) and val is not None:
-                w.setText(str(val))
+                    if p.type == "INT":
+                        w = QtWidgets.QSpinBox()
+                        if p.min is not None:
+                            w.setMinimum(int(p.min))
+                        if p.max is not None:
+                            w.setMaximum(int(p.max))
+                    elif p.type == "FLOAT":
+                        w = QtWidgets.QDoubleSpinBox()
+                        if p.min is not None:
+                            w.setMinimum(float(p.min))
+                        if p.max is not None:
+                            w.setMaximum(float(p.max))
+                    elif p.type == "BOOL":
+                        w = QtWidgets.QCheckBox()
+                    elif p.type == "ENUM":
+                        w = QtWidgets.QComboBox()
+                        choices = (p.default or p.min or "").split(";")
+                        if len(choices) > 1:
+                            w.addItems(choices)
+                    else:
+                        w = QtWidgets.QLineEdit()
+                self.widgets[p.name] = w
+                self.form.addRow(label, w)
+                val = params.get(p.name, p.default)
+                if isinstance(w, QtWidgets.QSpinBox) and val is not None:
+                    w.setValue(int(float(val)))
+                elif isinstance(w, QtWidgets.QDoubleSpinBox) and val is not None:
+                    w.setValue(float(val))
+                elif isinstance(w, QtWidgets.QCheckBox):
+                    w.setChecked(str(val).lower() in ("1", "true", "yes"))
+                elif isinstance(w, QtWidgets.QComboBox) and val is not None:
+                    idx = w.findText(str(val))
+                    if idx >= 0:
+                        w.setCurrentIndex(idx)
+                elif isinstance(w, QtWidgets.QLineEdit) and val is not None:
+                    w.setText(str(val))
 
-            if isinstance(w, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-                w.valueChanged.connect(self._validate)
-            elif isinstance(w, QtWidgets.QComboBox):
-                w.currentIndexChanged.connect(self._validate)
-            elif isinstance(w, QtWidgets.QCheckBox):
-                w.stateChanged.connect(self._validate)
-            else:
-                w.textChanged.connect(self._validate)
+                if isinstance(w, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
+                    w.valueChanged.connect(self._validate)
+                elif isinstance(w, QtWidgets.QComboBox):
+                    w.currentIndexChanged.connect(self._validate)
+                elif isinstance(w, QtWidgets.QCheckBox):
+                    w.stateChanged.connect(self._validate)
+                else:
+                    w.textChanged.connect(self._validate)
 
-        self._validate()
+            self._validate()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Param Page Error",
+                f"{e.__class__.__name__}: {e}\n\n" + traceback.format_exc(),
+            )
+            raise
 
     def param_values(self) -> dict[str, str]:
         result: dict[str, str] = {}
