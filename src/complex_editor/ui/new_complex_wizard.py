@@ -175,6 +175,9 @@ class ParamPage(QtWidgets.QWidget):
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
         while self.form.rowCount():
             self.form.removeRow(0)
+        if not macro.params:
+            self.form.addRow(QtWidgets.QLabel("This macro has no editable parameters."))
+            return       
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         self.required: set[str] = {p.name for p in macro.params if p.default is None}
         self.macro_name = macro.name
@@ -451,7 +454,12 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc.macro.name = macro.name
         sc.pins = pins
         self.param_page.build_widgets(macro, sc.macro.params)
-        self.stack.setCurrentWidget(self.param_page)
+        if macro.params:                       # normal case
+            self.param_page.build_widgets(macro, sc.macro.params)
+            self.stack.setCurrentWidget(self.param_page)
+        else:                                  # no parameters → skip page
+            self._save_params()
+            self.stack.setCurrentWidget(self.review_page)
         self._update_nav()
 
     def _save_params(self) -> None:

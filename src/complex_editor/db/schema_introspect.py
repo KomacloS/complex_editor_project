@@ -11,7 +11,8 @@ from .access_driver import fetch_macro_pairs
 CANDIDATE_MACRO_COLS = ["MacroName", "FunctionName", "Macro", "Function"]
 
 
-PARAM_COLS = ["ParamName", "ParamType", "DefValue", "MinValue", "MaxValue"]
+# Only the first three columns are mandatory. Min/Max are nice-to-have.
+CORE_PARAM_COLS = {"ParamName", "ParamType", "DefValue"}
 
 
 def _fetch_param_rows(cursor, table: str):
@@ -72,7 +73,7 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     param_tables = [
         table
         for table, cols in tables.items()
-        if "IDFunction" in cols and all(p in cols for p in PARAM_COLS)
+        if "IDFunction" in cols and CORE_PARAM_COLS.issubset(cols)
     ]
 
     for table, macro_col in macro_tables:
@@ -160,5 +161,18 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
                 id_function=entry["id_function"],
                 name=entry["name"],
                 params=params,
+            )
+     # ───────────────── DB introspection finished ──────────────────
+
+    # ── merge YAML fallback for macros that are missing or param-less
+    import importlib.resources, yaml
+    yaml_path = importlib.resources.files("complex_editor.resources") / "macro_fallback.yaml"
+    fallback = yaml.safe_load(yaml_path.read_text())["macros"]
+    for entry in fallback:
+        if entry["id_function"] not in macro_map or not macro_map[entry["id_function"]].params:
+            macro_map[entry["id_function"]] = MacroDef(
+                entry["id_function"],
+                entry["name"],
+                [MacroParam(**p) for p in entry.get("params", [])],
             )
     return macro_map
