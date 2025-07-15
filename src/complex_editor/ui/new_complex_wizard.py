@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import importlib.resources
+import logging
 import traceback
 from typing import Optional, cast
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtCore
 
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
 from ..param_spec import ALLOWED_PARAMS
@@ -190,6 +191,15 @@ class ParamPage(QtWidgets.QWidget):
         self.group_box.setContentsMargins(10, 10, 10, 10)
         self.group_box.setMinimumWidth(300)
         layout.addWidget(self.group_box)
+        self.warn_label = QtWidgets.QLabel()
+        self.warn_label.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignCenter
+        )
+        self.warn_label.setStyleSheet(
+            "background:#FFEB9C;padding:20px;font-weight:bold"
+        )
+        self.warn_label.hide()
+        layout.addWidget(self.warn_label)
         # copy button removed – params are edited directly
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         self.required: set[str] = set()
@@ -204,8 +214,17 @@ class ParamPage(QtWidgets.QWidget):
             self.macro_name = macro.name
             self.heading.setText(macro.name)
             self.group_box.setTitle(macro.name)
+            self.warn_label.hide()
+            self.group_box.show()
             if not macro.params:
-                self.form.addRow(QtWidgets.QLabel("This macro has no editable parameters."))
+                logging.getLogger(__name__).warning(
+                    "Macro %s has no parameter definition in DB or YAML", macro.name
+                )
+                self.group_box.hide()
+                self.warn_label.setText(
+                    f"\N{WARNING SIGN} Parameters for '{macro.name}' could not be found. Check your YAML file."
+                )
+                self.warn_label.show()
                 return
             self.required = {p.name for p in macro.params if p.default is None}
             allowed = ALLOWED_PARAMS.get(macro.name, {})
@@ -302,6 +321,9 @@ class ParamPage(QtWidgets.QWidget):
 
             self._validate()
         except Exception as e:
+            logging.getLogger(__name__).exception(
+                "Failed to build param page for %s", macro.name
+            )
             QtWidgets.QMessageBox.critical(
                 self,
                 "Param Page Error",

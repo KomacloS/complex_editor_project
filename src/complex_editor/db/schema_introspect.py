@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict
+import logging
 
 from complex_editor.param_spec import ALLOWED_PARAMS
 
@@ -24,6 +25,7 @@ def _fetch_param_rows(cursor, table: str) -> list[tuple]:
 
 def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     """Discover mapping from IDFunction to :class:`MacroDef`."""
+    log = logging.getLogger(__name__)
     macro_map: Dict[int, MacroDef] = {}
     # If there's no DB connection, build the macro map solely from YAML.
     if cursor is None:
@@ -47,10 +49,14 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
         return macro_map
 
     tables = {}
-    for t in cursor.tables(tableType="TABLE"):
-        table = t.table_name
-        columns = [c.column_name for c in cursor.columns(table=table)]
-        tables[table] = columns
+    try:
+        for t in cursor.tables(tableType="TABLE"):
+            table = t.table_name
+            columns = [c.column_name for c in cursor.columns(table=table)]
+            tables[table] = columns
+    except Exception:
+        log.exception("Failed to inspect MDB tables")
+        return macro_map
 
     macro_tables = [
         (table, next((c for c in CANDIDATE_MACRO_COLS if c in cols), None))
@@ -104,8 +110,9 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     for m in macro_map.values():
         if m.params:
             continue
-        spec = ALLOWED_PARAMS.get(m.name.strip(), {})   # ← new
+        spec = ALLOWED_PARAMS.get(m.name.strip(), {})
         if not spec:
+            log.warning("Macro %s has no parameter definition in DB or YAML", m.name)
             continue
         m.params = [
             MacroParam(

@@ -1,7 +1,13 @@
 from __future__ import annotations
+# ruff: noqa: E402
 
-import sys
 from typing import Any, Optional, cast
+import logging
+import sys
+
+from ..bootstrap import add_repo_src_to_syspath
+
+add_repo_src_to_syspath()
 
 from PyQt6 import QtWidgets, QtGui
 
@@ -113,7 +119,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         if not path:
             return
-        self.conn = connect(path)
+        try:
+            self.conn = connect(path)
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to connect to MDB %s", path)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Open MDB Error",
+                "Could not open database. Check logs for details.",
+            )
+            return
         self.db_cursor = self.conn.cursor()
         self.load_data()
 
@@ -132,6 +147,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 def run_gui(mdb_path: Optional[str] = None) -> None:
+    import complex_editor.logging_cfg  # noqa: F401
+
     app = QtWidgets.QApplication(sys.argv)
     conn = connect(mdb_path) if mdb_path else None
     window = MainWindow(conn)
