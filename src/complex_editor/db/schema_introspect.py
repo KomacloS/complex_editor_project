@@ -24,7 +24,8 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     """Discover mapping from IDFunction to :class:`MacroDef`."""
     # If there’s no DB connection, just load the YAML fallback immediately.
     if cursor is None:
-        import yaml, importlib.resources
+        import yaml
+        import importlib.resources
 
         pkg_files = importlib.resources.files("complex_editor.resources")
         yaml_path = pkg_files.joinpath("macro_fallback.yaml")
