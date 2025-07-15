@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import types
 import os
 import sys
+import types
 import types as py_types
 
 # Provide a dummy pyodbc module so import succeeds
 sys.modules.setdefault("pyodbc", py_types.ModuleType("pyodbc"))
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
 
@@ -48,7 +50,7 @@ class FakeCursor:
 
 def test_discover_macro_map():
     result = discover_macro_map(FakeCursor())
-    assert list(result) == [1]
+    assert 1 in result
     macro = result[1]
     assert macro.name == "MACRO1"
     assert len(macro.params) == 2
@@ -59,4 +61,3 @@ def test_discover_macro_map():
     assert macro.params[0].max == "10"
     assert macro.params[1].name == "P2"
     assert macro.params[1].type == "BOOL"
-

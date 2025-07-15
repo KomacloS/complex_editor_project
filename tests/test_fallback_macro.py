@@ -6,7 +6,9 @@ import types
 
 sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+)
 
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
 
@@ -25,4 +27,7 @@ class FakeCursorNoTables:
 
 def test_fallback_macro():
     result = discover_macro_map(FakeCursorNoTables())
-    assert "TRANSISTOR_BJT" in [m.name for m in result.values()]
+    by_name = {m.name: m for m in result.values()}
+    assert "TRANSISTOR_BJT" in by_name
+    assert "RESISTOR" in by_name
+    assert by_name["RESISTOR"].params

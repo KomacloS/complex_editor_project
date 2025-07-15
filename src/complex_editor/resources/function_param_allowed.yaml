@@ -2489,7 +2489,7 @@ TRANSFORMER:
     min: 0.0
     max: 100.0
     default: 0.0
-TRANSISTOR:
+TRANSISTOR_BJT:
   Anode:
     type: INT
     min: -99999999999.0
@@ -3472,7 +3472,7 @@ TRANSISTOR_P:
     - 6 Wire
     - Auto
     default: 2 Wire
-VOLTAGEREGULATOR:
+VOLTAGE_REGULATOR:
   EnPin:
     type: PIN
     default: 0.0
