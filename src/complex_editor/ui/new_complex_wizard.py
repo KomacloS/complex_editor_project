@@ -187,15 +187,23 @@ class ParamPage(QtWidgets.QWidget):
             ):
                 min_val = spec.get("min")
                 max_val = spec.get("max")
-                use_int = all(
-                    v is not None and float(v).is_integer() for v in (min_val, max_val)
+                use_int = (
+                    all(
+                        v is not None and float(v).is_integer()
+                        for v in (min_val, max_val)
+                    )
+                    and all(
+                        v is None
+                        or -2147483648 <= int(float(v)) <= 2147483647
+                        for v in (min_val, max_val)
+                    )
                 )
                 if use_int:
                     w = QtWidgets.QSpinBox()
                     if min_val is not None:
-                        w.setMinimum(int(min_val))
+                        w.setMinimum(int(float(min_val)))
                     if max_val is not None:
-                        w.setMaximum(int(max_val))
+                        w.setMaximum(int(float(max_val)))
                 else:
                     w = QtWidgets.QDoubleSpinBox()
                     if min_val is not None:

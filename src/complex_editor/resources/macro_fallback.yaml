@@ -7,6 +7,12 @@ macros:
         default: "0"
         min: "0"
         max: "100"
+      - name: Pin1
+        type: INT
+      - name: Pin2
+        type: INT
+      - name: Quality
+        type: INT
   - id_function: 2
     name: CAPACITOR
     params:
