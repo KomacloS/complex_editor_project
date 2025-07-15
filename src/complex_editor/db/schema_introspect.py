@@ -71,8 +71,9 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
             if id_function is None or name is None:
                 continue
             id_func = int(id_function)
+            clean_name = str(name).strip()          # ← new
             if id_func not in macro_map:
-                macro_map[id_func] = MacroDef(id_func, str(name), [])
+                macro_map[id_func] = MacroDef(id_func, clean_name, [])
 
     for table in param_tables:
         for row in _fetch_param_rows(cursor, table):
@@ -103,7 +104,7 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     for m in macro_map.values():
         if m.params:
             continue
-        spec = ALLOWED_PARAMS.get(m.name, {})
+        spec = ALLOWED_PARAMS.get(m.name.strip(), {})   # ← new
         if not spec:
             continue
         m.params = [
