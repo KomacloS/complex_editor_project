@@ -4,6 +4,7 @@ import importlib.resources
 import os
 import sys
 import types
+import logging
 
 import pytest
 import yaml
@@ -15,6 +16,8 @@ sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 )
+
+import complex_editor.logging_cfg  # noqa: F401
 
 from PyQt6 import QtWidgets  # noqa: E402
 
@@ -179,3 +182,16 @@ def test_param_page_build(qapp, macro_name):
                     ] == choices
             else:
                 assert isinstance(widget, QtWidgets.QLineEdit)
+
+
+def test_param_page_missing_banner(qapp, caplog):
+    macro = MacroDef(id_function=1, name="GATE", params=[])
+    page = ParamPage()
+    with caplog.at_level(logging.WARNING):
+        page.build_widgets(macro, {})
+    assert not page.warn_label.isHidden()
+    assert "could not be found" in page.warn_label.text()
+    assert any(
+        "Macro GATE has no parameter definition in DB or YAML" in rec.getMessage()
+        for rec in caplog.records
+    )

@@ -16,6 +16,7 @@ cd complex‑editor
 python -m venv .venv && source .venv/bin/activate      # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
 python -m complex_editor.cli --help
+python ui_skeleton.py          # works from project root without PYTHONPATH hacks
 ```
 
 ## Directory layout
