@@ -515,18 +515,19 @@ class NewComplexWizard(QtWidgets.QDialog):
         """Enable/disable Back & Next based on current page content."""
         page = self.stack.currentWidget()
         self.back_btn.setEnabled(page is not self.basics_page or page is self.review_page)
-        ok = getattr(self, "_mapping_ok", True) and getattr(self, "_params_ok", True)
-
         if page is self.macro_page:
+            ok = self._mapping_ok and self._params_ok
             self.next_btn.setEnabled(ok)
         elif page is self.param_page:
+            ok = self._params_ok
             self.next_btn.setEnabled(ok and self.param_page.required_filled())
         elif page is self.review_page:
+            ok = self._mapping_ok and self._params_ok
             self.next_btn.setEnabled(False)
             self.review_page.save_btn.setText("Finish")
             self.review_page.save_btn.setEnabled(ok)
         else:
-            self.next_btn.setEnabled(ok)
+            self.next_btn.setEnabled(True)
             self.review_page.save_btn.setText("Save")
-            self.review_page.save_btn.setEnabled(ok)
+            self.review_page.save_btn.setEnabled(self._mapping_ok and self._params_ok)
 
