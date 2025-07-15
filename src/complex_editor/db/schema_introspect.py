@@ -118,7 +118,7 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
             for pname in spec
         ]
 
-    existing = {m.name for m in macro_map.values()}
+    existing = {m.name.strip() for m in macro_map.values()}
     next_id = max(macro_map.keys(), default=0) + 1
     for name, spec in ALLOWED_PARAMS.items():
         if name in existing:

@@ -31,3 +31,9 @@ def test_fallback_macro():
     assert "TRANSISTOR_BJT" in by_name
     assert "RESISTOR" in by_name
     assert by_name["RESISTOR"].params
+
+
+def test_yaml_only_macros_are_loaded():
+    result = discover_macro_map(None)
+    names = {m.name for m in result.values()}
+    assert "GATE" in names
