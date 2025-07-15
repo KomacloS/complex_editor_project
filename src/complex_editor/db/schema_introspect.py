@@ -24,7 +24,8 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
     """Discover mapping from IDFunction to :class:`MacroDef`."""
     # If there’s no DB connection, just load the YAML fallback immediately.
     if cursor is None:
-        import yaml, importlib.resources
+        import yaml
+        import importlib.resources
 
         pkg_files = importlib.resources.files("complex_editor.resources")
         yaml_path = pkg_files.joinpath("macro_fallback.yaml")
@@ -103,6 +104,36 @@ def discover_macro_map(cursor) -> Dict[int, MacroDef]:
                 ),
             )
             macro_map[id_func].params.append(param)
+
+    # If any macros were discovered without parameter definitions, fall back to
+    # the bundled YAML to populate them so the wizard isn't blank.
+    missing = [m for m in macro_map.values() if not m.params]
+    if missing:
+        import importlib.resources
+        import yaml
+
+        pkg_files = importlib.resources.files("complex_editor.resources")
+        yaml_path = pkg_files.joinpath("macro_fallback.yaml")
+        if not yaml_path.is_file():
+            alt = Path.cwd() / "macro_fallback.yaml"
+            if alt.is_file():
+                yaml_path = alt
+        raw = yaml.safe_load(yaml_path.read_text()).get("macros", [])
+        fb_map = {entry["name"]: entry for entry in raw}
+        for macro in missing:
+            data = fb_map.get(macro.name)
+            if not data:
+                continue
+            macro.params = [
+                MacroParam(
+                    name=p.get("name"),
+                    type=p.get("type"),
+                    default=p.get("default"),
+                    min=p.get("min"),
+                    max=p.get("max"),
+                )
+                for p in data.get("params", [])
+            ]
 
     if not macro_map:
         import importlib.resources
