@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6 import QtCore, QtGui, QtWidgets
-import yaml, importlib.resources
+from PyQt6 import QtWidgets
+import yaml
+import importlib.resources
 
 with importlib.resources.files("complex_editor.resources").joinpath(
     "function_param_allowed.yaml"
@@ -169,14 +170,14 @@ class ParamPage(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         self.form = QtWidgets.QFormLayout()
         layout.addLayout(self.form)
-        self.copy_btn = QtWidgets.QPushButton("Copy Params From...")
-        layout.addWidget(self.copy_btn)
+        # copy button removed – params are edited directly
 
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
         while self.form.rowCount():
             self.form.removeRow(0)
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         self.required: set[str] = {p.name for p in macro.params if p.default is None}
+        self.macro_name = macro.name
         allowed = ALLOWED_PARAMS.get(macro.name, {})
         for p in macro.params:
             label = QtWidgets.QLabel(p.name)
@@ -247,7 +248,7 @@ class ParamPage(QtWidgets.QWidget):
             self.form.addRow(label, w)
             val = params.get(p.name, p.default)
             if isinstance(w, QtWidgets.QSpinBox) and val is not None:
-                w.setValue(int(val))
+                w.setValue(int(float(val)))
             elif isinstance(w, QtWidgets.QDoubleSpinBox) and val is not None:
                 w.setValue(float(val))
             elif isinstance(w, QtWidgets.QCheckBox):
@@ -258,6 +259,17 @@ class ParamPage(QtWidgets.QWidget):
                     w.setCurrentIndex(idx)
             elif isinstance(w, QtWidgets.QLineEdit) and val is not None:
                 w.setText(str(val))
+
+            if isinstance(w, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
+                w.valueChanged.connect(self._validate)
+            elif isinstance(w, QtWidgets.QComboBox):
+                w.currentIndexChanged.connect(self._validate)
+            elif isinstance(w, QtWidgets.QCheckBox):
+                w.stateChanged.connect(self._validate)
+            else:
+                w.textChanged.connect(self._validate)
+
+        self._validate()
 
     def param_values(self) -> dict[str, str]:
         result: dict[str, str] = {}
@@ -283,24 +295,49 @@ class ParamPage(QtWidgets.QWidget):
                 return False
         return True
 
+    # ------------------------------------------------------------------ helpers
+    def _widget_value(self, w):
+        if isinstance(w, QtWidgets.QSpinBox):
+            return w.value()
+        if isinstance(w, QtWidgets.QDoubleSpinBox):
+            return w.value()
+        if isinstance(w, QtWidgets.QComboBox):
+            return w.currentText()
+        if isinstance(w, QtWidgets.QCheckBox):
+            return w.isChecked()
+        return w.text()
 
-class CopyParamsDialog(QtWidgets.QDialog):
-    def __init__(self, names: list[str], parent=None) -> None:
-        super().__init__(parent)
-        layout = QtWidgets.QVBoxLayout(self)
-        self.list = QtWidgets.QListWidget()
-        self.list.addItems(names)
-        layout.addWidget(self.list)
-        btn_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok
-            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
-        )
-        layout.addWidget(btn_box)
-        btn_box.accepted.connect(self.accept)
-        btn_box.rejected.connect(self.reject)
+    def _validate(self) -> None:
+        """
+        Mark invalid inputs red and expose boolean flag
+        (`self.parent().parent()._params_ok`) so the wizard
+        can enable/disable navigation buttons.
+        """
+        allowed = ALLOWED_PARAMS.get(self.macro_name, {})
+        self_valid = True
+        for pname, widget in self.widgets.items():
+            widget.setStyleSheet("")
+            spec = allowed.get(pname)
+            value = self._widget_value(widget)
+            ok = True
+            if isinstance(spec, dict):
+                lo, hi = spec.get("min"), spec.get("max")
+                if lo is not None and float(value) < float(lo):
+                    ok = False
+                if hi is not None and float(value) > float(hi):
+                    ok = False
+            elif isinstance(spec, list):
+                ok = str(value) in [str(s) for s in spec]
+            if not ok:
+                self_valid = False
+                widget.setStyleSheet("background:#FFCCCC;")
+        wiz_parent = self.parentWidget()
+        if wiz_parent is not None and wiz_parent.parent() is not None:
+            wiz = wiz_parent.parent()
+            wiz._params_ok = self_valid
+            wiz._update_nav()
 
-    def selected_row(self) -> int:
-        return self.list.currentRow()
+
 
 
 class ReviewPage(QtWidgets.QWidget):
@@ -364,9 +401,9 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.add_btn.clicked.connect(self._add_sub)
         self.list_page.dup_btn.clicked.connect(self._dup_sub)
         self.list_page.del_btn.clicked.connect(self._del_sub)
-        self.param_page.copy_btn.clicked.connect(self._copy_params)
         self.review_page.save_btn.clicked.connect(self._finish)
         self._mapping_ok = False     # ② flag updated by pin-table
+        self._params_ok = True
 
         self._update_nav()
 
@@ -419,30 +456,26 @@ class NewComplexWizard(QtWidgets.QDialog):
 
     def _save_params(self) -> None:
         sc = self.sub_components[self.current_index]
-        sc.macro.params = self.param_page.param_values()
+        all_vals = self.param_page.param_values()
+        sc.macro.params = all_vals
+        macro_def = next((m for m in self.macro_map.values() if m.name == sc.macro.name), None)
+        overrides = []
+        if macro_def:
+            for p in macro_def.params:
+                cur = all_vals.get(p.name)
+                default = p.default
+                try:
+                    cur_f = float(cur)
+                    def_f = float(default) if default is not None else None
+                    same = def_f is not None and abs(cur_f - def_f) < 1e-9
+                except Exception:
+                    same = str(cur) == str(default)
+                if not same:
+                    overrides.append((p.name, str(cur)))
+        sc.macro.overrides = overrides
         text = f"{sc.macro.name} ({','.join(str(p) for p in sc.pins)})"
         self.list_page.list.item(self.current_index).setText(text)
 
-    def _copy_params(self) -> None:
-        names = [sc.macro.name for i, sc in enumerate(self.sub_components)
-                 if i != self.current_index]
-        if not names:
-            return
-        dlg = CopyParamsDialog(names, self)
-        self.param_page._copy_dialog = dlg
-        def apply_copy():
-            sel = dlg.selected_row()
-            if sel >= 0:
-                if sel >= self.current_index:
-                    sel += 1
-                source = self.sub_components[sel]
-                target = self.sub_components[self.current_index]
-                target.macro.params = source.macro.params.copy()
-                macro = next((m for m in self.macro_map.values() if m.name == target.macro.name), None)
-                if macro:
-                    self.param_page.build_widgets(macro, target.macro.params)
-        dlg.accepted.connect(apply_copy)
-        dlg.open()
 
     def _back(self) -> None:
         page = self.stack.currentWidget()
@@ -482,16 +515,18 @@ class NewComplexWizard(QtWidgets.QDialog):
         """Enable/disable Back & Next based on current page content."""
         page = self.stack.currentWidget()
         self.back_btn.setEnabled(page is not self.basics_page or page is self.review_page)
+        ok = getattr(self, "_mapping_ok", True) and getattr(self, "_params_ok", True)
 
         if page is self.macro_page:
-            # macro must be chosen and mapping valid
-            self.next_btn.setEnabled(self._mapping_ok)
+            self.next_btn.setEnabled(ok)
         elif page is self.param_page:
-            self.next_btn.setEnabled(self.param_page.required_filled())
+            self.next_btn.setEnabled(ok and self.param_page.required_filled())
         elif page is self.review_page:
             self.next_btn.setEnabled(False)
             self.review_page.save_btn.setText("Finish")
+            self.review_page.save_btn.setEnabled(ok)
         else:
-            self.next_btn.setEnabled(True)
+            self.next_btn.setEnabled(ok)
             self.review_page.save_btn.setText("Save")
+            self.review_page.save_btn.setEnabled(ok)
 

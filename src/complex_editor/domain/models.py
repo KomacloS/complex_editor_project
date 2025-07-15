@@ -26,6 +26,7 @@ class MacroInstance:
 
     name: str
     params: Dict[str, str] = field(default_factory=dict)
+    overrides: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
