@@ -100,6 +100,10 @@ class MacroPinsPage(QtWidgets.QWidget):
             logical_names = [p.name for p in macro.params if p.name.startswith("Pin")]
             if not logical_names:
                 logical_names = ["Pin A", "Pin B", "Pin C", "Pin D"]
+        if len(logical_names) < 4:
+            extra = ["Pin A", "Pin B", "Pin C", "Pin D"]
+            for name in extra[len(logical_names):4]:
+                logical_names.append(name)
 
         self.pin_table.blockSignals(True)
         self.pin_table.setRowCount(len(logical_names))
@@ -156,12 +160,9 @@ class MacroPinsPage(QtWidgets.QWidget):
         wiz._mapping_ok = mapping_ok
         wiz._update_nav()
 
-        all_set = all(
-            cast(QtWidgets.QComboBox, self.pin_table.cellWidget(r, 1)).currentText()
-            for r in range(self.pin_table.rowCount())
-        )
-        if all_set and hasattr(wiz, "_goto_param_page"):
-            wiz._goto_param_page()
+        # navigation to the parameter page now happens only when the user
+        # presses "Next" in the wizard. The table change merely updates
+        # navigation button state without auto-switching pages.
 
 
 class ParamPage(QtWidgets.QWidget):
@@ -178,14 +179,20 @@ class ParamPage(QtWidgets.QWidget):
         self.heading.setFont(font)
         layout.addWidget(self.heading)
 
+        self.scroll = QtWidgets.QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        layout.addWidget(self.scroll)
+
         self.group_box = QtWidgets.QGroupBox()
-        self.form = QtWidgets.QFormLayout()
-        self.form.setHorizontalSpacing(20)
-        self.form.setVerticalSpacing(10)
-        self.group_box.setLayout(self.form)
+        self.grid = QtWidgets.QGridLayout()
+        self.grid.setHorizontalSpacing(20)
+        self.grid.setVerticalSpacing(10)
+        self.grid.setColumnStretch(1, 1)
+        self.grid.setColumnStretch(3, 1)
+        self.group_box.setLayout(self.grid)
         self.group_box.setContentsMargins(10, 10, 10, 10)
         self.group_box.setMinimumWidth(300)
-        layout.addWidget(self.group_box)
+        self.scroll.setWidget(self.group_box)
         self.warn_label = QtWidgets.QLabel()
         self.warn_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.warn_label.setStyleSheet(
@@ -200,8 +207,12 @@ class ParamPage(QtWidgets.QWidget):
 
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
         try:
-            while self.form.rowCount():
-                self.form.removeRow(0)
+            while self.grid.count():
+                item = self.grid.takeAt(0)
+                if item is not None:
+                    w = item.widget()
+                    if w is not None:
+                        w.deleteLater()
             self.widgets = {}
             self.required = set()
             self.macro_name = macro.name
@@ -259,6 +270,8 @@ class ParamPage(QtWidgets.QWidget):
                 else:
                     macro.params.append(MacroParam(pname, "INT", None, None, None))
             self.required = {p.name for p in macro.params if p.default is None}
+            row = 0
+            col = 0
             for p in macro.params:
                 label = QtWidgets.QLabel(p.name)
                 spec = allowed.get(p.name)
@@ -331,7 +344,12 @@ class ParamPage(QtWidgets.QWidget):
                     else:
                         w = QtWidgets.QLineEdit()
                 self.widgets[p.name] = w
-                self.form.addRow(label, w)
+                self.grid.addWidget(label, row, col * 2)
+                self.grid.addWidget(w, row, col * 2 + 1)
+                col += 1
+                if col >= 2:
+                    col = 0
+                    row += 1
                 val = params.get(p.name, p.default)
                 if isinstance(w, QtWidgets.QSpinBox) and val is not None:
                     w.setValue(int(float(val)))
