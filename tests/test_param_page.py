@@ -140,16 +140,20 @@ def test_param_page_build(qapp, macro_name):
                     widget.setValue(widget.maximum() + 5)
                     assert widget.value() <= widget.maximum()
                 else:
-                    assert isinstance(widget, QtWidgets.QDoubleSpinBox)
-                    if min_v is not None:
-                        assert widget.minimum() == pytest.approx(float(min_v), abs=0.01)
-                    if max_v is not None:
-                        assert widget.maximum() == pytest.approx(float(max_v), abs=0.01)
-                    init = p.default if p.default is not None else min_v
-                    if init is not None:
-                        assert widget.value() == pytest.approx(float(init), abs=0.01)
-                    widget.setValue(widget.maximum() * 2)
-                    assert widget.value() <= widget.maximum()
+                    if macro_name == "GATE" and p.name.startswith("Check_"):
+                        assert isinstance(widget, QtWidgets.QLineEdit)
+                    else:
+                        assert isinstance(widget, QtWidgets.QDoubleSpinBox)
+                    if not isinstance(widget, QtWidgets.QLineEdit):
+                        if min_v is not None:
+                            assert widget.minimum() == pytest.approx(float(min_v), abs=0.01)
+                        if max_v is not None:
+                            assert widget.maximum() == pytest.approx(float(max_v), abs=0.01)
+                        init = p.default if p.default is not None else min_v
+                        if init is not None:
+                            assert widget.value() == pytest.approx(float(init), abs=0.01)
+                        widget.setValue(widget.maximum() * 2)
+                        assert widget.value() <= widget.maximum()
         elif isinstance(spec, list):
             assert isinstance(widget, QtWidgets.QComboBox)
             assert [widget.itemText(i) for i in range(widget.count())] == [

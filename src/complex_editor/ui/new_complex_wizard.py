@@ -100,6 +100,10 @@ class MacroPinsPage(QtWidgets.QWidget):
             logical_names = [p.name for p in macro.params if p.name.startswith("Pin")]
             if not logical_names:
                 logical_names = ["Pin A", "Pin B", "Pin C", "Pin D"]
+        if len(logical_names) < 4:
+            extra = ["Pin A", "Pin B", "Pin C", "Pin D"]
+            for name in extra[len(logical_names):4]:
+                logical_names.append(name)
 
         self.pin_table.blockSignals(True)
         self.pin_table.setRowCount(len(logical_names))
@@ -156,12 +160,9 @@ class MacroPinsPage(QtWidgets.QWidget):
         wiz._mapping_ok = mapping_ok
         wiz._update_nav()
 
-        all_set = all(
-            cast(QtWidgets.QComboBox, self.pin_table.cellWidget(r, 1)).currentText()
-            for r in range(self.pin_table.rowCount())
-        )
-        if all_set and hasattr(wiz, "_goto_param_page"):
-            wiz._goto_param_page()
+        # navigation to the parameter page now happens only when the user
+        # presses "Next" in the wizard. The table change merely updates
+        # navigation button state without auto-switching pages.
 
 
 class ParamPage(QtWidgets.QWidget):
@@ -178,14 +179,20 @@ class ParamPage(QtWidgets.QWidget):
         self.heading.setFont(font)
         layout.addWidget(self.heading)
 
+        self.scroll = QtWidgets.QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        layout.addWidget(self.scroll)
+
         self.group_box = QtWidgets.QGroupBox()
-        self.form = QtWidgets.QFormLayout()
-        self.form.setHorizontalSpacing(20)
-        self.form.setVerticalSpacing(10)
-        self.group_box.setLayout(self.form)
+        self.grid = QtWidgets.QGridLayout()
+        self.grid.setHorizontalSpacing(20)
+        self.grid.setVerticalSpacing(10)
+        self.grid.setColumnStretch(1, 1)
+        self.grid.setColumnStretch(3, 1)
+        self.group_box.setLayout(self.grid)
         self.group_box.setContentsMargins(10, 10, 10, 10)
         self.group_box.setMinimumWidth(300)
-        layout.addWidget(self.group_box)
+        self.scroll.setWidget(self.group_box)
         self.warn_label = QtWidgets.QLabel()
         self.warn_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.warn_label.setStyleSheet(
@@ -197,13 +204,19 @@ class ParamPage(QtWidgets.QWidget):
         self.widgets: dict[str, QtWidgets.QWidget] = {}
         self.required: set[str] = set()
         self.macro_name: str = ""
+        self.errors: list[str] = []
 
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
         try:
-            while self.form.rowCount():
-                self.form.removeRow(0)
+            while self.grid.count():
+                item = self.grid.takeAt(0)
+                if item is not None:
+                    w = item.widget()
+                    if w is not None:
+                        w.deleteLater()
             self.widgets = {}
             self.required = set()
+            self.errors = []
             self.macro_name = macro.name
             self.heading.setText(macro.name)
             self.group_box.setTitle(macro.name)
@@ -259,11 +272,30 @@ class ParamPage(QtWidgets.QWidget):
                 else:
                     macro.params.append(MacroParam(pname, "INT", None, None, None))
             self.required = {p.name for p in macro.params if p.default is None}
-            for p in macro.params:
+            row = 0
+            col = 0
+            mid = (len(macro.params) + 1) // 2
+            left = macro.params[:mid]
+            right = macro.params[mid:]
+            ordered = list(left) + list(right)
+            for idx, p in enumerate(ordered):
+                if idx < len(left):
+                    row = idx
+                    col = 0
+                else:
+                    row = idx - len(left)
+                    col = 1
                 label = QtWidgets.QLabel(p.name)
                 spec = allowed.get(p.name)
                 w: QtWidgets.QWidget
-                if isinstance(spec, dict) and ("min" in spec or "max" in spec):
+                if macro.name == "GATE" and p.name in {
+                    "Check_A",
+                    "Check_B",
+                    "Check_C",
+                    "Check_D",
+                }:
+                    w = QtWidgets.QLineEdit()
+                elif isinstance(spec, dict) and ("min" in spec or "max" in spec):
                     min_val = spec.get("min")
                     max_val = spec.get("max")
                     use_int = all(
@@ -331,7 +363,8 @@ class ParamPage(QtWidgets.QWidget):
                     else:
                         w = QtWidgets.QLineEdit()
                 self.widgets[p.name] = w
-                self.form.addRow(label, w)
+                self.grid.addWidget(label, row, col * 2)
+                self.grid.addWidget(w, row, col * 2 + 1)
                 val = params.get(p.name, p.default)
                 if isinstance(w, QtWidgets.QSpinBox) and val is not None:
                     w.setValue(int(float(val)))
@@ -343,8 +376,25 @@ class ParamPage(QtWidgets.QWidget):
                     idx = w.findText(str(val))
                     if idx >= 0:
                         w.setCurrentIndex(idx)
-                elif isinstance(w, QtWidgets.QLineEdit) and val is not None:
-                    w.setText(str(val))
+                elif isinstance(w, QtWidgets.QLineEdit):
+                    if val is not None and not (
+                        p.type == "PIN" and str(val) == "-99999999999.0"
+                    ):
+                        if not (
+                            macro.name == "GATE"
+                            and p.name in {
+                                "PathPin_A",
+                                "PathPin_B",
+                                "PathPin_C",
+                                "PathPin_D",
+                                "Check_A",
+                                "Check_B",
+                                "Check_C",
+                                "Check_D",
+                            }
+                            and str(val) in {"-1", "-1.0"}
+                        ):
+                            w.setText(str(val))
 
                 if isinstance(w, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
                     w.valueChanged.connect(self._validate)
@@ -410,6 +460,7 @@ class ParamPage(QtWidgets.QWidget):
         can enable/disable navigation buttons.
         """
         allowed = ALLOWED_PARAMS.get(self.macro_name, {})
+        self.errors = []
         self_valid = True
         for pname, widget in self.widgets.items():
             widget.setStyleSheet("")
@@ -435,6 +486,59 @@ class ParamPage(QtWidgets.QWidget):
             if not ok:
                 self_valid = False
                 widget.setStyleSheet("background:#FFCCCC;")
+                if isinstance(spec, dict) and ("min" in spec or "max" in spec):
+                    msg = f"{pname} must be between {lo} and {hi}"
+                elif isinstance(spec, list):
+                    msg = f"{pname} must be one of {', '.join(str(s) for s in spec)}"
+                elif isinstance(spec, dict) and "choices" in spec:
+                    msg = f"{pname} must be one of {', '.join(str(c) for c in spec.get('choices', []))}"
+                else:
+                    msg = f"{pname} is invalid"
+                self.errors.append(msg)
+
+        if self.macro_name == "GATE":
+            gate_errs: list[str] = []
+            path_names = [f"PathPin_{c}" for c in "ABCD"]
+            check_names = [f"Check_{c}" for c in "ABCD"]
+            values: dict[str, str] = {}
+            for name in path_names + check_names:
+                w = self.widgets.get(name)
+                if isinstance(w, QtWidgets.QLineEdit):
+                    text = w.text().strip()
+                    if text in {"-1", "-1.0"}:
+                        text = ""
+                    values[name] = text
+            lengths = {len(v) for v in values.values() if v}
+            if len(lengths) > 1:
+                gate_errs.append("PathPin/Check fields must all have the same length")
+                for name in values:
+                    widget = self.widgets.get(name)
+                    if widget is not None:
+                        widget.setStyleSheet("background:#FFCCCC;")
+            for name in path_names:
+                text = values.get(name, "")
+                if text in {"", "-1", "-1.0"}:
+                    continue
+                allowed_set = {"1", "0", "H", "L"}
+                if name in ("PathPin_B", "PathPin_D"):
+                    allowed_set.add("Z")
+                if any(ch not in allowed_set for ch in text):
+                    gate_errs.append(f"{name} allows only {' '.join(sorted(allowed_set))}")
+                    widget = self.widgets.get(name)
+                    if widget is not None:
+                        widget.setStyleSheet("background:#FFCCCC;")
+            for name in check_names:
+                text = values.get(name, "")
+                if text in {"", "-1", "-1.0"}:
+                    continue
+                if any(ch not in {"1", "0"} for ch in text):
+                    gate_errs.append(f"{name} allows only 1 or 0")
+                    widget = self.widgets.get(name)
+                    if widget is not None:
+                        widget.setStyleSheet("background:#FFCCCC;")
+            if gate_errs:
+                self_valid = False
+                self.errors.extend(gate_errs)
         wiz_parent = self.parentWidget()
         if wiz_parent is not None and wiz_parent.parent() is not None:
             wiz = cast(NewComplexWizard, wiz_parent.parent())
@@ -686,7 +790,32 @@ class NewComplexWizard(QtWidgets.QDialog):
                     def_f = float(default) if default is not None else None
                     same = def_f is not None and abs(cur_f - def_f) < 1e-9
                 except Exception:
-                    same = str(cur) == str(default)
+                    if (
+                        p.type == "PIN"
+                        and (cur is None or str(cur) == "")
+                        and str(default) == "-99999999999.0"
+                    ):
+                        same = True
+                    elif (
+                        macro_def
+                        and macro_def.name == "GATE"
+                        and p.name
+                        in {
+                            "PathPin_A",
+                            "PathPin_B",
+                            "PathPin_C",
+                            "PathPin_D",
+                            "Check_A",
+                            "Check_B",
+                            "Check_C",
+                            "Check_D",
+                        }
+                        and (cur is None or str(cur) == "")
+                        and str(default) in {"-1", "-1.0"}
+                    ):
+                        same = True
+                    else:
+                        same = str(cur) == str(default)
                 if not same:
                     overrides.append((p.name, str(cur)))
         sc.macro.overrides = overrides
@@ -714,6 +843,11 @@ class NewComplexWizard(QtWidgets.QDialog):
         elif page is self.macro_page:
             self._open_param_page()
         elif page is self.param_page:
+            self.param_page._validate()
+            if not self._params_ok or not self.param_page.required_filled():
+                msg = "\n".join(self.param_page.errors) or "Invalid parameters"
+                QtWidgets.QMessageBox.warning(self, "Parameter Error", msg)
+                return
             self._save_params()
             self.stack.setCurrentWidget(self.list_page)
         elif page is self.list_page:
@@ -736,11 +870,10 @@ class NewComplexWizard(QtWidgets.QDialog):
             page is not self.basics_page or page is self.review_page
         )
         if page is self.macro_page:
-            ok = self._mapping_ok and self._params_ok
+            ok = self._mapping_ok
             self.next_btn.setEnabled(ok)
         elif page is self.param_page:
-            ok = self._params_ok
-            self.next_btn.setEnabled(ok and self.param_page.required_filled())
+            self.next_btn.setEnabled(self.param_page.required_filled())
         elif page is self.review_page:
             ok = self._mapping_ok and self._params_ok
             self.next_btn.setEnabled(False)
