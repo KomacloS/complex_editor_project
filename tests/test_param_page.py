@@ -95,7 +95,7 @@ def qapp():
 ALL_MACROS = [k for k in ALLOWED.keys() if k != "version"]
 
 
-@pytest.mark.parametrize("macro_name", ALL_MACROS + ["FALLBACK"])
+@pytest.mark.parametrize("macro_name", ALL_MACROS)
 def test_param_page_build(qapp, macro_name):
     macro = make_macro(macro_name)
     page = ParamPage()
@@ -184,14 +184,23 @@ def test_param_page_build(qapp, macro_name):
                 assert isinstance(widget, QtWidgets.QLineEdit)
 
 
+def test_param_page_build_missing_macro(qapp):
+    """Macros without YAML definitions should show a warning banner."""
+    macro = make_macro("FALLBACK")
+    page = ParamPage()
+    page.build_widgets(macro, {})
+    assert not page.group_box.isVisible()
+    assert "could not be found" in page.warn_label.text()
+
+
 def test_param_page_missing_banner(qapp, caplog):
-    macro = MacroDef(id_function=1, name="GATE", params=[])
+    macro = MacroDef(id_function=1, name="NOPE", params=[])
     page = ParamPage()
     with caplog.at_level(logging.WARNING):
         page.build_widgets(macro, {})
     assert not page.warn_label.isHidden()
     assert "could not be found" in page.warn_label.text()
     assert any(
-        "Macro GATE has no parameter definition in DB or YAML" in rec.getMessage()
+        "Macro NOPE has no parameter definition in DB or YAML" in rec.getMessage()
         for rec in caplog.records
     )

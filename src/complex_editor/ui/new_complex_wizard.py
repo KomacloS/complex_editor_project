@@ -7,7 +7,13 @@ from typing import Optional, cast
 
 from PyQt6 import QtWidgets, QtCore
 
-from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
+from ..domain import (
+    ComplexDevice,
+    MacroDef,
+    MacroInstance,
+    SubComponent,
+    MacroParam,
+)
 from ..param_spec import ALLOWED_PARAMS
 
 
@@ -218,7 +224,8 @@ class ParamPage(QtWidgets.QWidget):
             self.group_box.setTitle(macro.name)
             self.warn_label.hide()
             self.group_box.show()
-            if not macro.params:
+            allowed = ALLOWED_PARAMS.get(macro.name)
+            if allowed is None:
                 logging.getLogger(__name__).warning(
                     "Macro %s has no parameter definition in DB or YAML", macro.name
                 )
@@ -228,8 +235,45 @@ class ParamPage(QtWidgets.QWidget):
                 )
                 self.warn_label.show()
                 return
+            # ---- merge YAML params not present in MacroDef ----
+            existing = {p.name for p in macro.params}
+            for pname, spec in allowed.items():
+                if pname in existing:
+                    continue
+                if isinstance(spec, dict):
+                    if "choices" in spec or spec.get("type") == "ENUM":
+                        ptype = "ENUM"
+                        default = spec.get("default")
+                        macro.params.append(
+                            MacroParam(pname, ptype, str(default) if default is not None else None, None, None)
+                        )
+                        continue
+                    min_v = spec.get("min")
+                    max_v = spec.get("max")
+                    is_int = (
+                        min_v is not None
+                        and max_v is not None
+                        and float(min_v).is_integer()
+                        and float(max_v).is_integer()
+                    )
+                    ptype = "INT" if is_int else "FLOAT"
+                    macro.params.append(
+                        MacroParam(
+                            pname,
+                            ptype,
+                            str(spec.get("default")) if spec.get("default") is not None else None,
+                            str(min_v) if min_v is not None else None,
+                            str(max_v) if max_v is not None else None,
+                        )
+                    )
+                elif isinstance(spec, list):
+                    default = spec[0] if spec else None
+                    macro.params.append(
+                        MacroParam(pname, "ENUM", str(default) if default is not None else None, None, None)
+                    )
+                else:
+                    macro.params.append(MacroParam(pname, "INT", None, None, None))
             self.required = {p.name for p in macro.params if p.default is None}
-            allowed = ALLOWED_PARAMS.get(macro.name, {})
             for p in macro.params:
                 label = QtWidgets.QLabel(p.name)
                 spec = allowed.get(p.name)
@@ -422,6 +466,20 @@ class ReviewPage(QtWidgets.QWidget):
         layout.addWidget(self.table)
         self.save_btn = QtWidgets.QPushButton("Save")
         layout.addWidget(self.save_btn)
+        self.edit_pins_btn = QtWidgets.QPushButton("Edit Pins")
+        self.edit_params_btn = QtWidgets.QPushButton("Edit Parameters")
+        self.edit_pins_btn.setEnabled(False)
+        self.edit_params_btn.setEnabled(False)
+        layout.insertWidget(layout.indexOf(self.save_btn), self.edit_pins_btn)
+        layout.insertWidget(layout.indexOf(self.save_btn), self.edit_params_btn)
+        self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
+        self.table.cellClicked.connect(lambda *_: self._update_buttons())
+        self._update_buttons()
+
+    def _update_buttons(self) -> None:
+        ok = self.table.currentRow() >= 0
+        self.edit_pins_btn.setEnabled(ok)
+        self.edit_params_btn.setEnabled(ok)
 
     def populate(self, comps: list[SubComponent]) -> None:
         self.table.setRowCount(len(comps))
@@ -483,6 +541,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.edit_pins_btn.clicked.connect(self._edit_selected_pins)
         self.list_page.edit_params_btn.clicked.connect(self._edit_selected_params)
         self.list_page.list.currentRowChanged.connect(self._update_edit_buttons)
+        self.review_page.edit_pins_btn.clicked.connect(self._edit_selected_pins_review)
+        self.review_page.edit_params_btn.clicked.connect(self._edit_selected_params_review)
         self.review_page.save_btn.clicked.connect(self._finish)
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
@@ -566,6 +626,24 @@ class NewComplexWizard(QtWidgets.QDialog):
                 QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1)
             )
             combo.setCurrentText(str(pin))
+        self._open_param_page()
+
+    # ------------------------------------------------------------------ review actions
+    def _selected_row_in_review(self) -> int:
+        return self.review_page.table.currentRow()
+
+    def _edit_selected_pins_review(self):
+        row = self._selected_row_in_review()
+        if row < 0:
+            return
+        self.current_index = row
+        self._open_macro_page()
+
+    def _edit_selected_params_review(self):
+        row = self._selected_row_in_review()
+        if row < 0:
+            return
+        self.current_index = row
         self._open_param_page()
 
     def _open_macro_page(self) -> None:
