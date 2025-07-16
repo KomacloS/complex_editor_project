@@ -38,7 +38,6 @@ def test_validation_and_overrides(qtbot):
     wiz.macro_page.macro_combo.setCurrentIndex(idx)
     wiz.macro_page.pin_table.cellWidget(0, 1).setCurrentText("1")
     wiz.macro_page.pin_table.cellWidget(1, 1).setCurrentText("2")
-    wiz._next()
     spin = wiz.param_page.widgets.get("Value")
     assert isinstance(spin, QtWidgets.QSpinBox)
     spin.setValue(1)
