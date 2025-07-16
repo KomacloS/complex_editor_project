@@ -38,6 +38,10 @@ class SubCompListPage(QtWidgets.QWidget):
         btns.addWidget(self.add_btn)
         btns.addWidget(self.dup_btn)
         btns.addWidget(self.del_btn)
+        self.edit_pins_btn = QtWidgets.QPushButton("Edit Pins")
+        self.edit_params_btn = QtWidgets.QPushButton("Edit Parameters")
+        btns.addWidget(self.edit_pins_btn)
+        btns.addWidget(self.edit_params_btn)
         btns.addStretch()
         layout.addLayout(btns)
 
@@ -192,9 +196,7 @@ class ParamPage(QtWidgets.QWidget):
         self.group_box.setMinimumWidth(300)
         layout.addWidget(self.group_box)
         self.warn_label = QtWidgets.QLabel()
-        self.warn_label.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignCenter
-        )
+        self.warn_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.warn_label.setStyleSheet(
             "background:#FFEB9C;padding:20px;font-weight:bold"
         )
@@ -236,7 +238,8 @@ class ParamPage(QtWidgets.QWidget):
                     min_val = spec.get("min")
                     max_val = spec.get("max")
                     use_int = all(
-                        v is not None and float(v).is_integer() for v in (min_val, max_val)
+                        v is not None and float(v).is_integer()
+                        for v in (min_val, max_val)
                     ) and all(
                         v is None or -2147483648 <= int(float(v)) <= 2147483647
                         for v in (min_val, max_val)
@@ -261,7 +264,9 @@ class ParamPage(QtWidgets.QWidget):
                 elif isinstance(spec, list):
                     w = QtWidgets.QComboBox()
                     w.addItems([str(s) for s in spec])
-                    if p.default is not None and str(p.default) in [str(s) for s in spec]:
+                    if p.default is not None and str(p.default) in [
+                        str(s) for s in spec
+                    ]:
                         idx = [str(s) for s in spec].index(str(p.default))
                         w.setCurrentIndex(idx)
                 elif isinstance(spec, dict) and "choices" in spec:
@@ -270,7 +275,9 @@ class ParamPage(QtWidgets.QWidget):
                     if p.default is not None and str(p.default) in [
                         str(c) for c in spec.get("choices", [])
                     ]:
-                        idx = [str(c) for c in spec.get("choices", [])].index(str(p.default))
+                        idx = [str(c) for c in spec.get("choices", [])].index(
+                            str(p.default)
+                        )
                         w.setCurrentIndex(idx)
                 else:
                     if p.type == "INT":
@@ -450,12 +457,17 @@ class NewComplexWizard(QtWidgets.QDialog):
         layout.addLayout(nav)
 
         self.basics_page = BasicsPage()
+        self.basics_page.setWindowTitle("Step 1: Basic Settings")
         self.list_page = SubCompListPage()
+        self.list_page.setWindowTitle("Step 2: Sub-Components")
         self.macro_page = MacroPinsPage(macro_map)
+        self.macro_page.setWindowTitle("Step 3: Edit Pins")
         # update macro_map in case dummy entries were added
         self.macro_map = self.macro_page.macro_map
         self.param_page = ParamPage()
+        self.param_page.setWindowTitle("Step 4: Edit Parameters")
         self.review_page = ReviewPage()
+        self.review_page.setWindowTitle("Step 5: Review Complex")
 
         self.stack.addWidget(self.basics_page)
         self.stack.addWidget(self.list_page)
@@ -468,9 +480,14 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.add_btn.clicked.connect(self._add_sub)
         self.list_page.dup_btn.clicked.connect(self._dup_sub)
         self.list_page.del_btn.clicked.connect(self._del_sub)
+        self.list_page.edit_pins_btn.clicked.connect(self._edit_selected_pins)
+        self.list_page.edit_params_btn.clicked.connect(self._edit_selected_params)
+        self.list_page.list.currentRowChanged.connect(self._update_edit_buttons)
         self.review_page.save_btn.clicked.connect(self._finish)
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
+
+        self._update_edit_buttons(-1)
 
         self._update_nav()
 
@@ -501,7 +518,9 @@ class NewComplexWizard(QtWidgets.QDialog):
         for r, pin in enumerate(orig.pins):
             if r >= self.macro_page.pin_table.rowCount():
                 break
-            combo = cast(QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1))
+            combo = cast(
+                QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1)
+            )
             combo.setCurrentText(str(pin))
 
     def _del_sub(self) -> None:
@@ -510,6 +529,44 @@ class NewComplexWizard(QtWidgets.QDialog):
             return
         self.sub_components.pop(row)
         self.list_page.list.takeItem(row)
+        self._update_edit_buttons(self.list_page.list.currentRow())
+
+    def _edit_selected_pins(self) -> None:
+        row = self.list_page.list.currentRow()
+        if row < 0:
+            return
+        self.current_index = row
+        sc = self.sub_components[row]
+        self._open_macro_page()
+        idx = self.macro_page.macro_combo.findText(sc.macro.name)
+        if idx >= 0:
+            self.macro_page.macro_combo.setCurrentIndex(idx)
+        for r, pin in enumerate(sc.pins):
+            if r >= self.macro_page.pin_table.rowCount():
+                break
+            combo = cast(
+                QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1)
+            )
+            combo.setCurrentText(str(pin))
+
+    def _edit_selected_params(self) -> None:
+        row = self.list_page.list.currentRow()
+        if row < 0:
+            return
+        self.current_index = row
+        sc = self.sub_components[row]
+        self._open_macro_page()
+        idx = self.macro_page.macro_combo.findText(sc.macro.name)
+        if idx >= 0:
+            self.macro_page.macro_combo.setCurrentIndex(idx)
+        for r, pin in enumerate(sc.pins):
+            if r >= self.macro_page.pin_table.rowCount():
+                break
+            combo = cast(
+                QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1)
+            )
+            combo.setCurrentText(str(pin))
+        self._open_param_page()
 
     def _open_macro_page(self) -> None:
         count = self.basics_page.pin_spin.value()
@@ -630,3 +687,8 @@ class NewComplexWizard(QtWidgets.QDialog):
             self.next_btn.setEnabled(True)
             self.review_page.save_btn.setText("Save")
             self.review_page.save_btn.setEnabled(self._mapping_ok and self._params_ok)
+
+    def _update_edit_buttons(self, row: int) -> None:
+        ok = row >= 0
+        self.list_page.edit_pins_btn.setEnabled(ok)
+        self.list_page.edit_params_btn.setEnabled(ok)
