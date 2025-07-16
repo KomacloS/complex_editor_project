@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.resources
 import logging
 import traceback
 from typing import Optional, cast
@@ -15,6 +14,7 @@ from ..domain import (
     MacroParam,
 )
 from ..param_spec import ALLOWED_PARAMS
+from ..db import discover_macro_map
 
 
 class BasicsPage(QtWidgets.QWidget):
@@ -66,25 +66,10 @@ class MacroPinsPage(QtWidgets.QWidget):
 
         # ── macro selector ──────────────────────────────────────────────
         self.macro_combo = QtWidgets.QComboBox()
-        names: list[str] = []
-        try:
-            res_root = importlib.resources.files("complex_editor.resources")
-            txt_path = res_root.joinpath("functions_ref.txt")
-            with txt_path.open("r", encoding="utf-8") as fh:
-                names = [ln.strip() for ln in fh if ln.strip()]
-        except Exception:
-            names = []
 
-        base_map = self.macro_map
-        existing_names = {m.name for m in base_map.values()}
-        next_id = -1
-        for name in names:
-            if name not in existing_names:
-                while next_id in base_map:
-                    next_id -= 1
-                base_map[next_id] = MacroDef(id_function=next_id, name=name, params=[])
-                next_id -= 1
-        self.macro_map = base_map
+        # Only list macros that are defined in the YAML spec. Any macros loaded
+        # from the MDB are ignored for the purpose of parameter editing.
+        self.macro_map = self.macro_map or {}
 
         if not self.macro_map:
             self.macro_combo.addItem("⚠  No macros loaded")
@@ -493,13 +478,13 @@ class ReviewPage(QtWidgets.QWidget):
 
 
 class NewComplexWizard(QtWidgets.QDialog):
-    def __init__(self, macro_map: dict[int, MacroDef], parent=None) -> None:
+    def __init__(self, macro_map: dict[int, MacroDef] | None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("New Complex")
         self.resize(600, 500)
-        # `MacroPinsPage` may extend the passed-in macro map with dummy
-        # entries, so keep a reference and update after constructing it.
-        self.macro_map = macro_map
+        # Always build the macro map from the YAML spec to avoid relying on the
+        # MDB for parameter information.
+        self.macro_map = discover_macro_map(None)
         self.sub_components: list[SubComponent] = []
         self.current_index: Optional[int] = None
 
@@ -518,7 +503,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.basics_page.setWindowTitle("Step 1: Basic Settings")
         self.list_page = SubCompListPage()
         self.list_page.setWindowTitle("Step 2: Sub-Components")
-        self.macro_page = MacroPinsPage(macro_map)
+        self.macro_page = MacroPinsPage(self.macro_map)
         self.macro_page.setWindowTitle("Step 3: Edit Pins")
         # update macro_map in case dummy entries were added
         self.macro_map = self.macro_page.macro_map
