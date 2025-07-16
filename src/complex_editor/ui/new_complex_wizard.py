@@ -224,7 +224,8 @@ class ParamPage(QtWidgets.QWidget):
             self.group_box.setTitle(macro.name)
             self.warn_label.hide()
             self.group_box.show()
-            if not macro.params:
+            allowed = ALLOWED_PARAMS.get(macro.name)
+            if allowed is None:
                 logging.getLogger(__name__).warning(
                     "Macro %s has no parameter definition in DB or YAML", macro.name
                 )
@@ -234,9 +235,7 @@ class ParamPage(QtWidgets.QWidget):
                 )
                 self.warn_label.show()
                 return
-            self.required = {p.name for p in macro.params if p.default is None}
-            allowed = ALLOWED_PARAMS.get(macro.name, {})
-            # ---- NEW ---- merge YAML params not present in MacroDef
+            # ---- merge YAML params not present in MacroDef ----
             existing = {p.name for p in macro.params}
             for pname, spec in allowed.items():
                 if pname in existing:
@@ -274,6 +273,7 @@ class ParamPage(QtWidgets.QWidget):
                     )
                 else:
                     macro.params.append(MacroParam(pname, "INT", None, None, None))
+            self.required = {p.name for p in macro.params if p.default is None}
             for p in macro.params:
                 label = QtWidgets.QLabel(p.name)
                 spec = allowed.get(p.name)
