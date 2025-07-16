@@ -38,16 +38,16 @@ def test_wizard_flow(qtbot):
     wizard.macro_page.macro_combo.setCurrentIndex(idx)
     wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("1")
     wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("2")
-    wizard._next()
     val_widget = wizard.param_page.widgets.get("Value")
     if isinstance(val_widget, QtWidgets.QSpinBox):
         val_widget.setValue(10)
     wizard._next()  # save params back to list
     wizard.list_page.list.setCurrentRow(0)
     wizard.list_page.dup_btn.click()
+    wizard._back()
     wizard.macro_page.pin_table.cellWidget(0, 1).setCurrentText("3")
+    wizard._back()
     wizard.macro_page.pin_table.cellWidget(1, 1).setCurrentText("4")
-    wizard._next()
     val_widget2 = wizard.param_page.widgets.get("Value")
     if isinstance(val_widget2, QtWidgets.QSpinBox):
         assert val_widget2.value() == 10
