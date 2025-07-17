@@ -1,13 +1,6 @@
 """Domain models."""
 
-from .models import (
-    ComplexDevice,
-    MacroDef,
-    MacroInstance,
-    MacroParam,
-    SubComponent,
-)
-from .pinxml import macro_to_xml, parse_param_xml
+from .models import ComplexDevice, MacroDef, MacroInstance, MacroParam, SubComponent
 
 __all__ = [
     "MacroParam",
@@ -15,7 +8,4 @@ __all__ = [
     "MacroInstance",
     "ComplexDevice",
     "SubComponent",
-    "macro_to_xml",
-    "parse_param_xml",
 ]
-
