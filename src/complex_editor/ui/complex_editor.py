@@ -1,18 +1,14 @@
 from __future__ import annotations
 
-from PyQt6 import QtCore, QtWidgets
 import pyodbc
+from PyQt6 import QtCore, QtWidgets
 
-from ..domain import (
-    ComplexDevice,
-    MacroDef,
-    MacroInstance,
-    SubComponent,
-    parse_param_xml,
-)
-from ..services import insert_complex
 from ..db import make_backup
+from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
+from ..domain.pinxml import PinXML
+from ..services import insert_complex
 from .pin_table import PinTable
+
 
 class ComplexEditor(QtWidgets.QWidget):
     """Form for editing/creating a complex device."""
@@ -124,8 +120,14 @@ class ComplexEditor(QtWidgets.QWidget):
             tip = f"{param.name}   "
             if param.min is not None or param.max is not None:
                 tip += f"[{param.min or ''}-{param.max or ''}] "
-            unit = next((u for u in ["Ohm", "F", "H", "V", "A", "Hz", "°C", "%"]
-                          if param.name.endswith(u)), "")
+            unit = next(
+                (
+                    u
+                    for u in ["Ohm", "F", "H", "V", "A", "Hz", "°C", "%"]
+                    if param.name.endswith(u)
+                ),
+                "",
+            )
             tip = tip + unit if unit else tip.rstrip()
             widget.setToolTip(tip.strip())
             self.param_widgets[param.name] = widget
@@ -181,7 +183,8 @@ class ComplexEditor(QtWidgets.QWidget):
         macro = self.macro_map.get(id_func)
         self._build_param_widgets(macro)
         pin_s = getattr(row, "PinS", row[6] if len(row) > 6 else None)
-        values = parse_param_xml(pin_s) if pin_s else {}
+        macros = PinXML.deserialize(pin_s) if pin_s else []
+        values = macros[0].params if macros else {}
         if macro:
             for p in macro.params:
                 w = self.param_widgets.get(p.name)

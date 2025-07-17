@@ -12,7 +12,9 @@ from .db import (
     make_backup,
     table_exists,
 )
-from .domain import ComplexDevice, MacroInstance, macro_to_xml
+from .domain import ComplexDevice, MacroInstance
+from .domain.pinxml import MacroInstance as PinMacroInstance
+from .domain.pinxml import PinXML
 from .services import insert_complex
 
 
@@ -67,9 +69,9 @@ def make_pinxml_cmd(args: argparse.Namespace) -> int:
             return 1
         name, value = item.split("=", 1)
         params_pairs.append((name, value))
-    macro = MacroInstance(args.macro, dict(params_pairs))
-    xml_str = macro_to_xml(macro)
-    hex_dump = " ".join(f"{b:02x}" for b in xml_str.encode("utf-16le"))
+    macro = PinMacroInstance(args.macro, dict(params_pairs))
+    xml_blob = PinXML.serialize([macro])
+    hex_dump = " ".join(f"{b:02x}" for b in xml_blob)
     print(hex_dump)
     return 0
 
@@ -146,4 +148,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
