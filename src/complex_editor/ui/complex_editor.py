@@ -1,23 +1,21 @@
 from __future__ import annotations
 
-import pyodbc
+from typing import Any
+
 from PyQt6 import QtCore, QtWidgets
 
-from ..db import make_backup
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
 from ..domain.pinxml import PinXML
-from ..services import insert_complex
 from .pin_table import PinTable
 
 
-class ComplexEditor(QtWidgets.QWidget):
-    """Form for editing/creating a complex device."""
+class ComplexEditor(QtWidgets.QDialog):
+    """Dialog for editing/creating a complex device."""
 
     dirtyChanged = QtCore.pyqtSignal(bool)
 
     def __init__(self, macro_map: dict[int, MacroDef] | None = None, parent=None):
         super().__init__(parent)
-        self.conn = None
         self.macro_map: dict[int, MacroDef] = macro_map or {}
         self.dirty = False
 
@@ -219,37 +217,52 @@ class ComplexEditor(QtWidgets.QWidget):
 
     # ------------------------------------------------------------------- save
     def save_complex(self) -> None:
-        if not self.conn:
-            QtWidgets.QMessageBox.warning(self, "Error", "No database open")
-            return
+        self.accept()
+
+    # ------------------------------------------------------------------ helpers
+    def to_update_dict(self) -> dict[str, Any]:
         pins = [p.strip() for p in self.pin_table.pins() if p.strip()]
         if len(set(pins)) < 2:
-            QtWidgets.QMessageBox.warning(
-                self, "Error", "At least two unique pins required"
-            )
-            return
+            raise ValueError("At least two unique pins required")
         data = self.macro_combo.currentData()
         if data is None:
-            QtWidgets.QMessageBox.warning(self, "Error", "No macro selected")
-            return
+            raise ValueError("No macro selected")
         id_func = int(data)
         macro_name = self.macro_combo.currentText()
         params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
-        device = ComplexDevice(
-            id_function=id_func, pins=pins, macro=MacroInstance(macro_name, params)
-        )
-        db_path = self.conn.getinfo(pyodbc.SQL_DATABASE_NAME)
-        bak = make_backup(db_path)
-        try:
-            new_id = insert_complex(self.conn, device)
-        except Exception as exc:  # pragma: no cover - error path
-            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
-            return
+        xml = PinXML.serialize([MacroInstance(macro_name, params)])
+        pad_vals = (pins + [None, None, None, None])[:4]
+        return {
+            "IDFunction": id_func,
+            "PinA": pad_vals[0],
+            "PinB": pad_vals[1],
+            "PinC": pad_vals[2],
+            "PinD": pad_vals[3],
+            "PinS": xml,
+        }
+
+    def load_from_model(self, cx: ComplexDevice) -> None:
+        self.pin_table.set_pins(cx.pins)
+        idx = self.macro_combo.findText(cx.macro.name)
+        if idx >= 0:
+            self.macro_combo.setCurrentIndex(idx)
+        macro = self.macro_map.get(cx.id_function)
+        self._build_param_widgets(macro)
+        for k, v in cx.macro.params.items():
+            w = self.param_widgets.get(k)
+            if isinstance(w, QtWidgets.QSpinBox):
+                w.setValue(int(v))
+            elif isinstance(w, QtWidgets.QDoubleSpinBox):
+                w.setValue(float(v))
+            elif isinstance(w, QtWidgets.QCheckBox):
+                w.setChecked(str(v).lower() in ("1", "true", "yes"))
+            elif isinstance(w, QtWidgets.QComboBox):
+                idx2 = w.findText(str(v))
+                if idx2 >= 0:
+                    w.setCurrentIndex(idx2)
+                elif w.count() == 0:
+                    w.addItem(str(v))
+            elif isinstance(w, QtWidgets.QLineEdit):
+                w.setText(str(v))
         self.dirty = False
         self.dirtyChanged.emit(False)
-        parent = self.parent()
-        if parent and hasattr(parent, "list_panel"):
-            parent.list_panel.load_rows(parent.cursor, parent.macro_map)
-        QtWidgets.QMessageBox.information(
-            self, "Saved", f"Inserted {new_id}\nBackup: {bak}"
-        )
