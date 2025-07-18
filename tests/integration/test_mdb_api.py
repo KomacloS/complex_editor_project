@@ -14,10 +14,18 @@ What is covered
 ✓ update / delete complex
 """
 
-from pathlib import Path
-import shutil, tempfile, uuid, json, re
-
+import pyodbc
 import pytest
+from pathlib import Path
+import shutil
+import tempfile
+import uuid
+import re
+
+try:
+    pyodbc.connect("DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=:memory:")
+except pyodbc.Error:
+    pytest.skip("Access ODBC driver not present", allow_module_level=True)
 
 from mdb_api import MDB, ComplexDevice, SubComponent
 

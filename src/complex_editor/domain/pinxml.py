@@ -4,8 +4,6 @@ blocks used in detCompDesc.PinS (UTF-16 XML).
 """
 
 from __future__ import annotations
-
-import ast
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
@@ -35,7 +33,8 @@ class PinXML:
             for pname, pval in inst.params.items():
                 ET.SubElement(macro_el, "Param", {"Value": str(pval), "Name": pname})
 
-        return ET.tostring(root, encoding=encoding, xml_declaration=True)
+        xml = ET.tostring(root, encoding=encoding, xml_declaration=True)
+        return xml.replace(b"utf-16le", b"utf-16", 1)
 
     @staticmethod
     def deserialize(xml: bytes | str) -> List[MacroInstance]:
@@ -46,10 +45,14 @@ class PinXML:
             params = {}
             for p in m_el:
                 val = p.attrib.get("Value")
-                try:
-                    val = ast.literal_eval(val)
-                except Exception:
-                    pass
+                if val is not None:
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        try:
+                            val = float(val)
+                        except ValueError:
+                            pass
                 params[p.attrib["Name"]] = val
             result.append(MacroInstance(name, params))
         return result

@@ -17,7 +17,7 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 )
 
-import complex_editor.logging_cfg  # noqa: F401
+import complex_editor.logging_cfg  # noqa: F401,E402
 
 from PyQt6 import QtWidgets  # noqa: E402
 

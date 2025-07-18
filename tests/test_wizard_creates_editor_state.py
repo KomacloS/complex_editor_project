@@ -13,8 +13,10 @@ sys.path.insert(
 )
 
 from complex_editor.db.schema_introspect import discover_macro_map  # noqa: E402
-from complex_editor.ui.main_window import MainWindow  # noqa: E402
 from complex_editor.ui.new_complex_wizard import NewComplexWizard  # noqa: E402
+from complex_editor.ui.complex_editor import ComplexEditor  # noqa: E402
+from complex_editor.domain import ComplexDevice, MacroInstance  # noqa: E402
+from PyQt6 import QtWidgets  # noqa: E402
 
 
 class FakeCursorNoTables:
@@ -31,10 +33,7 @@ class FakeCursorNoTables:
 
 def test_wizard_creates_editor_state(qtbot):
     macro_map = discover_macro_map(FakeCursorNoTables())
-    window = MainWindow(None)
-    window.macro_map = macro_map
-    window.editor_panel.set_macro_map(macro_map)
-    qtbot.addWidget(window)
+    qtbot.addWidget(QtWidgets.QWidget())
 
     wizard = NewComplexWizard(macro_map)
     qtbot.addWidget(wizard)
@@ -50,8 +49,10 @@ def test_wizard_creates_editor_state(qtbot):
     wizard.review_page.save_btn.click()
 
     pins = [str(p) for p in wizard.sub_components[0].pins]
-    window.editor_panel.pin_table.set_pins(pins)
-    macro = next(m for m in macro_map.values() if m.name == "RESISTOR")
-    window.editor_panel._build_param_widgets(macro)
-    assert window.editor_panel.pin_table.pins() == pins
-    assert window.editor_panel.param_form.rowCount() > 1
+    rid = next(k for k, m in macro_map.items() if m.name == "RESISTOR")
+    dev = ComplexDevice(rid, pins, MacroInstance("RESISTOR", {}))
+    editor = ComplexEditor(macro_map)
+    qtbot.addWidget(editor)
+    editor.load_from_model(dev)
+    assert editor.pin_table.pins() == pins
+    assert editor.param_form.rowCount() > 1

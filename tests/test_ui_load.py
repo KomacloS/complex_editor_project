@@ -15,6 +15,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from PyQt6 import QtWidgets  # noqa: E402
 from complex_editor.ui.main_window import MainWindow  # noqa: E402
+from complex_editor.ui.complex_editor import ComplexEditor  # noqa: E402
+from complex_editor.domain import ComplexDevice, MacroInstance  # noqa: E402
 
 
 class FakeCursor:
@@ -68,52 +70,51 @@ class FakeCursor:
         return []
 
 
-class FakeConnection:
-    def cursor(self):
-        return FakeCursor()
+class FakeMDB:
+    def __init__(self):
+        self.added = []
 
-    def getinfo(self, code):
-        return "dummy.mdb"
+    def list_complexes(self):
+        return [
+            (1, "CX1", "FUNC", 1),
+            (2, "CX2", "FUNC", 2),
+        ]
+
+    def discover_macro_map(self):
+        return {}
+
+    def get_complex(self, cid):
+        return ComplexDevice(cid, ["1", "2"], MacroInstance("FUNC", {}))
+
+    def add_complex(self, dev):
+        self.added.append(dev)
+        return 3
+
+    def update_complex(self, *a, **k):
+        pass
+
+    def delete_complex(self, *a, **k):
+        pass
 
 
-def test_main_window_load(qtbot):
-    window = MainWindow(FakeConnection())
+class DummyCtx:
+    def open_main_db(self, _):
+        return FakeMDB()
+
+
+def test_main_window_load(qtbot, monkeypatch):
+    monkeypatch.setattr("complex_editor.ui.main_window.AppContext", lambda: DummyCtx())
+    window = MainWindow(Path("dummy.mdb"))
     qtbot.addWidget(window)
-    model = window.list_panel.model
-    assert model.rowCount() == 2
+    assert window.list.rowCount() == 2
 
 
 def test_editor_save(qtbot, monkeypatch):
-    conn = FakeConnection()
-    window = MainWindow(conn)
+    monkeypatch.setattr("complex_editor.ui.main_window.AppContext", lambda: DummyCtx())
+    window = MainWindow(Path("dummy.mdb"))
     qtbot.addWidget(window)
-    window.list_panel.complexSelected.emit(None)
-    window.editor_panel.pin_table.set_pins(["X1", "X2"])
-    window.editor_panel.macro_combo.setCurrentIndex(0)
-    widget = window.editor_panel.param_widgets["P1"]
-    widget.setValue(5)
-
-    def fake_insert(c, dev):
-        window.list_panel.model.rows.append((3, dev.id_function, *dev.pins, b""))
-        return 3
-
-    monkeypatch.setattr(
-        "complex_editor.ui.complex_editor.insert_complex", fake_insert
-    )
-    bak_called = {}
-    monkeypatch.setattr(
-        "complex_editor.ui.complex_editor.make_backup",
-        lambda p: (bak_called.setdefault("path", p), Path("backup.bak"))[1],
-    )
-    info_text = {}
-    monkeypatch.setattr(
-        QtWidgets.QMessageBox,
-        "information",
-        lambda *a, **k: info_text.setdefault("msg", a[2]),
-    )
-    monkeypatch.setattr(window.list_panel, "load_rows", lambda c, m: None)
-    window.editor_panel.conn = conn
-    window.editor_panel.save_complex()
-    assert window.list_panel.model.rowCount() == 3
-    assert Path("backup.bak") == Path(info_text["msg"].split()[-1])
-    assert bak_called["path"] == "dummy.mdb"
+    dlg = ComplexEditor({})
+    qtbot.addWidget(dlg)
+    dlg.pin_table.set_pins(["1", "2"])
+    dlg.save_btn.click()
+    assert dlg.result() == QtWidgets.QDialog.DialogCode.Accepted

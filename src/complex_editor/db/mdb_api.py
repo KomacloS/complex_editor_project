@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Iterable, Tuple, Union
+from typing import Optional, Dict, List, Any, Tuple, Union
 
 import pyodbc
 
@@ -102,9 +102,20 @@ class MDB:
         return self._conn.cursor()
 
     # ── lookup helpers --------------------------------------------
-    def list_complexes(self) -> List[Tuple[int, str]]:
+    def list_complexes(self) -> List[Tuple[int, str, str, int]]:
+        """Return [(id,name,function_name,#subs), ...]."""
         cur = self._cur()
-        cur.execute(f"SELECT {PK_MASTER},{NAME_COL} FROM {MASTER_T} ORDER BY {NAME_COL}")
+        cur.execute(
+            f"""
+            SELECT m.{PK_MASTER}, m.{NAME_COL}, f.Name,
+                   COUNT(d.{PK_DETAIL})
+            FROM {MASTER_T} AS m
+            LEFT JOIN {DETAIL_T} AS d ON m.{PK_MASTER}=d.{PK_MASTER}
+            LEFT JOIN {FUNC_T} AS f ON m.IDFunction=f.IDFunction
+            GROUP BY m.{PK_MASTER}, m.{NAME_COL}, f.Name
+            ORDER BY m.{PK_MASTER}
+            """
+        )
         return cur.fetchall()
 
     def search_complexes(self, pattern: str) -> List[Tuple[int, str]]:
@@ -183,6 +194,12 @@ class MDB:
         cx.name = new_name
         return self.create_complex(cx)
 
+    def add_complex(self, complex_dev: ComplexDevice) -> int:
+        """Public helper using the legacy service to insert a complex."""
+        from ..services.export_service import insert_complex
+
+        return insert_complex(self._conn, complex_dev)
+
     # ── modifiers --------------------------------------------------
     def update_complex(self, comp_id: int, **fields):
         if not fields:
@@ -230,7 +247,9 @@ class MDB:
 
 # ─── quick CLI demo (run `python mdb_api.py your.mdb`) ───────────────
 if __name__ == "__main__":  # pragma: no cover
-    import argparse, textwrap, json
+    import argparse
+    import textwrap
+    import json
 
     p = argparse.ArgumentParser(
         description="Tiny interactive test-shell for mdb_api",
