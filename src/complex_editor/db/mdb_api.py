@@ -103,8 +103,8 @@ class MDB:
             f"""
             SELECT m.{PK_MASTER}, m.{NAME_COL}, f.Name,
                    COUNT(d.{PK_DETAIL})
-            FROM {MASTER_T} AS m
-            LEFT JOIN {DETAIL_T} AS d ON m.{PK_MASTER}=d.{PK_MASTER}
+            FROM ({MASTER_T} AS m
+                  LEFT JOIN {DETAIL_T} AS d ON m.{PK_MASTER}=d.{PK_MASTER})
             LEFT JOIN {FUNC_T} AS f ON m.IDFunction=f.IDFunction
             GROUP BY m.{PK_MASTER}, m.{NAME_COL}, f.Name
             ORDER BY m.{PK_MASTER}
