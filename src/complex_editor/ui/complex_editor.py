@@ -242,7 +242,8 @@ class ComplexEditor(QtWidgets.QDialog):
         }
 
     def load_from_model(self, cx: ComplexDevice) -> None:
-        self.pin_table.set_pins(cx.pins)
+        # ``cx.pins`` may be a property; normalize to a concrete list
+        self.pin_table.set_pins(list(cx.pins))
         idx = self.macro_combo.findText(cx.macro.name)
         if idx >= 0:
             self.macro_combo.setCurrentIndex(idx)
