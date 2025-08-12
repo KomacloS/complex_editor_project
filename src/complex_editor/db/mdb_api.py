@@ -19,8 +19,6 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple, Union
 
 import pyodbc
-from ..domain import ComplexDevice, MacroInstance
-from ..domain.pinxml import PinXML
 
 # ─── schema constants ────────────────────────────────────────────────
 DRIVER    = r"{Microsoft Access Driver (*.mdb, *.accdb)}"
@@ -62,6 +60,14 @@ class SubComponent:
             cols.append(f"Pin{name.upper()}")
             vals.append(num)
         return cols, vals
+
+
+@dataclass
+class ComplexDevice:
+    id_comp_desc: Optional[int]
+    name: str
+    total_pins: int
+    subcomponents: List[SubComponent]
 
 
 # ─── main API class ──────────────────────────────────────────────────
@@ -164,19 +170,7 @@ class MDB:
                     pins or None,
                 )
             )
-        pins = [
-            str(m[c])
-            for c in ("PinA", "PinB", "PinC", "PinD")
-            if m.get(c)
-        ]
-        macros = PinXML.deserialize(m.get("PinS")) if m.get("PinS") else []
-        macro = macros[0] if macros else MacroInstance("", {})
-        cx = ComplexDevice(int(m.get("IDFunction", 0)), pins, macro, subs)
-        # attach extra metadata expected by legacy callers
-        cx.id_comp_desc = m[PK_MASTER]
-        cx.name = m[NAME_COL]
-        cx.total_pins = m.get("TotalPinNumber", 0)
-        return cx
+        return ComplexDevice(m[PK_MASTER], m[NAME_COL], m.get("TotalPinNumber", 0), subs)
 
     # ── creators ---------------------------------------------------
     def create_complex(self, cx: ComplexDevice) -> int:
