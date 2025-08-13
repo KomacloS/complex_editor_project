@@ -242,8 +242,14 @@ class ComplexEditor(QtWidgets.QDialog):
         }
 
     def load_from_model(self, cx: ComplexDevice) -> None:
-        self.pin_table.set_pins(cx.pins)
-        idx = self.macro_combo.findText(cx.macro.name)
+        pins = getattr(cx, "pins", None)
+        if not pins:
+            total = getattr(cx, "total_pins", 0) or 0
+            pins = [str(i) for i in range(1, total + 1)]
+        else:
+            pins = [str(p) for p in pins]
+        self.pin_table.set_pins(pins)
+        idx = self.macro_combo.findText(str(cx.macro.name))
         if idx >= 0:
             self.macro_combo.setCurrentIndex(idx)
         macro = self.macro_map.get(cx.id_function)
