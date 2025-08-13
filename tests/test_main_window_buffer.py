@@ -14,32 +14,38 @@ from complex_editor.ui.main_window import MainWindow
 def test_main_window_buffer_mode_populates_tables(qtbot, tmp_path: Path) -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-    data = [
-        {
-            "id": 42,
-            "name": "RY12",
-            "total_pins": 8,
-            "pins": [str(i) for i in range(1, 9)],
-            "subcomponents": [
-                {
-                    "id": 15806,
-                    "id_function": 16,
-                    "function_name": "RELAIS",
-                    "value": "12.0",
-                    "force_bits": 1,
-                    "pins": {"A": "1", "B": "2", "C": "3", "D": "4"},
-                },
-                {
-                    "id": 15807,
-                    "id_function": 16,
-                    "function_name": "RELAIS",
-                    "value": "12.0",
-                    "force_bits": 1,
-                    "pins": {"A": "1", "B": "2", "C": "6", "D": "7"},
-                },
-            ],
-        }
-    ]
+    data = {
+        "version": 1,
+        "generated_at": "2024-01-01T00:00:00Z",
+        "source_mdb": "dummy.mdb",
+        "function_map": {"16": "RELAIS"},
+        "complexes": [
+            {
+                "id": 42,
+                "name": "RY12",
+                "total_pins": 8,
+                "pins": [str(i) for i in range(1, 9)],
+                "subcomponents": [
+                    {
+                        "id": 15806,
+                        "id_function": 16,
+                        "function_name": "RELAIS",
+                        "value": "12.0",
+                        "force_bits": 1,
+                        "pins": {"A": "1", "B": "2", "C": "3", "D": "4"},
+                    },
+                    {
+                        "id": 15807,
+                        "id_function": 16,
+                        "function_name": "RELAIS",
+                        "value": "12.0",
+                        "force_bits": 1,
+                        "pins": {"A": "1", "B": "2", "C": "6", "D": "7"},
+                    },
+                ],
+            }
+        ],
+    }
     buf = tmp_path / "buffer.json"
     buf.write_text(json.dumps(data), encoding="utf-8")
 
