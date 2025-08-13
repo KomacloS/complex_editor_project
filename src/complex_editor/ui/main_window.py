@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from PyQt6 import QtWidgets
 
@@ -11,15 +11,31 @@ from ..domain import ComplexDevice, MacroInstance
 from ..db.mdb_api import MDB
 from ..db import schema_introspect
 from .complex_editor import ComplexEditor
+from .adapters import EditorComplex, EditorMacro
+from .buffer_loader import load_editor_complexes_from_buffer
+from .new_complex_wizard import NewComplexWizard
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    """Main window showing complexes from the MDB."""
+    """Main window showing complexes from the MDB or a JSON buffer."""
 
-    def __init__(self, mdb_path: Path, parent: Any | None = None) -> None:
+    def __init__(
+        self,
+        mdb_path: Optional[Path] = None,
+        parent: Any | None = None,
+        buffer_path: Optional[Path] = None,
+    ) -> None:
         super().__init__(parent)
         self.ctx = AppContext()
-        self.db: MDB = self.ctx.open_main_db(mdb_path)
+        self.db: Optional[MDB] = None
+        self._buffer_complexes: List[EditorComplex] | None = None
+
+        if buffer_path is not None and Path(buffer_path).exists():
+            self._buffer_complexes = load_editor_complexes_from_buffer(buffer_path)
+        else:
+            if mdb_path is None:
+                raise ValueError("mdb_path must be provided when no buffer is given")
+            self.db = self.ctx.open_main_db(mdb_path)
 
         # cache of {IDFunction -> Name}
         self._func_map: Dict[int, str] = {}
@@ -45,6 +61,11 @@ class MainWindow(QtWidgets.QMainWindow):
         edit_btn.clicked.connect(self._on_edit)
         del_btn = QtWidgets.QPushButton("Delete")
         del_btn.clicked.connect(self._delete_selected)
+
+        if self._buffer_complexes is not None:
+            # buffer mode is read-only
+            new_btn.setEnabled(False)
+            del_btn.setEnabled(False)
 
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.addWidget(new_btn)
@@ -78,9 +99,20 @@ class MainWindow(QtWidgets.QMainWindow):
         return self._func_map.get(int(id_function), f"Function {id_function}")
 
     def _refresh_list(self) -> None:
-        rows = self.db.list_complexes()
-        self.list.setRowCount(len(rows))
-        for r, row in enumerate(rows):
+        if self._buffer_complexes is not None:
+            rows = self._buffer_complexes
+            self.list.setRowCount(len(rows))
+            for r, cx in enumerate(rows):
+                self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cx.id)))
+                self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(cx.name)))
+                self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(len(cx.subcomponents))))
+            return
+
+        # DB mode
+        assert self.db is not None  # for type checkers
+        rows_db = self.db.list_complexes()
+        self.list.setRowCount(len(rows_db))
+        for r, row in enumerate(rows_db):
             # tolerate either (id, name, subcount) or (id, name, func, subcount)
             if len(row) == 3:
                 cid, name, nsubs = row
@@ -90,15 +122,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(name)))
             self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(nsubs)))
 
-    def _refresh_subcomponents(self, cid: int) -> None:
-        """Fill the right table with a friendly view of subcomponents."""
+    def _refresh_subcomponents_db(self, cid: int) -> None:
+        """Fill the right table with a friendly view of subcomponents (DB mode)."""
+        assert self.db is not None
         cx = self.db.get_complex(cid)
 
         # Build display rows: Macro, Pins, Value
         display_rows: List[Dict[str, str]] = []
         for sc in getattr(cx, "subcomponents", []) or []:
             name = self._func_name(sc.id_function)
-            # Format pins in a stable order: A..H,S
             pin_items = sc.pins or {}
             ordered_keys = [k for k in list("ABCDEFGH") + ["S"] if k in pin_items] + [
                 k for k in pin_items.keys() if k not in "ABCDEFGH" and k != "S"
@@ -123,19 +155,58 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.sub_table.resizeColumnsToContents()
 
+    def _refresh_subcomponents_buffer(self, cx: EditorComplex) -> None:
+        """Fill the right table with subcomponents from a buffer."""
+        display_rows: List[Dict[str, str]] = []
+        for sc in cx.subcomponents:
+            pin_items = sc.pins or {}
+            ordered_keys = [k for k in sorted(pin_items.keys()) if k.isalpha()]
+            pins_str = ", ".join(f"{k}={pin_items[k]}" for k in ordered_keys)
+            display_rows.append(
+                {
+                    "SubID": str(getattr(sc, "sub_id", "")),
+                    "Macro": sc.name,
+                    "Pins": pins_str,
+                    "Value": "" if getattr(sc, "value", None) in (None, "") else str(getattr(sc, "value")),
+                    "ForceBits": "" if getattr(sc, "force_bits", None) in (None, "") else str(getattr(sc, "force_bits")),
+                }
+            )
+
+        if not display_rows:
+            self.sub_table.setRowCount(0)
+            self.sub_table.setColumnCount(0)
+            return
+
+        headers = ["SubID", "Macro", "Pins", "Value", "ForceBits"]
+        self.sub_table.setColumnCount(len(headers))
+        self.sub_table.setHorizontalHeaderLabels(headers)
+        self.sub_table.setRowCount(len(display_rows))
+        for r, row in enumerate(display_rows):
+            for c, key in enumerate(headers):
+                self.sub_table.setItem(r, c, QtWidgets.QTableWidgetItem(row.get(key, "")))
+
+        self.sub_table.resizeColumnsToContents()
+
     def _on_selected(self) -> None:
         row = self.list.currentRow()
         if row < 0:
             self.sub_table.setRowCount(0)
             self.sub_table.setColumnCount(0)
             return
+        if self._buffer_complexes is not None:
+            if 0 <= row < len(self._buffer_complexes):
+                self._refresh_subcomponents_buffer(self._buffer_complexes[row])
+            return
+
         cid_item = self.list.item(row, 0)
         if cid_item is None:
             return
-        self._refresh_subcomponents(int(cid_item.text()))
+        self._refresh_subcomponents_db(int(cid_item.text()))
 
     # ------------------------------------------------------------------ actions
     def _new_complex(self) -> None:
+        if self.db is None:
+            return
         cursor = self.db._conn.cursor()
         macro_map = schema_introspect.discover_macro_map(cursor) or {}
         wiz = NewComplexWizard(macro_map)
@@ -158,7 +229,23 @@ class MainWindow(QtWidgets.QMainWindow):
         if cid_item is None:
             return
 
+        if self._buffer_complexes is not None:
+            cx = self._buffer_complexes[row]
+            class _BufWrapper:
+                pass
+
+            dom = _BufWrapper()
+            dom.pins = cx.pins
+            dom.id_function = 0
+            dom.macro = MacroInstance("(from buffer)", {})
+            dom.subcomponents = [MacroInstance(sc.name, sc.pins) for sc in cx.subcomponents]
+            dlg = ComplexEditor({})
+            dlg.load_from_model(dom)
+            dlg.exec()
+            return
+
         cid = int(cid_item.text())
+        assert self.db is not None
         raw = self.db.get_complex(cid)
 
         # Top-level pins list (1..TotalPinNumber)
@@ -187,7 +274,6 @@ class MainWindow(QtWidgets.QMainWindow):
         for sc in getattr(raw, "subcomponents", []) or []:
             macro_name = self._func_name(sc.id_function)
             pin_map = {str(k): str(v) for k, v in (sc.pins or {}).items()}
-            # ignore parameters for now (PinS etc.) — we’ll add later
             sub_macros.append(MacroInstance(macro_name, pin_map))
         dom.subcomponents = sub_macros
 
@@ -214,6 +300,8 @@ class MainWindow(QtWidgets.QMainWindow):
         row = self.list.currentRow()
         if row < 0:
             return
+        if self.db is None:
+            return
         cid = int(self.list.item(row, 0).text())
         if (
             QtWidgets.QMessageBox.question(self, "Delete?", f"Delete complex {cid}?")
@@ -224,9 +312,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_list()
 
 
-def run_gui(mdb_file: Path) -> None:
+def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:
     app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow(mdb_file)
+    win = MainWindow(mdb_path=mdb_file, buffer_path=buffer_path)
     win.resize(1100, 600)
     win.show()
     sys.exit(app.exec())
