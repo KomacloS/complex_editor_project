@@ -102,21 +102,30 @@ class MDB:
         return self._conn.cursor()
 
     # ── lookup helpers --------------------------------------------
-    def list_complexes(self) -> List[Tuple[int, str, str, int]]:
-        """Return [(id,name,function_name,#subs), ...]."""
+    def list_complexes(self) -> list[tuple[int, str, int]]:
+        """
+        Return [(CompID, CompName, SubCount), …] using Access-friendly SQL.
+        Note: we intentionally do NOT join tabFunction here (it caused driver
+        errors) and the UI only needs ID/Name/SubCount.
+        """
         cur = self._cur()
-        cur.execute(
-            f"""
-            SELECT m.{PK_MASTER}, m.{NAME_COL}, f.Name,
-                   COUNT(d.{PK_DETAIL})
-            FROM {MASTER_T} AS m
-            LEFT JOIN {DETAIL_T} AS d ON m.{PK_MASTER}=d.{PK_MASTER}
-            LEFT JOIN {FUNC_T} AS f ON m.IDFunction=f.IDFunction
-            GROUP BY m.{PK_MASTER}, m.{NAME_COL}, f.Name
-            ORDER BY m.{PK_MASTER}
-            """
+        sql = (
+            "SELECT "
+            "  m.[IDCompDesc] AS CompID, "
+            "  m.[Name]       AS CompName, "
+            "  COUNT(d.[IDSubComponent]) AS SubCount "
+            "FROM [tabCompDesc] AS m "
+            "LEFT JOIN [detCompDesc] AS d "
+            "  ON m.[IDCompDesc] = d.[IDCompDesc] "
+            "GROUP BY m.[IDCompDesc], m.[Name] "
+            "ORDER BY m.[IDCompDesc]"
         )
-        return cur.fetchall()
+        cur.execute(sql)
+        rows = cur.fetchall()
+        # Normalize types and Nones
+        return [(int(cid), str(name or ""), int(subs or 0)) for cid, name, subs in rows]
+
+
 
     def search_complexes(self, pattern: str) -> List[Tuple[int, str]]:
         cur = self._cur()
