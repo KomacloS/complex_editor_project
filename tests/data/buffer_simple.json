@@ -1,0 +1,18 @@
+{
+  "Name": "CX1",
+  "ID": 123,
+  "SubComponents": [
+    {
+      "Name": "SC1",
+      "IDFunction": 10,
+      "MacroName": "RESISTOR",
+      "PinMap": {"PinA": "1", "PinB": "2"}
+    },
+    {
+      "Name": "SC2",
+      "MacroName": "CAP",
+      "PinA": "3",
+      "PinB": "4"
+    }
+  ]
+}

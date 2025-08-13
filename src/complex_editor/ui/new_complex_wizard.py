@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from typing import Optional, cast
+from typing import Dict, List, Optional, cast
 
 from PyQt6 import QtWidgets, QtCore
 
@@ -15,6 +15,7 @@ from ..domain import (
 )
 from ..param_spec import ALLOWED_PARAMS
 from ..db import discover_macro_map
+from ..io.buffer_loader import WizardPrefill
 
 
 class BasicsPage(QtWidgets.QWidget):
@@ -553,6 +554,11 @@ class ReviewPage(QtWidgets.QWidget):
         self.table = QtWidgets.QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Macro", "Pins", "Params"])
         layout.addWidget(self.table)
+        self.warn_label = QtWidgets.QLabel()
+        self.warn_label.setStyleSheet("color:#b00;")
+        self.warn_label.setWordWrap(True)
+        self.warn_label.hide()
+        layout.addWidget(self.warn_label)
         self.save_btn = QtWidgets.QPushButton("Save")
         layout.addWidget(self.save_btn)
         self.edit_pins_btn = QtWidgets.QPushButton("Edit Pins")
@@ -570,7 +576,7 @@ class ReviewPage(QtWidgets.QWidget):
         self.edit_pins_btn.setEnabled(ok)
         self.edit_params_btn.setEnabled(ok)
 
-    def populate(self, comps: list[SubComponent]) -> None:
+    def populate(self, comps: list[SubComponent], warnings: list[str] | None = None) -> None:
         self.table.setRowCount(len(comps))
         for i, sc in enumerate(comps):
             self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(sc.macro.name))
@@ -579,6 +585,11 @@ class ReviewPage(QtWidgets.QWidget):
             )
             keys = ",".join(sorted(sc.macro.params.keys()))
             self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(keys))
+        if warnings:
+            self.warn_label.setText("\n".join(warnings))
+            self.warn_label.show()
+        else:
+            self.warn_label.hide()
 
 
 class NewComplexWizard(QtWidgets.QDialog):
@@ -635,11 +646,54 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.review_page.save_btn.clicked.connect(self._finish)
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
+        self._param_page_disabled = False
 
         self._update_edit_buttons(-1)
 
         self._update_nav()
 
+    @classmethod
+    def from_wizard_prefill(cls, prefill: WizardPrefill, parent=None) -> "NewComplexWizard":
+        """Build a wizard pre-populated from :class:`WizardPrefill`."""
+
+        wiz = cls(None, parent)
+        wiz._param_page_disabled = True
+        if prefill.complex_name:
+            wiz.basics_page.pn_edit.setText(prefill.complex_name)
+        max_pin = 0
+        for sc in prefill.sub_components:
+            pins = list(sc.get("pins") or [])
+            if pins:
+                max_pin = max(max_pin, max(pins))
+            mi = MacroInstance(sc.get("macro_name", ""), {})
+            if sc.get("id_function") is not None:
+                mi.id_function = sc.get("id_function")
+            subc = SubComponent(mi, pins)
+            wiz.sub_components.append(subc)
+            text = f"{mi.name} ({','.join(str(p) for p in pins)})"
+            wiz.list_page.list.addItem(text)
+        if max_pin:
+            wiz.basics_page.pin_spin.setValue(max_pin)
+        warnings: List[str] = []
+        used: Dict[int, str] = {}
+        for sc in wiz.sub_components:
+            if getattr(sc.macro, "id_function", None) is None:
+                warnings.append(f"Macro '{sc.macro.name}' has no IDFunction")
+            for pin in sc.pins:
+                if pin in used:
+                    warnings.append(f"Pad {pin} used by multiple sub-components")
+                else:
+                    used[pin] = sc.macro.name
+        wiz.review_page.populate(wiz.sub_components, warnings)
+        wiz.param_page.group_box.hide()
+        wiz.param_page.warn_label.setText(
+            "Parameters not preloaded (PinS pending)."
+        )
+        wiz.param_page.warn_label.show()
+        wiz._mapping_ok = True
+        wiz.stack.setCurrentWidget(wiz.review_page)
+        wiz._update_nav()
+        return wiz
     # ------------------------------------------------------------------ actions
     def _add_sub(self) -> None:
         sc = SubComponent(MacroInstance("", {}), [])
@@ -753,6 +807,15 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         sc.macro.name = macro.name
         sc.pins = pins
+        if self._param_page_disabled:
+            self.param_page.group_box.hide()
+            self.param_page.warn_label.setText(
+                "Parameters not preloaded (PinS pending)."
+            )
+            self.param_page.warn_label.show()
+            self.stack.setCurrentWidget(self.param_page)
+            self._update_nav()
+            return
         if macro.params:  # normal case
             self.param_page.build_widgets(macro, sc.macro.params)
             self.stack.setCurrentWidget(self.param_page)

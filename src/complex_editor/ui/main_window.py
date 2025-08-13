@@ -14,6 +14,10 @@ from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
 from .new_complex_wizard import NewComplexWizard
+from ..io.buffer_loader import (
+    load_complex_from_buffer_json,
+    to_wizard_prefill,
+)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -71,6 +75,9 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar.addWidget(new_btn)
         toolbar.addWidget(edit_btn)
         toolbar.addWidget(del_btn)
+        load_buf_btn = QtWidgets.QPushButton("Load Complex from Buffer…")
+        load_buf_btn.clicked.connect(self._load_complex_from_buffer)
+        toolbar.addWidget(load_buf_btn)
         toolbar.addStretch()
 
         left = QtWidgets.QVBoxLayout()
@@ -97,6 +104,24 @@ class MainWindow(QtWidgets.QMainWindow):
     def _func_name(self, id_function: int) -> str:
         self._ensure_func_map()
         return self._func_map.get(int(id_function), f"Function {id_function}")
+
+    def _macro_id_from_name(self, name: str) -> Optional[int]:
+        self._ensure_func_map()
+        for fid, fname in self._func_map.items():
+            if fname.lower() == str(name).lower():
+                return fid
+        return None
+
+    def _pin_normalizer(self, pin_map: Dict[str, str]) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+        for k, v in pin_map.items():
+            key = str(k)
+            if key in {"PinS", "S"}:
+                continue
+            if not key.startswith("Pin"):
+                key = "Pin" + key.strip().upper()
+            result[key] = str(v)
+        return result
 
     def _refresh_list(self) -> None:
         if self._buffer_complexes is not None:
@@ -310,6 +335,38 @@ class MainWindow(QtWidgets.QMainWindow):
             self.db.delete_complex(cid, cascade=True)
             self.db._conn.commit()
             self._refresh_list()
+
+    def _load_complex_from_buffer(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Open buffer.json", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            buf = load_complex_from_buffer_json(path)
+            prefill = to_wizard_prefill(
+                buf, self._macro_id_from_name, self._pin_normalizer
+            )
+        except Exception as exc:  # pragma: no cover - GUI warning only
+            QtWidgets.QMessageBox.warning(self, "Buffer Error", str(exc))
+            return
+        wiz = NewComplexWizard.from_wizard_prefill(prefill, parent=self)
+        wiz.exec()
+        if wiz.result() == QtWidgets.QDialog.DialogCode.Accepted:
+            pin_count = wiz.basics_page.pin_spin.value()
+            dev = ComplexDevice(
+                id_function=0,
+                pins=[str(i) for i in range(1, pin_count + 1)],
+                macro=MacroInstance("", {}),
+            )
+            dev.subcomponents = wiz.sub_components
+            if self.db is not None:
+                self.db.add_complex(dev)
+                self.db._conn.commit()
+                self._refresh_list()
+                QtWidgets.QMessageBox.information(
+                    self, "Saved", "Complex saved to database"
+                )
 
 
 def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:

@@ -1,0 +1,25 @@
+{
+  "Complex": {"Name": "CX2", "ID": 456},
+  "SubComponents": [
+    {
+      "Name": "SC1",
+      "RefDes": "R1",
+      "MacroName": "RESISTOR",
+      "Pins": {"A": "5", "B": "6"}
+    },
+    {
+      "Name": "SC2",
+      "IDFunction": 20,
+      "PinMap": {"PinA": "7", "PinB": "8", "PinS": {"Ignored": true}},
+      "Extra": "ignore"
+    },
+    {
+      "Name": "SC3",
+      "MacroName": "DIODE",
+      "PinA": "9",
+      "PinB": "10",
+      "PinS": "should_ignore",
+      "MacroParameters": {"foo": "bar"}
+    }
+  ]
+}
