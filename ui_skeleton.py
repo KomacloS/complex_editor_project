@@ -1,5 +1,6 @@
 # ruff: noqa: E402
 
+import argparse
 import pathlib
 import sys
 
@@ -16,5 +17,12 @@ from pathlib import Path
 from complex_editor.ui.main_window import run_gui
 
 if __name__ == "__main__":
-    mdb_file = Path.home() / "Documents" / "ComplexBuilder" / "main_db.mdb"
-    run_gui(mdb_file)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--buffer", type=Path, default=None)
+    args = parser.parse_args()
+
+    if args.buffer is not None:
+        run_gui(mdb_file=None, buffer_path=args.buffer)
+    else:
+        mdb_file = Path.home() / "Documents" / "ComplexBuilder" / "main_db.mdb"
+        run_gui(mdb_file)
