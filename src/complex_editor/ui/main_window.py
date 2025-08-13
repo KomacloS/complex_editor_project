@@ -11,6 +11,7 @@ from ..domain import ComplexDevice, MacroInstance
 from ..db.mdb_api import MDB
 from ..db import schema_introspect
 from .complex_editor import ComplexEditor
+from .adapters import to_editor_model
 from .new_complex_wizard import NewComplexWizard
 
 
@@ -140,26 +141,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if cid_item is None:
             return
         cid = int(cid_item.text())
-        raw = self.db.get_complex(cid)
-
-        total = getattr(raw, "total_pins", 0) or 0
-        pins_list = [str(i) for i in range(1, total + 1)]
-        dom = raw
-        if not hasattr(raw, "pins"):
-            class _DomWrapper:  # noqa: D401 - simple attribute bag
-                pass
-
-            dom = _DomWrapper()
-            dom.id_comp_desc = raw.id_comp_desc
-            dom.name = raw.name
-            dom.total_pins = total
-            dom.subcomponents = raw.subcomponents
-            dom.pins = pins_list
-
-        cursor = self.db._conn.cursor()
-        macro_map = schema_introspect.discover_macro_map(cursor) or {}
-        dlg = ComplexEditor(macro_map)
-        dlg.load_from_model(dom)
+        cx_db = self.db.get_complex(cid)
+        cx_for_editor = to_editor_model(self.db, cx_db)
+        dlg = ComplexEditor(None)
+        dlg.load_from_model(cx_for_editor)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             try:
                 updates = dlg.to_update_dict()
