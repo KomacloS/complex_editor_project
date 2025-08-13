@@ -11,17 +11,9 @@ from ..domain import ComplexDevice, MacroInstance
 from ..db.mdb_api import MDB
 from ..db import schema_introspect
 from .complex_editor import ComplexEditor
+from .adapters import EditorComplex, EditorMacro
+from .buffer_loader import load_editor_complexes_from_buffer
 from .new_complex_wizard import NewComplexWizard
-from .subcomponent_editor import SubcomponentEditor
-from .buffer_ops import (
-    load_buffer,
-    save_buffer,
-    get_all_macro_choices,
-    format_pins_for_table,
-    apply_add_sub,
-    apply_edit_sub,
-    apply_delete_sub,
-)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -36,16 +28,10 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.ctx = AppContext()
         self.db: Optional[MDB] = None
+        self._buffer_complexes: List[EditorComplex] | None = None
 
-        self.buffer_mode = buffer_path is not None
-        self.buffer_path: Path | None = buffer_path
-        self.buffer_data: Dict[str, Any] | None = None
-        self._current_buffer_complex: Dict[str, Any] | None = None
-
-        if self.buffer_mode:
-            if buffer_path is None:
-                raise ValueError("buffer_path must be provided in buffer mode")
-            self.buffer_data = load_buffer(buffer_path)
+        if buffer_path is not None and Path(buffer_path).exists():
+            self._buffer_complexes = load_editor_complexes_from_buffer(buffer_path)
         else:
             if mdb_path is None:
                 raise ValueError("mdb_path must be provided when no buffer is given")
@@ -76,7 +62,8 @@ class MainWindow(QtWidgets.QMainWindow):
         del_btn = QtWidgets.QPushButton("Delete")
         del_btn.clicked.connect(self._delete_selected)
 
-        if self.buffer_mode:
+        if self._buffer_complexes is not None:
+            # buffer mode is read-only
             new_btn.setEnabled(False)
             del_btn.setEnabled(False)
 
@@ -90,35 +77,10 @@ class MainWindow(QtWidgets.QMainWindow):
         left.addLayout(toolbar)
         left.addWidget(self.list)
 
-        # subcomponent toolbar (buffer mode)
-        self.add_sub_btn = QtWidgets.QPushButton("Add Sub")
-        self.add_sub_btn.clicked.connect(self._on_add_subcomponent_buffer)
-        self.edit_sub_btn = QtWidgets.QPushButton("Edit Sub")
-        self.edit_sub_btn.clicked.connect(self._on_edit_subcomponent_buffer)
-        self.del_sub_btn = QtWidgets.QPushButton("Delete Sub")
-        self.del_sub_btn.clicked.connect(self._on_delete_subcomponent_buffer)
-        self.save_buf_btn = QtWidgets.QPushButton("Save Buffer")
-        self.save_buf_btn.clicked.connect(self._on_save_buffer)
-
-        if not self.buffer_mode:
-            for b in [self.add_sub_btn, self.edit_sub_btn, self.del_sub_btn, self.save_buf_btn]:
-                b.setEnabled(False)
-
-        sub_toolbar = QtWidgets.QHBoxLayout()
-        sub_toolbar.addWidget(self.add_sub_btn)
-        sub_toolbar.addWidget(self.edit_sub_btn)
-        sub_toolbar.addWidget(self.del_sub_btn)
-        sub_toolbar.addWidget(self.save_buf_btn)
-        sub_toolbar.addStretch()
-
-        right = QtWidgets.QVBoxLayout()
-        right.addLayout(sub_toolbar)
-        right.addWidget(self.sub_table)
-
         container = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(container)
         layout.addLayout(left)
-        layout.addLayout(right)
+        layout.addWidget(self.sub_table)
         self.setCentralWidget(container)
 
         self._refresh_list()
@@ -137,14 +99,13 @@ class MainWindow(QtWidgets.QMainWindow):
         return self._func_map.get(int(id_function), f"Function {id_function}")
 
     def _refresh_list(self) -> None:
-        if self.buffer_mode and self.buffer_data is not None:
-            rows = self.buffer_data.get("complexes", [])
+        if self._buffer_complexes is not None:
+            rows = self._buffer_complexes
             self.list.setRowCount(len(rows))
             for r, cx in enumerate(rows):
-                self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cx.get("id", ""))))
-                self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(cx.get("name", ""))))
-                subs = cx.get("subcomponents") or []
-                self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(len(subs))))
+                self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cx.id)))
+                self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(cx.name)))
+                self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(len(cx.subcomponents))))
             return
 
         # DB mode
@@ -194,16 +155,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.sub_table.resizeColumnsToContents()
 
-    def _refresh_subcomponents_from_buffer(self, cx: Dict[str, Any]) -> None:
+    def _refresh_subcomponents_buffer(self, cx: EditorComplex) -> None:
         """Fill the right table with subcomponents from a buffer."""
         display_rows: List[Dict[str, str]] = []
-        for sc in cx.get("subcomponents", []) or []:
-            pins_str = format_pins_for_table(sc.get("pins") or {})
+        for sc in cx.subcomponents:
+            pin_items = sc.pins or {}
+            ordered_keys = [k for k in sorted(pin_items.keys()) if k.isalpha()]
+            pins_str = ", ".join(f"{k}={pin_items[k]}" for k in ordered_keys)
             display_rows.append(
                 {
-                    "ID": str(sc.get("id", "")),
-                    "Macro": str(sc.get("function_name", "")),
+                    "SubID": str(getattr(sc, "sub_id", "")),
+                    "Macro": sc.name,
                     "Pins": pins_str,
+                    "Value": "" if getattr(sc, "value", None) in (None, "") else str(getattr(sc, "value")),
+                    "ForceBits": "" if getattr(sc, "force_bits", None) in (None, "") else str(getattr(sc, "force_bits")),
                 }
             )
 
@@ -212,7 +177,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sub_table.setColumnCount(0)
             return
 
-        headers = ["ID", "Macro", "Pins"]
+        headers = ["SubID", "Macro", "Pins", "Value", "ForceBits"]
         self.sub_table.setColumnCount(len(headers))
         self.sub_table.setHorizontalHeaderLabels(headers)
         self.sub_table.setRowCount(len(display_rows))
@@ -228,11 +193,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sub_table.setRowCount(0)
             self.sub_table.setColumnCount(0)
             return
-        if self.buffer_mode and self.buffer_data is not None:
-            complexes = self.buffer_data.get("complexes", [])
-            if 0 <= row < len(complexes):
-                self._current_buffer_complex = complexes[row]
-                self._refresh_subcomponents_from_buffer(self._current_buffer_complex)
+        if self._buffer_complexes is not None:
+            if 0 <= row < len(self._buffer_complexes):
+                self._refresh_subcomponents_buffer(self._buffer_complexes[row])
             return
 
         cid_item = self.list.item(row, 0)
@@ -242,8 +205,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ------------------------------------------------------------------ actions
     def _new_complex(self) -> None:
-        if self.buffer_mode:
-            return
         if self.db is None:
             return
         cursor = self.db._conn.cursor()
@@ -261,13 +222,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_list()
 
     def _on_edit(self) -> None:
-        if self.buffer_mode:
-            return
         row = self.list.currentRow()
         if row < 0:
             return
         cid_item = self.list.item(row, 0)
         if cid_item is None:
+            return
+
+        if self._buffer_complexes is not None:
+            cx = self._buffer_complexes[row]
+            class _BufWrapper:
+                pass
+
+            dom = _BufWrapper()
+            dom.pins = cx.pins
+            dom.id_function = 0
+            dom.macro = MacroInstance("(from buffer)", {})
+            dom.subcomponents = [MacroInstance(sc.name, sc.pins) for sc in cx.subcomponents]
+            dlg = ComplexEditor({})
+            dlg.load_from_model(dom)
+            dlg.exec()
             return
 
         cid = int(cid_item.text())
@@ -323,8 +297,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_list()
 
     def _delete_selected(self) -> None:
-        if self.buffer_mode:
-            return
         row = self.list.currentRow()
         if row < 0:
             return
@@ -338,77 +310,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.db.delete_complex(cid, cascade=True)
             self.db._conn.commit()
             self._refresh_list()
-
-    # ------------------------------------------------------------------ buffer ops
-    def _on_add_subcomponent_buffer(self) -> None:
-        if not self.buffer_mode or self.buffer_data is None or self._current_buffer_complex is None:
-            return
-        dlg = SubcomponentEditor(get_all_macro_choices(self.buffer_data))
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            result = dlg.get_result()
-            if result:
-                macro, pins = result
-                apply_add_sub(
-                    self.buffer_data, self._current_buffer_complex["id"], macro, pins
-                )
-                self._refresh_subcomponents_from_buffer(self._current_buffer_complex)
-                self._refresh_list()
-
-    def _on_edit_subcomponent_buffer(self) -> None:
-        if not self.buffer_mode or self.buffer_data is None or self._current_buffer_complex is None:
-            return
-        row = self.sub_table.currentRow()
-        subs = self._current_buffer_complex.get("subcomponents", [])
-        if row < 0 or row >= len(subs):
-            return
-        sc = subs[row]
-        dlg = SubcomponentEditor(
-            get_all_macro_choices(self.buffer_data),
-            macro=str(sc.get("function_name", "")),
-            pins=sc.get("pins") or {},
-        )
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            result = dlg.get_result()
-            if result:
-                macro, pins = result
-                apply_edit_sub(
-                    self.buffer_data,
-                    self._current_buffer_complex["id"],
-                    sc.get("id", 0),
-                    macro,
-                    pins,
-                )
-                self._refresh_subcomponents_from_buffer(self._current_buffer_complex)
-                self._refresh_list()
-
-    def _on_delete_subcomponent_buffer(self) -> None:
-        if not self.buffer_mode or self.buffer_data is None or self._current_buffer_complex is None:
-            return
-        row = self.sub_table.currentRow()
-        subs = self._current_buffer_complex.get("subcomponents", [])
-        if row < 0 or row >= len(subs):
-            return
-        sc = subs[row]
-        sub_id = sc.get("id")
-        if (
-            QtWidgets.QMessageBox.question(
-                self, "Delete?", f"Delete subcomponent {sub_id}?"
-            )
-            == QtWidgets.QMessageBox.StandardButton.Yes
-        ):
-            apply_delete_sub(
-                self.buffer_data, self._current_buffer_complex["id"], sub_id
-            )
-            self._refresh_subcomponents_from_buffer(self._current_buffer_complex)
-            self._refresh_list()
-
-    def _on_save_buffer(self) -> None:
-        if not self.buffer_mode or self.buffer_data is None or self.buffer_path is None:
-            return
-        save_buffer(self.buffer_path, self.buffer_data)
-        QtWidgets.QMessageBox.information(
-            self, "Saved", f"Buffer saved to {self.buffer_path}"
-        )
 
 
 def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:

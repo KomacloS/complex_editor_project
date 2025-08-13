@@ -1,7 +1,6 @@
 # ruff: noqa: E402
 
 import argparse
-import logging
 import pathlib
 import sys
 
@@ -22,12 +21,8 @@ if __name__ == "__main__":
     parser.add_argument("--buffer", type=Path, default=None)
     args = parser.parse_args()
 
-    log = logging.getLogger("ui_skeleton")
-
     if args.buffer is not None:
-        log.info("Starting GUI in buffer mode: %s", args.buffer)
         run_gui(mdb_file=None, buffer_path=args.buffer)
     else:
         mdb_file = Path.home() / "Documents" / "ComplexBuilder" / "main_db.mdb"
-        log.info("Starting GUI in DB mode: %s", mdb_file)
         run_gui(mdb_file)
