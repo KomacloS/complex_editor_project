@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 from PyQt6 import QtWidgets
 
@@ -11,8 +11,6 @@ from ..domain import ComplexDevice, MacroInstance
 from ..db.mdb_api import MDB
 from ..db import schema_introspect
 from .complex_editor import ComplexEditor
-from .adapters import to_editor_model
-from .new_complex_wizard import NewComplexWizard
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -22,6 +20,9 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.ctx = AppContext()
         self.db: MDB = self.ctx.open_main_db(mdb_path)
+
+        # cache of {IDFunction -> Name}
+        self._func_map: Dict[int, str] = {}
 
         # left list of complexes
         self.list = QtWidgets.QTableWidget(0, 3)
@@ -35,7 +36,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list.itemSelectionChanged.connect(self._on_selected)
         self.list.doubleClicked.connect(self._on_edit)
 
-        # right table with sub components
+        # right table with sub components (summary view)
         self.sub_table = QtWidgets.QTableWidget(0, 0)
 
         new_btn = QtWidgets.QPushButton("New Complex")
@@ -64,10 +65,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_list()
 
     # ------------------------------------------------------------------ helpers
+    def _ensure_func_map(self) -> None:
+        """Populate {IDFunction -> Name} once (or refresh if empty)."""
+        if not self._func_map:
+            try:
+                self._func_map = {int(fid): str(name) for fid, name in self.db.list_functions()}
+            except Exception:
+                self._func_map = {}
+
+    def _func_name(self, id_function: int) -> str:
+        self._ensure_func_map()
+        return self._func_map.get(int(id_function), f"Function {id_function}")
+
     def _refresh_list(self) -> None:
         rows = self.db.list_complexes()
         self.list.setRowCount(len(rows))
         for r, row in enumerate(rows):
+            # tolerate either (id, name, subcount) or (id, name, func, subcount)
             if len(row) == 3:
                 cid, name, nsubs = row
             else:
@@ -77,34 +91,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(nsubs)))
 
     def _refresh_subcomponents(self, cid: int) -> None:
-        try:
-            subs = self.db.list_subcomponents(cid)  # type: ignore[attr-defined]
-        except AttributeError:
-            cx = self.db.get_complex(cid)
-            subs = [
-                {
-                    "IDFunction": sc.id_function,
-                    "Value": sc.value,
-                    "Pins": ",".join(
-                        f"{k}:{v}" for k, v in (sc.pins or {}).items()
-                    ),
-                }
-                for sc in cx.subcomponents
-            ]
+        """Fill the right table with a friendly view of subcomponents."""
+        cx = self.db.get_complex(cid)
 
-        if not subs:
+        # Build display rows: Macro, Pins, Value
+        display_rows: List[Dict[str, str]] = []
+        for sc in getattr(cx, "subcomponents", []) or []:
+            name = self._func_name(sc.id_function)
+            # Format pins in a stable order: A..H,S
+            pin_items = sc.pins or {}
+            ordered_keys = [k for k in list("ABCDEFGH") + ["S"] if k in pin_items] + [
+                k for k in pin_items.keys() if k not in "ABCDEFGH" and k != "S"
+            ]
+            pins_str = ", ".join(f"{k}:{pin_items[k]}" for k in ordered_keys)
+            display_rows.append(
+                {"Macro": name, "Pins": pins_str, "Value": "" if sc.value is None else str(sc.value)}
+            )
+
+        if not display_rows:
             self.sub_table.setRowCount(0)
             self.sub_table.setColumnCount(0)
             return
 
-        headers = list(subs[0].keys())
+        headers = ["Macro", "Pins", "Value"]
         self.sub_table.setColumnCount(len(headers))
-        self.sub_table.setHorizontalHeaderLabels([str(h) for h in headers])
-        self.sub_table.setRowCount(len(subs))
-        for r, row in enumerate(subs):
+        self.sub_table.setHorizontalHeaderLabels(headers)
+        self.sub_table.setRowCount(len(display_rows))
+        for r, row in enumerate(display_rows):
             for c, key in enumerate(headers):
-                val = str(row.get(key, ""))
-                self.sub_table.setItem(r, c, QtWidgets.QTableWidgetItem(val))
+                self.sub_table.setItem(r, c, QtWidgets.QTableWidgetItem(row.get(key, "")))
+
+        self.sub_table.resizeColumnsToContents()
 
     def _on_selected(self) -> None:
         row = self.list.currentRow()
@@ -140,17 +157,55 @@ class MainWindow(QtWidgets.QMainWindow):
         cid_item = self.list.item(row, 0)
         if cid_item is None:
             return
+
         cid = int(cid_item.text())
-        cx_db = self.db.get_complex(cid)
-        cx_for_editor = to_editor_model(self.db, cx_db)
-        dlg = ComplexEditor(None)
-        dlg.load_from_model(cx_for_editor)
+        raw = self.db.get_complex(cid)
+
+        # Top-level pins list (1..TotalPinNumber)
+        total = int(getattr(raw, "total_pins", 0) or 0)
+        pins_list = [str(i) for i in range(1, total + 1)]
+
+        # Wrap to the shape ComplexEditor expects:
+        # - .pins: List[str]
+        # - .macro: MacroInstance (name used by header)
+        # - .subcomponents: List[MacroInstance] (name + pins mapping)
+        class _DomWrapper:
+            pass
+
+        dom = _DomWrapper()
+        dom.id_comp_desc = getattr(raw, "id_comp_desc", None)
+        dom.name = getattr(raw, "name", "")
+        dom.total_pins = total
+        dom.pins = pins_list
+        dom.id_function = 0
+        dom.macro = MacroInstance("(from DB)", {})  # placeholder top macro
+
+        # convert every DB subcomponent to a MacroInstance that carries
+        # the chosen macro (by *name*) and the assigned pin map
+        self._ensure_func_map()
+        sub_macros: List[MacroInstance] = []
+        for sc in getattr(raw, "subcomponents", []) or []:
+            macro_name = self._func_name(sc.id_function)
+            pin_map = {str(k): str(v) for k, v in (sc.pins or {}).items()}
+            # ignore parameters for now (PinS etc.) — we’ll add later
+            sub_macros.append(MacroInstance(macro_name, pin_map))
+        dom.subcomponents = sub_macros
+
+        # Editor also likes having a macro definition map (by ID) for validation.
+        cursor = self.db._conn.cursor()
+        macro_map = schema_introspect.discover_macro_map(cursor) or {}
+
+        dlg = ComplexEditor(macro_map)
+        dlg.load_from_model(dom)
+
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             try:
                 updates = dlg.to_update_dict()
-            except ValueError as exc:  # pragma: no cover - user error path
+            except ValueError as exc:
                 QtWidgets.QMessageBox.warning(self, "Invalid", str(exc))
                 return
+            # NOTE: wiring the "save back to MDB" will be done in the next step
+            # when we add the reverse adapter (GUI -> DB).
             self.db.update_complex(cid, **updates)
             self.db._conn.commit()
             self._refresh_list()
@@ -172,7 +227,6 @@ class MainWindow(QtWidgets.QMainWindow):
 def run_gui(mdb_file: Path) -> None:
     app = QtWidgets.QApplication(sys.argv)
     win = MainWindow(mdb_file)
-    win.resize(1000, 600)
+    win.resize(1100, 600)
     win.show()
     sys.exit(app.exec())
-
