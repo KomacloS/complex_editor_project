@@ -22,10 +22,28 @@ def _fetch_param_rows(cursor, table: str) -> list[tuple]:
     return cursor.execute(query).fetchall()
 
 
-def discover_macro_map(cursor) -> Dict[int, MacroDef]:
-    """Discover mapping from IDFunction to :class:`MacroDef`."""
+def discover_macro_map(cursor_or_conn) -> Dict[int, MacroDef]:
+    """Discover mapping from IDFunction to :class:`MacroDef`.
+
+    Parameters
+    ----------
+    cursor_or_conn:
+        Either a ``pyodbc`` cursor or connection.  If a connection is
+        provided a cursor is requested from it.  ``None`` is accepted and
+        results in a macro map built solely from the local YAML specs.
+    """
+
     log = logging.getLogger(__name__)
     macro_map: Dict[int, MacroDef] = {}
+
+    cursor = None
+    if cursor_or_conn is not None:
+        cursor = (
+            cursor_or_conn.cursor()
+            if hasattr(cursor_or_conn, "cursor")
+            else cursor_or_conn
+        )
+
     # If there's no DB connection, build the macro map solely from YAML.
     if cursor is None:
         next_id = 1
