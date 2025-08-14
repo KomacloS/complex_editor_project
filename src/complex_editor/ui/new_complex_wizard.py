@@ -88,6 +88,7 @@ class MacroPinsPage(QtWidgets.QWidget):
         hdr.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         vbox.addWidget(self.pin_table)
+        self.current_subcomponent: SubComponent | None = None
 
     # ------------------------------------------------------------------
     # public helpers used by the wizard
@@ -164,6 +165,33 @@ class MacroPinsPage(QtWidgets.QWidget):
         # navigation to the parameter page now happens only when the user
         # presses "Next" in the wizard. The table change merely updates
         # navigation button state without auto-switching pages.
+
+    def pad_combo_at_row(self, row: int) -> QtWidgets.QComboBox:
+        return cast(QtWidgets.QComboBox, self.pin_table.cellWidget(row, 1))
+
+    def _index_for_function_id(self, func_id: int) -> int:
+        return self.macro_combo.findData(func_id)
+
+    def _index_for_macro_name(self, name: str) -> int:
+        return self.macro_combo.findText(name)
+
+    def load_from_subcomponent(self, sc: SubComponent) -> None:
+        """Populate macro selector and pad assignments from ``sc``."""
+        idx = -1
+        if getattr(sc.macro, "id_function", None) is not None:
+            idx = self._index_for_function_id(sc.macro.id_function)
+        if idx < 0:
+            idx = self._index_for_macro_name(sc.macro.name)
+        self.macro_combo.setCurrentIndex(idx)
+
+        self.pin_table.blockSignals(True)
+        for r, pin in enumerate(sc.pins):
+            combo = cast(QtWidgets.QComboBox, self.pin_table.cellWidget(r, 1))
+            if combo is not None:
+                combo.setCurrentText(str(pin))
+        self.pin_table.blockSignals(False)
+        self.current_subcomponent = sc
+        self._on_table_change()
 
 
 class ParamPage(QtWidgets.QWidget):
@@ -567,6 +595,7 @@ class ReviewPage(QtWidgets.QWidget):
         self.edit_params_btn.setEnabled(False)
         layout.insertWidget(layout.indexOf(self.save_btn), self.edit_pins_btn)
         layout.insertWidget(layout.indexOf(self.save_btn), self.edit_params_btn)
+        self.edit_pins_btn.clicked.connect(self.on_edit_pins_clicked)
         self.table.currentCellChanged.connect(lambda *_: self._update_buttons())
         self.table.cellClicked.connect(lambda *_: self._update_buttons())
         self._update_buttons()
@@ -590,6 +619,16 @@ class ReviewPage(QtWidgets.QWidget):
             self.warn_label.show()
         else:
             self.warn_label.hide()
+
+    def wizard(self) -> "NewComplexWizard":
+        return cast("NewComplexWizard", self.parentWidget().parent())
+
+    def on_edit_pins_clicked(self) -> None:
+        row = self.table.currentRow()
+        if row < 0 and self.table.rowCount() > 0:
+            row = 0
+            self.table.selectRow(row)
+        self.wizard().activate_pin_mapping_for(row)
 
 
 class NewComplexWizard(QtWidgets.QDialog):
@@ -620,6 +659,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.setWindowTitle("Step 2: Sub-Components")
         self.macro_page = MacroPinsPage(self.macro_map)
         self.macro_page.setWindowTitle("Step 3: Edit Pins")
+        self.pin_mapping_page = self.macro_page
         # update macro_map in case dummy entries were added
         self.macro_map = self.macro_page.macro_map
         self.param_page = ParamPage()
@@ -641,8 +681,9 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.list_page.edit_pins_btn.clicked.connect(self._edit_selected_pins)
         self.list_page.edit_params_btn.clicked.connect(self._edit_selected_params)
         self.list_page.list.currentRowChanged.connect(self._update_edit_buttons)
-        self.review_page.edit_pins_btn.clicked.connect(self._edit_selected_pins_review)
-        self.review_page.edit_params_btn.clicked.connect(self._edit_selected_params_review)
+        self.review_page.edit_params_btn.clicked.connect(
+            self._edit_selected_params_review
+        )
         self.review_page.save_btn.clicked.connect(self._finish)
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
@@ -794,56 +835,30 @@ class NewComplexWizard(QtWidgets.QDialog):
         row = self.list_page.list.currentRow()
         if row < 0:
             return
-        self.current_index = row
-        sc = self.sub_components[row]
-        self._open_macro_page()
-        idx = self.macro_page.macro_combo.findText(sc.macro.name)
-        if idx >= 0:
-            self.macro_page.macro_combo.setCurrentIndex(idx)
-        for r, pin in enumerate(sc.pins):
-            if r >= self.macro_page.pin_table.rowCount():
-                break
-            combo = cast(
-                QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1)
-            )
-            combo.setCurrentText(str(pin))
+        self.activate_pin_mapping_for(row)
 
     def _edit_selected_params(self) -> None:
         row = self.list_page.list.currentRow()
         if row < 0:
             return
-        self.current_index = row
-        sc = self.sub_components[row]
-        self._open_macro_page()
-        idx = self.macro_page.macro_combo.findText(sc.macro.name)
-        if idx >= 0:
-            self.macro_page.macro_combo.setCurrentIndex(idx)
-        for r, pin in enumerate(sc.pins):
-            if r >= self.macro_page.pin_table.rowCount():
-                break
-            combo = cast(
-                QtWidgets.QComboBox, self.macro_page.pin_table.cellWidget(r, 1)
-            )
-            combo.setCurrentText(str(pin))
+        self.activate_pin_mapping_for(row)
         self._open_param_page()
-
-    # ------------------------------------------------------------------ review actions
-    def _selected_row_in_review(self) -> int:
-        return self.review_page.table.currentRow()
-
-    def _edit_selected_pins_review(self):
-        row = self._selected_row_in_review()
-        if row < 0:
-            return
-        self.current_index = row
-        self._open_macro_page()
 
     def _edit_selected_params_review(self):
-        row = self._selected_row_in_review()
+        row = self.review_page.table.currentRow()
         if row < 0:
             return
-        self.current_index = row
+        self.activate_pin_mapping_for(row)
         self._open_param_page()
+
+    def activate_pin_mapping_for(self, sub_idx: int) -> None:
+        """Programmatically open the pin-mapping page for ``sub_idx``."""
+        self.current_index = sub_idx
+        if hasattr(self.list_page, "list"):
+            self.list_page.list.setCurrentRow(sub_idx)
+        sc = self.sub_components[sub_idx]
+        self._open_macro_page()
+        self.pin_mapping_page.load_from_subcomponent(sc)
 
     def _open_macro_page(self) -> None:
         count = self.basics_page.pin_spin.value()
