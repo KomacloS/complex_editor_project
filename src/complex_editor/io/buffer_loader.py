@@ -26,7 +26,6 @@ class BufferSubComponent:
     macro_name: Optional[str]
     pin_map: Dict[str, str]
     pin_s: Optional[str] = None
-    value: Optional[str] = None
 
 
 @dataclass
@@ -98,7 +97,6 @@ def load_complex_from_buffer_json(path: str | Path) -> BufferComplex:
 
         pin_map: Dict[str, str] = {}
         s_xml: Optional[str] = None
-        value = entry.get("Value") or entry.get("value")
         raw_pins = entry.get("PinMap") or entry.get("Pins")
         if isinstance(raw_pins, dict):
             for k, v in raw_pins.items():
@@ -127,7 +125,6 @@ def load_complex_from_buffer_json(path: str | Path) -> BufferComplex:
                 macro_name=str(macro_name) if macro_name is not None else None,
                 pin_map=pin_map,
                 pin_s=s_xml,
-                value=str(value) if value not in (None, "") else None,
             )
         )
 
@@ -195,7 +192,6 @@ def to_wizard_prefill(
                 "name": sc.name,
                 "refdes": sc.refdes,
                 "pins_s": sc.pin_s,
-                "value": sc.value,
             }
         )
 

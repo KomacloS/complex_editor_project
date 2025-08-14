@@ -62,7 +62,6 @@ def to_wizard_prefill_from_db(
                 "id_function": id_function,
                 "pins": pins,
                 "pins_s": raw_pins.get("S"),
-                "value": getattr(sc, "value", None),
             }
         )
 
