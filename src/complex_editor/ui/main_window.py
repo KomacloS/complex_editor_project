@@ -13,6 +13,8 @@ from ..db import schema_introspect
 from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
+from .buffer_persistence import load_buffer, save_buffer
+from ..utils.macro_xml_translator import params_to_xml
 from .new_complex_wizard import NewComplexWizard
 from ..io.buffer_loader import (
     load_complex_from_buffer_json,
@@ -34,8 +36,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ctx = AppContext()
         self.db: Optional[MDB] = None
         self._buffer_complexes: List[EditorComplex] | None = None
+        self._buffer_raw: List[dict] | None = None
+        self._buffer_path: Path | None = None
 
         if buffer_path is not None and Path(buffer_path).exists():
+            self._buffer_path = Path(buffer_path)
+            self._buffer_raw = load_buffer(self._buffer_path)
             self._buffer_complexes = load_editor_complexes_from_buffer(buffer_path)
         else:
             if mdb_path is None:
@@ -257,17 +263,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if self._buffer_complexes is not None:
             cx = self._buffer_complexes[row]
-            class _BufWrapper:
-                pass
-
-            dom = _BufWrapper()
-            dom.pins = cx.pins
-            dom.id_function = 0
-            dom.macro = MacroInstance("(from buffer)", {})
-            dom.subcomponents = [MacroInstance(sc.name, sc.pins) for sc in cx.subcomponents]
             dlg = ComplexEditor({})
-            dlg.load_from_model(dom)
-            dlg.exec()
+            dlg.load_editor_complex(cx)
+            if (
+                dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted
+                and self._buffer_raw is not None
+                and self._buffer_path is not None
+            ):
+                raw_cx = self._buffer_raw[row]
+                for raw_sc, sc in zip(raw_cx.get("subcomponents", []), cx.subcomponents):
+                    sc.all_macros[sc.selected_macro] = sc.macro_params
+                    xml = params_to_xml(sc.all_macros, encoding="utf-16")
+                    raw_sc.setdefault("pins", {})["S"] = xml.decode("utf-16")
+                save_buffer(self._buffer_path, self._buffer_raw)
             return
 
         cid = int(cid_item.text())

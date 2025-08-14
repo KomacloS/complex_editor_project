@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict
 
 from PyQt6 import QtCore, QtWidgets
 
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
 from ..domain.pinxml import PinXML
 from .pin_table import PinTable
+from .param_editor import MacroParamsDialog
 
 
 class ComplexEditor(QtWidgets.QDialog):
@@ -20,6 +21,9 @@ class ComplexEditor(QtWidgets.QDialog):
         self.dirty = False
 
         layout = QtWidgets.QVBoxLayout(self)
+        self.sub_table = QtWidgets.QTableWidget(0, 0)
+        layout.addWidget(self.sub_table)
+
         self.sub_group = QtWidgets.QGroupBox("Sub-components")
         self.sub_group.setCheckable(True)
         self.sub_group.setChecked(False)
@@ -51,6 +55,7 @@ class ComplexEditor(QtWidgets.QDialog):
         self.save_btn.clicked.connect(self.save_complex)
         self.macro_combo.currentIndexChanged.connect(self._on_macro_change)
         self.set_macro_map(self.macro_map)
+        self._editor_cx = None
 
     # ------------------------------------------------------------------ utils
     def set_macro_map(self, macro_map: dict[int, MacroDef]) -> None:
@@ -272,3 +277,60 @@ class ComplexEditor(QtWidgets.QDialog):
                 w.setText(str(v))
         self.dirty = False
         self.dirtyChanged.emit(False)
+
+    # ----------------------------------------------------------------- buffer
+    def load_editor_complex(self, model: "EditorComplex") -> None:
+        """Populate :attr:`sub_table` from an :class:`EditorComplex` model.
+
+        This method is used in buffer mode where sub-components already contain
+        macro and parameter information.  It intentionally keeps the existing
+        single-macro editor intact so tests targeting that behaviour continue to
+        work.
+        """
+
+        from .adapters import EditorComplex as _EC  # local import to avoid cycle
+
+        assert isinstance(model, _EC)
+        self._editor_cx = model
+        subs = model.subcomponents
+        pin_cols = sorted({p for sc in subs for p in sc.pins.keys()})
+        headers = ["Function"] + pin_cols + ["Macro", "Params"]
+        self.sub_table.setColumnCount(len(headers))
+        self.sub_table.setHorizontalHeaderLabels(headers)
+        self.sub_table.setRowCount(len(subs))
+        for row, sc in enumerate(subs):
+            self.sub_table.setItem(row, 0, QtWidgets.QTableWidgetItem(sc.name))
+            for col, pin in enumerate(pin_cols, start=1):
+                self.sub_table.setItem(
+                    row, col, QtWidgets.QTableWidgetItem(sc.pins.get(pin, ""))
+                )
+            combo = QtWidgets.QComboBox()
+            for macro_name in sc.all_macros.keys():
+                combo.addItem(macro_name)
+            if combo.count() == 0:
+                combo.addItem(sc.selected_macro)
+            idx = combo.findText(sc.selected_macro)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            combo.currentTextChanged.connect(
+                lambda name, sc=sc: self._switch_macro(sc, name)
+            )
+            self.sub_table.setCellWidget(row, len(pin_cols) + 1, combo)
+
+            btn = QtWidgets.QPushButton("Edit…")
+            btn.clicked.connect(lambda _=False, sc=sc: self._edit_params(sc))
+            self.sub_table.setCellWidget(row, len(pin_cols) + 2, btn)
+
+    # ----------------------------------------------------------------- helpers
+    def _switch_macro(self, sc: "EditorMacro", name: str) -> None:
+        sc.selected_macro = name
+        sc.macro_params = sc.all_macros.get(name, {})
+        sc.params = sc.macro_params
+
+    def _edit_params(self, sc: "EditorMacro") -> None:
+        dlg = MacroParamsDialog(sc.macro_params, self)
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            updated = dlg.params()
+            sc.macro_params = updated
+            sc.params = updated
+            sc.all_macros[sc.selected_macro] = updated

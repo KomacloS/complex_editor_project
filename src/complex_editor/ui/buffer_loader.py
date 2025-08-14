@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 import json
 
 from .adapters import EditorComplex, EditorMacro
+from ..utils.macro_xml_translator import xml_to_params
 
 
 def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
@@ -34,11 +35,34 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
                 sc.get("function_name") or f"Function {sc.get('id_function', '')}"
             )
             pin_map: Dict[str, str] = {}
+            s_xml = None
             for k, v in (sc.get("pins") or {}).items():
                 if k == "S":
-                    continue  # params XML – not handled yet
+                    s_xml = v
+                    continue
                 pin_map[str(k)] = str(v)
-            em = EditorMacro(name=macro_name, pins=pin_map, params={})
+
+            all_macros: Dict[str, Dict[str, str]] = {}
+            selected_macro = macro_name
+            macro_params: Dict[str, str] = {}
+            if s_xml:
+                all_macros = xml_to_params(s_xml)
+                if len(all_macros) == 1:
+                    selected_macro = next(iter(all_macros))
+                elif macro_name in all_macros:
+                    selected_macro = macro_name
+                elif all_macros:
+                    selected_macro = next(iter(all_macros))
+                macro_params = dict(all_macros.get(selected_macro, {}))
+
+            em = EditorMacro(
+                name=macro_name,
+                pins=pin_map,
+                params=macro_params,
+                selected_macro=selected_macro,
+                macro_params=macro_params,
+                all_macros=all_macros,
+            )
             if sc.get("id") is not None:
                 em.sub_id = sc.get("id")
             if sc.get("value") is not None:
