@@ -3,7 +3,7 @@ from __future__ import annotations
 import os, sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-from complex_editor.utils.macro_xml_translator import xml_to_params, params_to_xml
+from complex_editor.util.macro_xml_translator import xml_to_params, params_to_xml
 
 
 def test_parse_sample_pins_s() -> None:

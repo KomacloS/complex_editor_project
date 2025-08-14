@@ -6,6 +6,8 @@ from typing import Dict, List, Optional, cast
 
 from PyQt6 import QtWidgets, QtCore
 
+from .widgets.step_indicator import StepIndicator
+
 from ..domain import (
     ComplexDevice,
     MacroDef,
@@ -16,6 +18,7 @@ from ..domain import (
 from ..param_spec import ALLOWED_PARAMS
 from ..db import discover_macro_map
 from ..io.buffer_loader import WizardPrefill
+from ..util.macro_xml_translator import xml_to_params, params_to_xml
 
 
 class BasicsPage(QtWidgets.QWidget):
@@ -647,6 +650,9 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.current_index: Optional[int] = None
 
         layout = QtWidgets.QVBoxLayout(self)
+        steps = ["Basics", "Subcomponents", "Parameters", "Review"]
+        self.step_indicator = StepIndicator(steps)
+        layout.addWidget(self.step_indicator)
         self.stack = QtWidgets.QStackedWidget()
         layout.addWidget(self.stack)
         nav = QtWidgets.QHBoxLayout()
@@ -677,6 +683,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.stack.addWidget(self.param_page)
         self.stack.addWidget(self.review_page)
 
+        self.stack.currentChanged.connect(self._on_stack_changed)
         self.back_btn.clicked.connect(self._back)
         self.next_btn.clicked.connect(self._next)
         self.list_page.add_btn.clicked.connect(self._add_sub)
@@ -698,6 +705,19 @@ class NewComplexWizard(QtWidgets.QDialog):
         self._update_edit_buttons(-1)
 
         self._update_nav()
+        self._on_stack_changed(self.stack.currentIndex())
+
+    def _on_stack_changed(self, idx: int) -> None:
+        page = self.stack.widget(idx)
+        if page is self.basics_page:
+            step = 0
+        elif page in (self.list_page, self.macro_page):
+            step = 1
+        elif page is self.param_page:
+            step = 2
+        else:
+            step = 3
+        self.step_indicator.set_current(step)
 
     @classmethod
     def from_wizard_prefill(cls, prefill: WizardPrefill, parent=None) -> "NewComplexWizard":
@@ -882,19 +902,41 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         sc.macro.name = macro.name
         sc.pins = pins
-        if self._param_page_disabled:
-            self.param_page.group_box.hide()
-            self.param_page.warn_label.setText(
-                "Parameters not preloaded (PinS pending)."
+
+        s_xml = getattr(sc, "pin_s", None)
+        all_macros = {}
+        if s_xml:
+            try:
+                all_macros = xml_to_params(s_xml)
+            except Exception:
+                all_macros = {}
+        setattr(sc, "all_macros", all_macros)
+        if all_macros:
+            fname = getattr(sc, "function_name", None)
+            active = None
+            if fname and fname in all_macros:
+                active = fname
+            elif sc.macro.name in all_macros:
+                active = sc.macro.name
+            else:
+                active = next(iter(all_macros))
+            sc.macro.name = active
+            sc.macro.params = dict(all_macros.get(active, {}))
+            self.param_page.warn_label.hide()
+            macro = next(
+                (m for m in self.macro_map.values() if m.name == sc.macro.name),
+                macro,
             )
+        else:
+            sc.macro.params = sc.macro.params or {}
+            setattr(sc, "all_macros", {sc.macro.name: dict(sc.macro.params)})
+            self.param_page.warn_label.setText("no PinS found")
             self.param_page.warn_label.show()
-            self.stack.setCurrentWidget(self.param_page)
-            self._update_nav()
-            return
-        if macro.params:  # normal case
+
+        if macro.params:
             self.param_page.build_widgets(macro, sc.macro.params)
             self.stack.setCurrentWidget(self.param_page)
-        else:  # no parameters → skip page
+        else:
             self._save_params()
             self.stack.setCurrentWidget(self.review_page)
         self._update_nav()
@@ -914,6 +956,11 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         all_vals = self.param_page.param_values()
         sc.macro.params = all_vals
+        all_macros = getattr(sc, "all_macros", {})
+        all_macros[sc.macro.name] = all_vals
+        setattr(sc, "all_macros", all_macros)
+        xml_bytes = params_to_xml(all_macros, encoding="utf-16")
+        setattr(sc, "pin_s", xml_bytes.decode("utf-16"))
         macro_def = next(
             (m for m in self.macro_map.values() if m.name == sc.macro.name), None
         )
