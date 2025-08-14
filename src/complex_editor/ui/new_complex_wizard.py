@@ -21,6 +21,36 @@ from ..io.buffer_loader import WizardPrefill
 from ..util.macro_xml_translator import xml_to_params, params_to_xml
 
 
+def _norm(s: str) -> str:
+    return str(s).strip().lower()
+
+
+def _is_default(val: object) -> bool:
+    return isinstance(val, str) and _norm(val) == "default"
+
+
+_LOWER_SCHEMA = {
+    _norm(m): { _norm(p): spec for p, spec in params.items() }
+    for m, params in ALLOWED_PARAMS.items()
+}
+
+
+def _macro_spec(name: str) -> dict | None:
+    return ALLOWED_PARAMS.get(name) or _LOWER_SCHEMA.get(_norm(name))
+
+
+def _param_spec(macro: str, param: str):
+    macro_map = _LOWER_SCHEMA.get(_norm(macro))
+    return macro_map.get(_norm(param)) if macro_map else None
+
+
+def _get_case_insensitive(mapping: dict[str, str], key: str):
+    for k, v in mapping.items():
+        if _norm(k) == _norm(key):
+            return v
+    return None
+
+
 def _safe_numeric(init, default: float | str | None = 0.0) -> float:
     """Coerce *init* to ``float`` with tolerant fallback."""
 
@@ -262,6 +292,7 @@ class ParamPage(QtWidgets.QWidget):
         self.required: set[str] = set()
         self.macro_name: str = ""
         self.errors: list[str] = []
+        self.special_values: dict[str, str] = {}
 
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
         try:
@@ -274,12 +305,13 @@ class ParamPage(QtWidgets.QWidget):
             self.widgets = {}
             self.required = set()
             self.errors = []
+            self.special_values = {}
             self.macro_name = macro.name
             self.heading.setText(macro.name)
             self.group_box.setTitle(macro.name)
             self.warn_label.hide()
             self.group_box.show()
-            allowed = ALLOWED_PARAMS.get(macro.name)
+            allowed = _macro_spec(macro.name)
             if allowed is None:
                 logging.getLogger(__name__).warning(
                     "Macro %s has no parameter definition in DB or YAML", macro.name
@@ -291,9 +323,9 @@ class ParamPage(QtWidgets.QWidget):
                 self.warn_label.show()
                 return
             # ---- merge YAML params not present in MacroDef ----
-            existing = {p.name for p in macro.params}
+            existing = {p.name.lower() for p in macro.params}
             for pname, spec in allowed.items():
-                if pname in existing:
+                if pname.lower() in existing:
                     continue
                 if isinstance(spec, dict):
                     if "choices" in spec or spec.get("type") == "ENUM":
@@ -343,7 +375,7 @@ class ParamPage(QtWidgets.QWidget):
                     row = idx - len(left)
                     col = 1
                 label = QtWidgets.QLabel(p.name)
-                spec = allowed.get(p.name)
+                spec = _param_spec(macro.name, p.name)
                 w: QtWidgets.QWidget
                 if macro.name == "GATE" and p.name in {
                     "Check_A",
@@ -417,32 +449,48 @@ class ParamPage(QtWidgets.QWidget):
                 self.widgets[p.name] = w
                 self.grid.addWidget(label, row, col * 2)
                 self.grid.addWidget(w, row, col * 2 + 1)
-                val = params.get(p.name, p.default)
+                val = _get_case_insensitive(params, p.name)
+                if val is None:
+                    val = p.default
                 if isinstance(w, QtWidgets.QSpinBox):
                     default = p.default
                     if isinstance(spec, dict) and spec.get("default") is not None:
                         default = spec.get("default")
-                    num = int(
-                        _safe_numeric(
-                            val,
-                            default if default is not None else w.minimum(),
+                    if _is_default(val):
+                        w.setSpecialValueText("Default")
+                        w.setValue(w.minimum())
+                        self.special_values[p.name] = "Default"
+                    else:
+                        num = int(
+                            _safe_numeric(
+                                val,
+                                default if default is not None else w.minimum(),
+                            )
                         )
-                    )
-                    w.setValue(num)
+                        w.setValue(num)
+                    w.valueChanged.connect(lambda _v, n=p.name: self._on_spin_change(n))
                 elif isinstance(w, QtWidgets.QDoubleSpinBox):
                     default = p.default
                     if isinstance(spec, dict) and spec.get("default") is not None:
                         default = spec.get("default")
-                    num = _safe_numeric(
-                        val, default if default is not None else w.minimum()
-                    )
-                    w.setValue(num)
+                    if _is_default(val):
+                        w.setSpecialValueText("Default")
+                        w.setValue(w.minimum())
+                        self.special_values[p.name] = "Default"
+                    else:
+                        num = _safe_numeric(
+                            val, default if default is not None else w.minimum()
+                        )
+                        w.setValue(num)
+                    w.valueChanged.connect(lambda _v, n=p.name: self._on_spin_change(n))
                 elif isinstance(w, QtWidgets.QCheckBox):
                     w.setChecked(str(val).lower() in ("1", "true", "yes"))
+                    w.stateChanged.connect(self._validate)
                 elif isinstance(w, QtWidgets.QComboBox) and val is not None:
                     idx = w.findText(str(val))
                     if idx >= 0:
                         w.setCurrentIndex(idx)
+                    w.currentIndexChanged.connect(self._validate)
                 elif isinstance(w, QtWidgets.QLineEdit):
                     if val is not None and not (
                         p.type == "PIN" and str(val) == "-99999999999.0"
@@ -462,15 +510,8 @@ class ParamPage(QtWidgets.QWidget):
                             and str(val) in {"-1", "-1.0"}
                         ):
                             w.setText(str(val))
-
-                if isinstance(w, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
-                    w.valueChanged.connect(self._validate)
-                elif isinstance(w, QtWidgets.QComboBox):
-                    w.currentIndexChanged.connect(self._validate)
-                elif isinstance(w, QtWidgets.QCheckBox):
-                    w.stateChanged.connect(self._validate)
-                else:
                     w.textChanged.connect(self._validate)
+
 
             self._validate()
         except Exception as e:
@@ -487,7 +528,9 @@ class ParamPage(QtWidgets.QWidget):
     def param_values(self) -> dict[str, str]:
         result: dict[str, str] = {}
         for name, w in self.widgets.items():
-            if isinstance(w, QtWidgets.QSpinBox):
+            if name in self.special_values:
+                result[name] = self.special_values[name]
+            elif isinstance(w, QtWidgets.QSpinBox):
                 result[name] = str(w.value())
             elif isinstance(w, QtWidgets.QDoubleSpinBox):
                 result[name] = str(w.value())
@@ -509,6 +552,10 @@ class ParamPage(QtWidgets.QWidget):
         return True
 
     # ------------------------------------------------------------------ helpers
+    def _on_spin_change(self, name: str) -> None:
+        self.special_values.pop(name, None)
+        self._validate()
+
     def _widget_value(self, w: QtWidgets.QWidget) -> str | int | float | bool | None:
         if isinstance(w, QtWidgets.QSpinBox):
             return w.value()
@@ -526,42 +573,43 @@ class ParamPage(QtWidgets.QWidget):
         (`self.parent().parent()._params_ok`) so the wizard
         can enable/disable navigation buttons.
         """
-        allowed = ALLOWED_PARAMS.get(self.macro_name, {})
+        allowed = _macro_spec(self.macro_name) or {}
         self.errors = []
         self_valid = True
         for pname, widget in self.widgets.items():
             widget.setStyleSheet("")
-            spec = allowed.get(pname)
-            value = self._widget_value(widget)
+            spec = _param_spec(self.macro_name, pname)
+            value = self.special_values.get(pname, self._widget_value(widget))
             ok = True
-            if isinstance(spec, dict) and ("min" in spec or "max" in spec):
+            msg = ""
+            if isinstance(spec, dict) and (
+                (spec.get("type") or "").upper() == "ENUM" or "choices" in spec
+            ):
+                choices = [str(c) for c in spec.get("choices", [])]
+                ok = any(_norm(str(value)) == _norm(c) for c in choices)
+                msg = f"{pname} must be one of {', '.join(choices)}"
+            elif isinstance(spec, list):
+                choices = [str(s) for s in spec]
+                ok = any(_norm(str(value)) == _norm(c) for c in choices)
+                msg = f"{pname} must be one of {', '.join(choices)}"
+            elif isinstance(spec, dict) and ("min" in spec or "max" in spec):
                 lo, hi = spec.get("min"), spec.get("max")
-                try:
-                    val = float(value)  # type: ignore[arg-type]
-                    if lo is not None and val < float(lo):
+                if _is_default(value):
+                    ok = True
+                else:
+                    try:
+                        val = float(value)  # type: ignore[arg-type]
+                        if lo is not None and val < float(lo):
+                            ok = False
+                        if hi is not None and val > float(hi):
+                            ok = False
+                    except Exception:
                         ok = False
-                    if hi is not None and val > float(hi):
-                        ok = False
-                except Exception:
-                    ok = False
-            elif isinstance(spec, list):
-                ok = str(value) in [str(s) for s in spec]
-            elif isinstance(spec, dict) and "choices" in spec:
-                ok = str(value) in [str(c) for c in spec.get("choices", [])]
-            elif isinstance(spec, list):
-                ok = str(value) in [str(s) for s in spec]
+                msg = f"{pname} must be between {lo} and {hi}"
             if not ok:
                 self_valid = False
                 widget.setStyleSheet("background:#FFCCCC;")
-                if isinstance(spec, dict) and ("min" in spec or "max" in spec):
-                    msg = f"{pname} must be between {lo} and {hi}"
-                elif isinstance(spec, list):
-                    msg = f"{pname} must be one of {', '.join(str(s) for s in spec)}"
-                elif isinstance(spec, dict) and "choices" in spec:
-                    msg = f"{pname} must be one of {', '.join(str(c) for c in spec.get('choices', []))}"
-                else:
-                    msg = f"{pname} is invalid"
-                self.errors.append(msg)
+                self.errors.append(msg or f"{pname} is invalid")
 
         if self.macro_name == "GATE":
             gate_errs: list[str] = []
