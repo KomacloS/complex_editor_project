@@ -14,8 +14,7 @@ from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
-from ..util.macro_xml_translator import params_to_xml
-from ..param_spec import ALLOWED_PARAMS
+from ..utils.macro_xml_translator import params_to_xml
 from .new_complex_wizard import NewComplexWizard
 from ..io.buffer_loader import (
     load_complex_from_buffer_json,
@@ -274,7 +273,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 raw_cx = self._buffer_raw[row]
                 for raw_sc, sc in zip(raw_cx.get("subcomponents", []), cx.subcomponents):
                     sc.all_macros[sc.selected_macro] = sc.macro_params
-                    xml = params_to_xml(sc.all_macros, encoding="utf-16", schema=ALLOWED_PARAMS)
+                    xml = params_to_xml(sc.all_macros, encoding="utf-16")
                     raw_sc.setdefault("pins", {})["S"] = xml.decode("utf-16")
                 save_buffer(self._buffer_path, self._buffer_raw)
             return

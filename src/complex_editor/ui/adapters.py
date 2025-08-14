@@ -11,7 +11,7 @@ read-only and side-effect free.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, TYPE_CHECKING
 
-from ..util.macro_xml_translator import xml_to_params
+from ..utils.macro_xml_translator import xml_to_params
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from ..db.mdb_api import MDB, ComplexDevice, SubComponent

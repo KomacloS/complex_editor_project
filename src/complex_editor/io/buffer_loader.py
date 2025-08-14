@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 class BufferSubComponent:
     """Raw sub-component as loaded from ``buffer.json``.
 
-    ``pin_s`` contains the raw XML stored in the ``S`` pin if present.
+    This mirrors the structure produced by :mod:`mdb.api` but drops any
+    ``PinS``/parameter information.
     """
 
     name: str
@@ -25,7 +26,6 @@ class BufferSubComponent:
     id_function: Optional[int]
     macro_name: Optional[str]
     pin_map: Dict[str, str]
-    pin_s: Optional[str] = None
 
 
 @dataclass
@@ -96,27 +96,21 @@ def load_complex_from_buffer_json(path: str | Path) -> BufferComplex:
         )
 
         pin_map: Dict[str, str] = {}
-        s_xml: Optional[str] = None
         raw_pins = entry.get("PinMap") or entry.get("Pins")
         if isinstance(raw_pins, dict):
-            for k, v in raw_pins.items():
-                if str(k) == "S":
-                    s_xml = str(v)
-                else:
-                    pin_map[str(k)] = str(v)
+            pin_map.update({str(k): str(v) for k, v in raw_pins.items()})
         else:
             for key, val in entry.items():
                 if not key:
                     continue
                 k = str(key)
                 if k in {"PinS", "MacroParameters", "Parameters"}:
-                    if k == "PinS":
-                        s_xml = str(val)
                     continue
                 if k.startswith("Pin") and len(k) == 4 and k[3].isalpha():
                     pin_map[k] = str(val)
                 elif k in list("ABCDEFGH"):
                     pin_map[f"Pin{k.upper()}"] = str(val)
+        pin_map.pop("PinS", None)
         sub_components.append(
             BufferSubComponent(
                 name=name,
@@ -124,7 +118,6 @@ def load_complex_from_buffer_json(path: str | Path) -> BufferComplex:
                 id_function=id_function,
                 macro_name=str(macro_name) if macro_name is not None else None,
                 pin_map=pin_map,
-                pin_s=s_xml,
             )
         )
 
@@ -191,7 +184,6 @@ def to_wizard_prefill(
                 "pins": pins,
                 "name": sc.name,
                 "refdes": sc.refdes,
-                "pins_s": sc.pin_s,
             }
         )
 

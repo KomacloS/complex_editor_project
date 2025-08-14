@@ -5,8 +5,7 @@ from typing import Any, Dict
 from PyQt6 import QtCore, QtWidgets
 
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
-from ..util.macro_xml_translator import xml_to_params, params_to_xml
-from ..param_spec import ALLOWED_PARAMS
+from ..domain.pinxml import PinXML
 from .pin_table import PinTable
 from .param_editor import MacroParamsDialog
 
@@ -187,13 +186,8 @@ class ComplexEditor(QtWidgets.QDialog):
         macro = self.macro_map.get(id_func)
         self._build_param_widgets(macro)
         pin_s = getattr(row, "PinS", row[6] if len(row) > 6 else None)
-        macros = xml_to_params(pin_s) if pin_s else {}
-        values: Dict[str, str] = {}
-        if macros:
-            if macro and macro.name in macros:
-                values = macros.get(macro.name, {})
-            else:
-                values = next(iter(macros.values()))
+        macros = PinXML.deserialize(pin_s) if pin_s else []
+        values = macros[0].params if macros else {}
         if macro:
             for p in macro.params:
                 w = self.param_widgets.get(p.name)
@@ -241,7 +235,7 @@ class ComplexEditor(QtWidgets.QDialog):
         id_func = int(data)
         macro_name = self.macro_combo.currentText()
         params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
-        xml = params_to_xml({macro_name: params}, schema=ALLOWED_PARAMS)
+        xml = PinXML.serialize([MacroInstance(macro_name, params)])
         pad_vals = (pins + [None, None, None, None])[:4]
         return {
             "IDFunction": id_func,

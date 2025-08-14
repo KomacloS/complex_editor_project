@@ -6,8 +6,6 @@ from typing import Dict, List, Optional, cast
 
 from PyQt6 import QtWidgets, QtCore
 
-from .widgets.step_indicator import StepIndicator
-
 from ..domain import (
     ComplexDevice,
     MacroDef,
@@ -18,7 +16,6 @@ from ..domain import (
 from ..param_spec import ALLOWED_PARAMS
 from ..db import discover_macro_map
 from ..io.buffer_loader import WizardPrefill
-from ..util.macro_xml_translator import xml_to_params, params_to_xml
 
 
 class BasicsPage(QtWidgets.QWidget):
@@ -650,8 +647,6 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.current_index: Optional[int] = None
 
         layout = QtWidgets.QVBoxLayout(self)
-        self.step_indicator = StepIndicator(["Basics","Subcomponents","Parameters","Review"])
-        layout.addWidget(self.step_indicator)
         self.stack = QtWidgets.QStackedWidget()
         layout.addWidget(self.stack)
         nav = QtWidgets.QHBoxLayout()
@@ -696,6 +691,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.review_page.save_btn.clicked.connect(self._finish)
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
+        self._param_page_disabled = False
         self.mode = "new"
         self.editing_complex_id: Optional[int] = None
 
@@ -703,25 +699,12 @@ class NewComplexWizard(QtWidgets.QDialog):
 
         self._update_nav()
 
-    def _on_page_changed(self, idx: int) -> None:
-        page = self.stack.widget(idx)
-        if page is self.basics_page:
-            step = 0
-        elif page in (self.list_page, self.macro_page):
-            step = 1
-        elif page is self.param_page:
-            step = 2
-        elif page is self.review_page:
-            step = 3
-        else:
-            step = 0
-        self.step_indicator.set_current(step)
-
     @classmethod
     def from_wizard_prefill(cls, prefill: WizardPrefill, parent=None) -> "NewComplexWizard":
         """Build a wizard pre-populated from :class:`WizardPrefill`."""
 
         wiz = cls(None, parent)
+        wiz._param_page_disabled = True
         if prefill.complex_name:
             wiz.basics_page.pn_edit.setText(prefill.complex_name)
         max_pin = 0
@@ -732,18 +715,7 @@ class NewComplexWizard(QtWidgets.QDialog):
             mi = MacroInstance(sc.get("macro_name", ""), {})
             if sc.get("id_function") is not None:
                 mi.id_function = sc.get("id_function")
-            s_xml = sc.get("pins_s") or sc.get("S")
             subc = SubComponent(mi, pins)
-            if s_xml:
-                macros = xml_to_params(s_xml)
-                if macros:
-                    sel = sc.get("macro_name") or next(iter(macros))
-                    if sel not in macros:
-                        sel = next(iter(macros))
-                    mi.name = sel
-                    mi.params = dict(macros.get(sel, {}))
-                    setattr(subc, "all_macros", macros)
-                    setattr(subc, "pin_s", s_xml)
             wiz.sub_components.append(subc)
             text = f"{mi.name} ({','.join(str(p) for p in pins)})"
             wiz.list_page.list.addItem(text)
@@ -760,6 +732,11 @@ class NewComplexWizard(QtWidgets.QDialog):
                 else:
                     used[pin] = sc.macro.name
         wiz.review_page.populate(wiz.sub_components, warnings)
+        wiz.param_page.group_box.hide()
+        wiz.param_page.warn_label.setText(
+            "Parameters not preloaded (PinS pending)."
+        )
+        wiz.param_page.warn_label.show()
         wiz._mapping_ok = True
         wiz.stack.setCurrentWidget(wiz.review_page)
         wiz._update_nav()
@@ -774,6 +751,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         wiz = cls(None, parent)
         wiz.mode = "edit"
         wiz.editing_complex_id = complex_id
+        wiz._param_page_disabled = True
 
         if prefill.complex_name:
             wiz.basics_page.pn_edit.setText(prefill.complex_name)
@@ -787,18 +765,7 @@ class NewComplexWizard(QtWidgets.QDialog):
             mi = MacroInstance(sc.get("macro_name", ""), {})
             if sc.get("id_function") is not None:
                 mi.id_function = sc.get("id_function")
-            s_xml = sc.get("pins_s") or sc.get("S")
             subc = SubComponent(mi, pins)
-            if s_xml:
-                macros = xml_to_params(s_xml)
-                if macros:
-                    sel = sc.get("macro_name") or next(iter(macros))
-                    if sel not in macros:
-                        sel = next(iter(macros))
-                    mi.name = sel
-                    mi.params = dict(macros.get(sel, {}))
-                    setattr(subc, "all_macros", macros)
-                    setattr(subc, "pin_s", s_xml)
             wiz.sub_components.append(subc)
             text = f"{mi.name} ({','.join(str(p) for p in pins)})"
             wiz.list_page.list.addItem(text)
@@ -821,6 +788,9 @@ class NewComplexWizard(QtWidgets.QDialog):
                     used[pin] = sc.macro.name
 
         wiz.review_page.populate(wiz.sub_components, warnings)
+        wiz.param_page.group_box.hide()
+        wiz.param_page.warn_label.setText("(PinS editing coming soon)")
+        wiz.param_page.warn_label.show()
         wiz._mapping_ok = True
         wiz.stack.setCurrentWidget(wiz.review_page)
         wiz._update_nav()
@@ -912,16 +882,15 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         sc.macro.name = macro.name
         sc.pins = pins
-        if hasattr(sc, "all_macros") and isinstance(sc.all_macros, dict):
-            sc.macro.params = dict(sc.all_macros.get(sc.macro.name, {}))
-            if sc.macro.params:
-                self.param_page.warn_label.hide()
-            else:
-                self.param_page.warn_label.setText("No PinS found")
-                self.param_page.warn_label.show()
-        else:
-            self.param_page.warn_label.setText("No PinS found")
+        if self._param_page_disabled:
+            self.param_page.group_box.hide()
+            self.param_page.warn_label.setText(
+                "Parameters not preloaded (PinS pending)."
+            )
             self.param_page.warn_label.show()
+            self.stack.setCurrentWidget(self.param_page)
+            self._update_nav()
+            return
         if macro.params:  # normal case
             self.param_page.build_widgets(macro, sc.macro.params)
             self.stack.setCurrentWidget(self.param_page)
@@ -945,11 +914,6 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         all_vals = self.param_page.param_values()
         sc.macro.params = all_vals
-        macros = getattr(sc, "all_macros", {})
-        macros[sc.macro.name] = all_vals
-        setattr(sc, "all_macros", macros)
-        xml = params_to_xml(macros, schema=ALLOWED_PARAMS)
-        setattr(sc, "pin_s", xml.decode("utf-16"))
         macro_def = next(
             (m for m in self.macro_map.values() if m.name == sc.macro.name), None
         )

@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import json
 
 from .adapters import EditorComplex, EditorMacro
-from ..util.macro_xml_translator import xml_to_params
+from ..utils.macro_xml_translator import xml_to_params
 
 
 def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
