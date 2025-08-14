@@ -14,7 +14,7 @@ from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
-from ..utils.macro_xml_translator import params_to_xml
+from ..util.macro_xml_translator import params_to_xml
 from .new_complex_wizard import NewComplexWizard
 from ..io.buffer_loader import (
     load_complex_from_buffer_json,

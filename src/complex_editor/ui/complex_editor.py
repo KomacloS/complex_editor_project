@@ -5,7 +5,7 @@ from typing import Any, Dict
 from PyQt6 import QtCore, QtWidgets
 
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
-from ..domain.pinxml import PinXML
+from ..util.macro_xml_translator import xml_to_params, params_to_xml
 from .pin_table import PinTable
 from .param_editor import MacroParamsDialog
 
@@ -172,6 +172,7 @@ class ComplexEditor(QtWidgets.QDialog):
             self._build_param_widgets(macro)
             self.xml_preview.clear()
             self.on_dirty()
+            self._all_macros = {}
             return
 
         pins = [
@@ -186,8 +187,21 @@ class ComplexEditor(QtWidgets.QDialog):
         macro = self.macro_map.get(id_func)
         self._build_param_widgets(macro)
         pin_s = getattr(row, "PinS", row[6] if len(row) > 6 else None)
-        macros = PinXML.deserialize(pin_s) if pin_s else []
-        values = macros[0].params if macros else {}
+        all_macros = xml_to_params(pin_s) if pin_s else {}
+        self._all_macros = all_macros
+        values: Dict[str, str] = {}
+        if macro and macro.name in all_macros:
+            values = all_macros[macro.name]
+        elif all_macros:
+            active = next(iter(all_macros))
+            values = all_macros[active]
+            idx2 = self.macro_combo.findText(active)
+            if idx2 >= 0:
+                self.macro_combo.setCurrentIndex(idx2)
+                data = self.macro_combo.currentData()
+                if data is not None:
+                    macro = self.macro_map.get(int(data))
+                    self._build_param_widgets(macro)
         if macro:
             for p in macro.params:
                 w = self.param_widgets.get(p.name)
@@ -235,7 +249,10 @@ class ComplexEditor(QtWidgets.QDialog):
         id_func = int(data)
         macro_name = self.macro_combo.currentText()
         params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
-        xml = PinXML.serialize([MacroInstance(macro_name, params)])
+        all_macros = getattr(self, "_all_macros", {})
+        all_macros[macro_name] = params
+        self._all_macros = all_macros
+        xml = params_to_xml(all_macros, encoding="utf-16")
         pad_vals = (pins + [None, None, None, None])[:4]
         return {
             "IDFunction": id_func,
