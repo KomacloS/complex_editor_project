@@ -38,7 +38,8 @@ def to_wizard_prefill_from_db(
             else:
                 log.warning("Could not resolve macro '%s' to ID", macro_name)
 
-        pin_map = {f"Pin{k}": str(v) for k, v in (getattr(sc, "pins", {}) or {}).items()}
+        raw_pins = getattr(sc, "pins", {}) or {}
+        pin_map = {f"Pin{k}": str(v) for k, v in raw_pins.items() if k != "S"}
         normalized = pin_normalizer(pin_map)
         pins: list[int] = []
         seen: set[str] = set()
@@ -60,6 +61,7 @@ def to_wizard_prefill_from_db(
                 "macro_name": macro_name,
                 "id_function": id_function,
                 "pins": pins,
+                "pins_s": raw_pins.get("S"),
             }
         )
 
