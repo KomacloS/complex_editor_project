@@ -3674,3 +3674,5864 @@ ZENER:
     - 6 Wire
     - Auto
     default: 2 Wire
+ISOLATION:
+  Value:
+    type: INT
+    min: -1.0
+    max: 100000000000.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  GuardPin1:
+    type: PIN
+    default: -99999999999.0
+  GuardPin2:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 500.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin1:
+    type: INT
+    min: 0.0
+    max: 1000000000.0
+    default: 0.0
+  CapGuardPin1:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin2:
+    type: INT
+    min: 0.0
+    max: 1000000000.0
+    default: 0.0
+  CapGuardPin2:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+CONTINUITY:
+  Value:
+    type: INT
+    min: -1.0
+    max: 100000000.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+TRANSISTOR:
+  Technology:
+    type: ENUM
+    min: -1.0
+    max: 5.0
+    default: Default
+    choices:
+    - Default
+    - BJT NPN
+    - BJT PNP
+    - MOS N
+    - MOS P
+    - Auto
+  ValueOFF:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  ValueON:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Emitter_Source:
+    type: PIN
+    default: -99999999999.0
+  Base_Gate:
+    type: PIN
+    default: -99999999999.0
+  Collector_Drain:
+    type: PIN
+    default: -99999999999.0
+  GuardBase:
+    type: PIN
+    default: -99999999999.0
+  GuardCollector:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TestMode:
+    type: ENUM
+    min: -1.0
+    max: 5.0
+    default: Default
+    choices:
+    - Default
+    - On-Off
+    - 'On'
+    - 'Off'
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Volt_C_D:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Current_C_D:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  Volt_B_G:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Current_B_G:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ResPar_C_D:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapPar_C_D:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResPar_B_G:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapPar_B_G:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Value:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Anode:
+    type: PIN
+    default: -99999999999.0
+  Catode:
+    type: PIN
+    default: -99999999999.0
+  SenseAnode:
+    type: PIN
+    default: -99999999999.0
+  SenseCatode:
+    type: PIN
+    default: -99999999999.0
+  GuardAnode:
+    type: PIN
+    default: -99999999999.0
+  GuardCatode:
+    type: PIN
+    default: -99999999999.0
+  SenseGuardAnode:
+    type: PIN
+    default: -99999999999.0
+  SenseGuardCatode:
+    type: PIN
+    default: -99999999999.0
+  JunctionMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Direct
+    choices:
+    - Direct
+    - Invert
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ResPar:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin1:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapGuardPin1:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin2:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapGuardPin2:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  GuardBase_Gate:
+    type: PIN
+    default: -99999999999.0
+  GuardColl_Drain:
+    type: PIN
+    default: -99999999999.0
+  Coll_DrainChargeTimeout:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  TurnOnTimeout:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Base_GateVoltage:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  Base_GateCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  Coll_DrainVoltage:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  Coll_DrainCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ValueOn:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  ValueOff:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+CAPACITIVEREAD:
+  PIN1:
+    type: PIN
+    default: -99999999999.0
+  PinGND:
+    type: PIN
+    default: -99999999999.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Femto
+    - ACL
+    - Autorange
+    - Parasite
+    - NoMeasure
+  Value:
+    type: INT
+    min: 0.0
+    max: 99999999999.0
+    default: 0.0
+  TolP:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolN:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+SOLDERING:
+  SolderJoint:
+    type: PIN
+    default: -99999999999.0
+  TempGradient:
+    type: INT
+    min: 10.0
+    max: 2000.0
+    default: 0.0
+  SolderTemp:
+    type: INT
+    min: 0.0
+    max: 650.0
+    default: 0.0
+  WireLength:
+    type: INT
+    min: 0.0
+    max: 2.0
+    default: 0.0
+  PostTemp:
+    type: INT
+    min: 0.0
+    max: 650.0
+    default: 0.0
+  PostTime:
+    type: INT
+    min: 0.0
+    max: 300.0
+    default: 0.0
+  PreHeatTemp:
+    type: INT
+    min: 0.0
+    max: 650.0
+    default: 0.0
+  WaitPreHeat:
+    type: INT
+    min: 0.0
+    max: 300.0
+    default: 0.0
+  AngleStart:
+    type: INT
+    min: -1.0
+    max: 225.0
+    default: 0.0
+  AngleRotation:
+    type: INT
+    min: -225.0
+    max: 225.0
+    default: 0.0
+  EndSoldTemp:
+    type: INT
+    min: -1.0
+    max: 650.0
+    default: 0.0
+  WireSpeed:
+    type: INT
+    min: 1.0
+    max: 100.0
+    default: 0.0
+  LaserID:
+    type: INT
+    min: -0.0035
+    max: 0.004
+    default: 0.0
+CLUSTER:
+  Name:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  Value:
+    type: INT
+    min: -99999999999.0
+    max: 99999999999.0
+    default: -99999999999.0
+  PinList:
+    type: PIN
+    default: -99999999999.0
+OPENFIX:
+  Value:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Sensor:
+    type: INT
+    min: 0.0
+    max: 64.0
+    default: 0.0
+  SensorCh:
+    type: PIN
+    default: -99999999999.0
+  TestPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - RMS Low
+    - AC Low
+    - RMS High
+    - AC High
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+DISCHARGE:
+  Value:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 60.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+FAN:
+  TolPosI:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolNegI:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolPosPha:
+    type: INT
+    min: 0.0
+    max: 180.0
+    default: 0.0
+  TolNegPha:
+    type: INT
+    min: 0.0
+    max: 180.0
+    default: 0.0
+  SignalPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  SignalGuard:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  PointWF:
+    type: INT
+    min: -1.0
+    max: 1024.0
+    default: 0.0
+  BurstNr:
+    type: INT
+    min: -1.0
+    max: 108.0
+    default: 0.0
+  StartFreq:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  StopFreq:
+    type: INT
+    min: -1.0
+    max: 1025000.0
+    default: 0.0
+  SettlingWave:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Scale:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  RangeI:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ViewMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Current
+    choices:
+    - Current
+    - Phase
+    - CapPar
+    - ResPar
+    - IndPar
+    - CapSer
+    - ResSer
+    - IndSer
+  ScopeMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Time
+    choices:
+    - Time
+    - FFT
+    - I Module
+    - I Phase
+  ViewWFNumber:
+    type: INT
+    min: -1.0
+    max: 108.0
+    default: 0.0
+  SelectView:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - ViewMode
+    - Resistor
+    - Capacitor
+    - Inductor
+    - DirectJunction
+    - InvertJunction
+CONTACT:
+  StartCh:
+    type: INT
+    min: 1.0
+    max: 8192.0
+    default: 0.0
+  StopCh:
+    type: INT
+    min: 1.0
+    max: 8192.0
+    default: 0.0
+  FamilyNr:
+    type: INT
+    min: -99999999999.0
+    max: 99999999999.0
+    default: -99999999999.0
+  Value:
+    type: INT
+    min: -1.0
+    max: 100000000.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  ViewChannel:
+    type: INT
+    min: 0.0
+    max: 8192.0
+    default: 0.0
+VISION:
+  Name:
+    type: STRING
+    default: ''
+CLUSTERDIA:
+  Name:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  Value:
+    type: INT
+    min: -99999999999.0
+    max: 99999999999.0
+    default: -99999999999.0
+  PinList:
+    type: PIN
+    default: -99999999999.0
+  EnableProbe:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  EnableDictionary:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+SCR:
+  Value:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Gate:
+    type: PIN
+    default: -99999999999.0
+  Cathode:
+    type: PIN
+    default: -99999999999.0
+  Anode:
+    type: PIN
+    default: -99999999999.0
+  MeasureMode:
+    type: ENUM
+    min: 0.0
+    max: 3.0
+    default: Default
+    choices:
+    - Default
+    - 'On'
+    - 'Off'
+    - Inv_On
+    - Inv_Off
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  InCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  InVolt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  OutCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  OutVolt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+TRIAC:
+  Value:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Gate:
+    type: PIN
+    default: -99999999999.0
+  Terminal1:
+    type: PIN
+    default: -99999999999.0
+  Terminal2:
+    type: PIN
+    default: -99999999999.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - 'On'
+    - 'Off'
+    - Inv_On
+    - Inv_Off
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  InCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  InVolt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  OutCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  OutVolt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+VOLTAGEREGULATOR:
+  Value:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  PowerSet:
+    type: ENUM
+    min: -1.0
+    max: 1.0
+    default: 'ON'
+    choices:
+    - 'ON'
+    - 'OFF'
+  InPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  OutPin:
+    type: PIN
+    default: -99999999999.0
+  EnPin:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  InCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  InVolt:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  EnVolt:
+    type: INT
+    min: -10.0
+    max: 10.0
+    default: 0.0
+JSCAN:
+  Value:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  TestPin:
+    type: PIN
+    default: -99999999999.0
+  GroundPin:
+    type: PIN
+    default: -99999999999.0
+  SenseGroundPin:
+    type: PIN
+    default: -99999999999.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  CurrentDRA:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  CurrentDRB:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  SettlingWave:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  ResParRefPin:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  ResParTestPin:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapParRefPin:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  CapParTestPin:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Split:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  TestPinIso:
+    type: INT
+    min: 0.0
+    max: 10000.0
+    default: 0.0
+POWERON:
+  FinalDelay:
+    type: INT
+    min: 0.0
+    max: 99999999999.0
+    default: 0.0
+  PowerView:
+    type: INT
+    min: 1.0
+    max: 8.0
+    default: 0.0
+  CheckPower:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  PowerMode:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'OFF'
+    choices:
+    - 'OFF'
+    - 'ON'
+  ConnectionMode:
+    type: ENUM
+    min: -1.0
+    max: 3.0
+    default: Default
+    choices:
+    - Default
+    - Fixed
+    - FlyingFloating
+    - FlyingPosRef
+    - FlyingNegRef
+  SupplyP:
+    type: PIN
+    default: -99999999999.0
+  SupplyN:
+    type: PIN
+    default: -99999999999.0
+  PWSelect:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: AUTO
+    choices:
+    - AUTO
+    - PW1
+    - PW2
+    - PW3
+    - PW4
+    - PW5
+    - PW6
+    - PW7
+    - PW8
+    - PWEXT
+  Voltage:
+    type: INT
+    min: 0.0
+    max: 500.0
+    default: 0.0
+  Current:
+    type: INT
+    min: 0.0
+    max: 99999999999.0
+    default: 0.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 10.0
+    default: 0.0
+  ApplyMode:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'On'
+    choices:
+    - 'On'
+    - Prepare
+    - AllOn
+  Sense:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'ON'
+    choices:
+    - 'ON'
+    - 'OFF'
+  Value:
+    type: INT
+    min: -500.0
+    max: 500.0
+    default: 0.0
+  TolP:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolN:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  CurrMin:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CurrMax:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+POWEROFF:
+  FinalDelay:
+    type: INT
+    min: 0.0
+    max: 99999999999.0
+    default: 0.0
+  PowerView:
+    type: INT
+    min: 1.0
+    max: 8.0
+    default: 0.0
+  CheckPower:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  PowerMode:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'OFF'
+    choices:
+    - 'OFF'
+    - 'ON'
+  SupplyP:
+    type: PIN
+    default: -99999999999.0
+  SupplyN:
+    type: PIN
+    default: -99999999999.0
+  PWSelect:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: AUTO
+    choices:
+    - AUTO
+    - PW1
+    - PW2
+    - PW3
+    - PW4
+    - PW5
+    - PW6
+    - PW7
+    - PW8
+    - PWEXT
+    - ALL
+OTPN:
+  TolPosI:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolNegI:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolPosPha:
+    type: INT
+    min: 0.0
+    max: 180.0
+    default: 0.0
+  TolNegPha:
+    type: INT
+    min: 0.0
+    max: 180.0
+    default: 0.0
+  SignalPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  SignalGuard:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  PointWF:
+    type: INT
+    min: -1.0
+    max: 1024.0
+    default: 0.0
+  BurstNr:
+    type: INT
+    min: -1.0
+    max: 108.0
+    default: 0.0
+  StartFreq:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  StopFreq:
+    type: INT
+    min: -1.0
+    max: 1025000.0
+    default: 0.0
+  SettlingWave:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Scale:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  RangeI:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ViewMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Current
+    choices:
+    - Current
+    - Phase
+    - CapPar
+    - ResPar
+    - IndPar
+    - CapSer
+    - ResSer
+    - IndSer
+  ScopeMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Time
+    choices:
+    - Time
+    - FFT
+    - I Module
+    - I Phase
+  ViewWFNumber:
+    type: INT
+    min: -1.0
+    max: 108.0
+    default: 0.0
+  SelectView:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - ViewMode
+    - Resistor
+    - Capacitor
+    - Inductor
+    - DirectJunction
+    - InvertJunction
+  Value:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TestPin:
+    type: PIN
+    default: -99999999999.0
+  GroundPin:
+    type: PIN
+    default: -99999999999.0
+  SenseGroundPin:
+    type: PIN
+    default: -99999999999.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  CurrentDRA:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  CurrentDRB:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ResParRefPin:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  ResParTestPin:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapParRefPin:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  CapParTestPin:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Split:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  TestPinIso:
+    type: INT
+    min: 0.0
+    max: 10000.0
+    default: 0.0
+OTPND:
+  TolPosI:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolNegI:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolPosPha:
+    type: INT
+    min: 0.0
+    max: 180.0
+    default: 0.0
+  TolNegPha:
+    type: INT
+    min: 0.0
+    max: 180.0
+    default: 0.0
+  SignalPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  SignalGuard:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  PointWF:
+    type: INT
+    min: -1.0
+    max: 1024.0
+    default: 0.0
+  BurstNr:
+    type: INT
+    min: -1.0
+    max: 108.0
+    default: 0.0
+  StartFreq:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  StopFreq:
+    type: INT
+    min: -1.0
+    max: 1025000.0
+    default: 0.0
+  SettlingWave:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Scale:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  RangeI:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ViewMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Current
+    choices:
+    - Current
+    - Phase
+    - CapPar
+    - ResPar
+    - IndPar
+    - CapSer
+    - ResSer
+    - IndSer
+  ScopeMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Time
+    choices:
+    - Time
+    - FFT
+    - I Module
+    - I Phase
+  ViewWFNumber:
+    type: INT
+    min: -1.0
+    max: 108.0
+    default: 0.0
+  SelectView:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - ViewMode
+    - Resistor
+    - Capacitor
+    - Inductor
+    - DirectJunction
+    - InvertJunction
+  Value:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Anode:
+    type: PIN
+    default: -99999999999.0
+  Catode:
+    type: PIN
+    default: -99999999999.0
+  SenseAnode:
+    type: PIN
+    default: -99999999999.0
+  SenseCatode:
+    type: PIN
+    default: -99999999999.0
+  GuardAnode:
+    type: PIN
+    default: -99999999999.0
+  GuardCatode:
+    type: PIN
+    default: -99999999999.0
+  SenseGuardAnode:
+    type: PIN
+    default: -99999999999.0
+  SenseGuardCatode:
+    type: PIN
+    default: -99999999999.0
+  JunctionMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Direct
+    choices:
+    - Direct
+    - Invert
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ResPar:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin1:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapGuardPin1:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin2:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapGuardPin2:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+SHORT:
+  StartCh:
+    type: INT
+    min: 1.0
+    max: 8192.0
+    default: 0.0
+  StopCh:
+    type: INT
+    min: 1.0
+    max: 8192.0
+    default: 0.0
+  FamilyNr:
+    type: INT
+    min: -99999999999.0
+    max: 99999999999.0
+    default: -99999999999.0
+  Value:
+    type: INT
+    min: -1.0
+    max: 100000000.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  ViewChannel:
+    type: INT
+    min: 0.0
+    max: 8192.0
+    default: 0.0
+TRIMMER:
+  Value:
+    type: INT
+    min: 0.0
+    max: 1000000000.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  SensePin1:
+    type: PIN
+    default: -99999999999.0
+  SensePin2:
+    type: PIN
+    default: -99999999999.0
+  GuardPin1:
+    type: PIN
+    default: -99999999999.0
+  GuardPin2:
+    type: PIN
+    default: -99999999999.0
+  SenseGuardPin1:
+    type: PIN
+    default: -99999999999.0
+  SenseGuardPin2:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+    - 4 Wire
+    - 6 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - DC_Active
+    - DC_Passive
+    - AC_Passive
+    - Auto
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  SettlingWave:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  BoardOffset:
+    type: INT
+    min: -100000000.0
+    max: 100000000.0
+    default: 0.0
+  CapSer:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  IndSer:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  IndPar:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  ResGuardPin1:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapGuardPin1:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  ResGuardPin2:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapGuardPin2:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+AUTIC:
+  Value:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Anode:
+    type: PIN
+    default: -99999999999.0
+  Catode:
+    type: PIN
+    default: -99999999999.0
+  SenseAnode:
+    type: PIN
+    default: -99999999999.0
+  SenseCatode:
+    type: PIN
+    default: -99999999999.0
+  GuardCatode:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+    - 4 Wire
+    - 6 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  JunctionMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Direct
+    choices:
+    - Direct
+    - Invert
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ResPar:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+DGT_PRG:
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  ValueH:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  ValueL:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  ValueZ:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  ValueAnalog:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  ValueFreq:
+    type: INT
+    min: -1.0
+    max: 99999999999.0
+    default: 0.0
+  TolFreq:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+MOVEPROBE:
+  Pinlist:
+    type: PIN
+    default: -99999999999.0
+  Mode:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: Add
+    choices:
+    - Add
+    - Remove
+  Locked:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+BOARD_PRESENCE:
+  Value:
+    type: INT
+    min: -1.0
+    max: 100000000.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+OPENTIC:
+  Value:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Sensor:
+    type: INT
+    min: 0.0
+    max: 64.0
+    default: 0.0
+  SensorCh:
+    type: PIN
+    default: -99999999999.0
+  TestPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - RMS Low
+    - AC Low
+    - RMS High
+    - AC High
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Anode:
+    type: PIN
+    default: -99999999999.0
+  Catode:
+    type: PIN
+    default: -99999999999.0
+  SenseAnode:
+    type: PIN
+    default: -99999999999.0
+  SenseCatode:
+    type: PIN
+    default: -99999999999.0
+  GuardCatode:
+    type: PIN
+    default: -99999999999.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 3 Wire
+    - 4 Wire
+    - 6 Wire
+  JunctionMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Direct
+    choices:
+    - Direct
+    - Invert
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ResPar:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  CapPar:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+CLUSTER_POWER:
+  Name:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  Value:
+    type: INT
+    min: -99999999999.0
+    max: 99999999999.0
+    default: -99999999999.0
+  PinList:
+    type: PIN
+    default: -99999999999.0
+KELVIN:
+  Value:
+    type: INT
+    min: 0.0
+    max: 100000000.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  SensePin1:
+    type: PIN
+    default: -99999999999.0
+  SensePin2:
+    type: PIN
+    default: -99999999999.0
+  TolPosAbs:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  TolNegAbs:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 4 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - DC_Active
+    - DC_Passive
+    - AC_Passive
+    - Auto
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  BoardOffset:
+    type: INT
+    min: -100000000.0
+    max: 100000000.0
+    default: 0.0
+BARREL:
+  Value:
+    type: INT
+    min: -1.0
+    max: 100000000.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  SensePin1:
+    type: PIN
+    default: -99999999999.0
+  SensePin2:
+    type: PIN
+    default: -99999999999.0
+  TolPosAbs:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  TolNegAbs:
+    type: INT
+    min: -1.0
+    max: 10.0
+    default: 0.0
+  Wire:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Auto
+    choices:
+    - Auto
+    - 2 Wire
+    - 4 Wire
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - DC_Active
+    - DC_Passive
+    - AC_Passive
+    - Auto
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  BoardOffset:
+    type: INT
+    min: -100000000.0
+    max: 100000000.0
+    default: 0.0
+THERMAL:
+  Value:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 1000.0
+    default: 0.0
+  Sensor:
+    type: INT
+    min: 0.0
+    max: 4.0
+    default: 0.0
+  SensorCh:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1000.0
+    default: 0.0
+  BoardOffset:
+    type: INT
+    min: -1000.0
+    max: 1000.0
+    default: 0.0
+QUICKTEST:
+  Sequence:
+    type: STRING
+    default: ''
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+QUICKTEST_NOPOWER:
+  Sequence:
+    type: STRING
+    default: ''
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+REL_CL_OFF:
+  CoilPin1:
+    type: PIN
+    default: -99999999999.0
+  CoilPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactPin1:
+    type: PIN
+    default: -99999999999.0
+  ContactPin2:
+    type: PIN
+    default: -99999999999.0
+  SensContPin1:
+    type: PIN
+    default: -99999999999.0
+  SensContPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: OPEN
+    choices:
+    - OPEN
+    - CLOSE
+  ContactImpedance:
+    type: INT
+    min: -1.0
+    max: 99999999999.0
+    default: 0.0
+  PowerCoil:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'ON'
+    choices:
+    - 'ON'
+    - 'OFF'
+  CoilVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CoilCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  CoilTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  ContactVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  ContactCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ContactTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+REL_OP_OFF:
+  CoilPin1:
+    type: PIN
+    default: -99999999999.0
+  CoilPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactPin1:
+    type: PIN
+    default: -99999999999.0
+  ContactPin2:
+    type: PIN
+    default: -99999999999.0
+  SensContPin1:
+    type: PIN
+    default: -99999999999.0
+  SensContPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: OPEN
+    choices:
+    - OPEN
+    - CLOSE
+  ContactImpedance:
+    type: INT
+    min: -1.0
+    max: 99999999999.0
+    default: 0.0
+  PowerCoil:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'ON'
+    choices:
+    - 'ON'
+    - 'OFF'
+  CoilVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CoilCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  CoilTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  ContactVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  ContactCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ContactTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+REL_CL_ON:
+  CoilPin1:
+    type: PIN
+    default: -99999999999.0
+  CoilPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactPin1:
+    type: PIN
+    default: -99999999999.0
+  ContactPin2:
+    type: PIN
+    default: -99999999999.0
+  SensContPin1:
+    type: PIN
+    default: -99999999999.0
+  SensContPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: OPEN
+    choices:
+    - OPEN
+    - CLOSE
+  ContactImpedance:
+    type: INT
+    min: -1.0
+    max: 99999999999.0
+    default: 0.0
+  PowerCoil:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'ON'
+    choices:
+    - 'ON'
+    - 'OFF'
+  CoilVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CoilCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  CoilTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  ContactVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  ContactCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ContactTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+REL_OP_ON:
+  CoilPin1:
+    type: PIN
+    default: -99999999999.0
+  CoilPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactPin1:
+    type: PIN
+    default: -99999999999.0
+  ContactPin2:
+    type: PIN
+    default: -99999999999.0
+  SensContPin1:
+    type: PIN
+    default: -99999999999.0
+  SensContPin2:
+    type: PIN
+    default: -99999999999.0
+  ContactMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: OPEN
+    choices:
+    - OPEN
+    - CLOSE
+  ContactImpedance:
+    type: INT
+    min: -1.0
+    max: 99999999999.0
+    default: 0.0
+  PowerCoil:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: 'ON'
+    choices:
+    - 'ON'
+    - 'OFF'
+  CoilVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  CoilCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  CoilTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  ContactVoltage:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  ContactCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  ContactTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+GATE_NOPW:
+  Function:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - 2NAND
+    - 2NOR
+    - 2AND
+    - 2OR
+    - 2XOR
+    - 2XNOR
+    - 3NAND
+    - 3NOR
+    - 3AND
+    - 3OR
+    - 3XOR
+    - 3XNOR
+    - NOT
+    - NE_BUF
+    - E_BUF
+    - NE_NBUF
+    - E_NBUF
+    - BUF243
+    - BUF245
+  Family:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Standard
+    - L
+    - S
+    - H
+    - LS
+    - AS
+    - ALS
+    - F
+    - C
+    - HC
+    - HCT
+    - AHC
+    - AHCT
+    - FCT
+    - AC
+    - ACT
+    - ACQ
+    - ACTQ
+    - ABT
+    - GTL
+    - GTLP
+    - ALB
+    - LV
+    - LVC
+    - LVCH
+    - ALVC
+    - LVT
+    - ALVCR
+    - ALVCH
+    - LCX
+    - VCX
+  Vcc:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Pin_A:
+    type: PIN
+    default: -99999999999.0
+  Pin_B:
+    type: PIN
+    default: -99999999999.0
+  Pin_C:
+    type: PIN
+    default: -99999999999.0
+  Pin_D:
+    type: PIN
+    default: -99999999999.0
+  PathPin_A:
+    type: STRING
+    default: ''
+  PathPin_B:
+    type: STRING
+    default: ''
+  PathPin_C:
+    type: STRING
+    default: ''
+  PathPin_D:
+    type: STRING
+    default: ''
+  Vi_H:
+    type: INT
+    min: -1000.0
+    max: 12.0
+    default: 0.0
+  Vi_L:
+    type: INT
+    min: -1000.0
+    max: 12.0
+    default: 0.0
+  Vo_H:
+    type: INT
+    min: -1000.0
+    max: 12.0
+    default: 0.0
+  Vo_L:
+    type: INT
+    min: -1000.0
+    max: 12.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  Check_A:
+    type: STRING
+    default: ''
+  Check_B:
+    type: STRING
+    default: ''
+  Check_C:
+    type: STRING
+    default: ''
+  Check_D:
+    type: STRING
+    default: ''
+  AnalogView:
+    type: ENUM
+    min: -1.0
+    max: 4.0
+    default: Ch1
+    choices:
+    - Ch1
+    - Ch2
+    - Ch3
+    - Ch4
+  PinVcc:
+    type: PIN
+    default: -99999999999.0
+  PinGnd:
+    type: PIN
+    default: -99999999999.0
+  MeasPin:
+    type: PIN
+    default: -99999999999.0
+  MeasValue:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+COMPARATOR_NOPW:
+  ValueHigh:
+    type: INT
+    min: -1000.0
+    max: 1000.0
+    default: 0.0
+  ValueLow:
+    type: INT
+    min: -1000.0
+    max: 1000.0
+    default: 0.0
+  InPositive:
+    type: PIN
+    default: -99999999999.0
+  InNegative:
+    type: PIN
+    default: -99999999999.0
+  GndPin:
+    type: PIN
+    default: -99999999999.0
+  OutPin:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  InCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  DeltaVPlus:
+    type: INT
+    min: -10.0
+    max: 10.0
+    default: 0.0
+  DeltaVMinus:
+    type: INT
+    min: -10.0
+    max: 10.0
+    default: 0.0
+  OffsetV:
+    type: INT
+    min: -1000.0
+    max: 1000.0
+    default: 0.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  SettlingWave:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  V_Drop:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  ValueVcc:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  ValueVdd:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  ViewMeas:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: HIGH
+    choices:
+    - HIGH
+    - LOW
+  ViewScope:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Output
+    choices:
+    - Output
+    - Input Pos.
+    - Input Neg.
+  PwVolt:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  PinVcc:
+    type: PIN
+    default: -99999999999.0
+  MeasPinN:
+    type: PIN
+    default: -99999999999.0
+  MeasValue:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  PullOut:
+    type: ENUM
+    min: 0.0
+    max: 21.0
+    default: NONE
+    choices:
+    - NONE
+    - 100-5V
+    - 1k-5V
+    - 10k-5V
+    - 100k-5V
+    - 1meg-5V
+    - 100-GND
+    - 1k-GND
+    - 10k-GND
+    - 100k-GND
+    - 1meg-GND
+LEDCHECK_MEAS:
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  Module:
+    type: INT
+    min: 0.0
+    max: 10.0
+    default: 0.0
+  Channel:
+    type: INT
+    min: 1.0
+    max: 20.0
+    default: 0.0
+  TableRef:
+    type: ENUM
+    min: 0.0
+    max: 6.0
+    default: 'OFF'
+    choices:
+    - 'OFF'
+    - Red
+    - Green
+    - Blue
+    - Yellow
+    - Orange
+    - White
+  HUE:
+    type: INT
+    min: 0.0
+    max: 255.0
+    default: 0.0
+  HUE_HighLimit:
+    type: INT
+    min: 0.0
+    max: 255.0
+    default: 0.0
+  HUE_LowLimit:
+    type: INT
+    min: 0.0
+    max: 255.0
+    default: 0.0
+  Saturation:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Satur_HighLimit:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Satur_LowLimit:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Intensity:
+    type: INT
+    min: 0.0
+    max: 99999.0
+    default: 0.0
+  Intens_HighLimit:
+    type: INT
+    min: 0.0
+    max: 99999.0
+    default: 0.0
+  Intens_LowLimit:
+    type: INT
+    min: 0.0
+    max: 99999.0
+    default: 0.0
+  XY_Measure:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  X:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  X_HighLimit:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  X_LowLimit:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Y:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Y_HighLimit:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Y_LowLimit:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  MeasView:
+    type: ENUM
+    min: 0.0
+    max: 6.0
+    default: HUE
+    choices:
+    - HUE
+    - Saturation
+    - Intensity
+    - X
+    - Y
+    - Watt
+    - Wave Length
+    - CCT
+    - Delta E
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+LEDCHECK_CONF:
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  Module_1:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Hw1_COMPort:
+    type: INT
+    min: 0.0
+    max: 20.0
+    default: 0.0
+  Hw1_ID:
+    type: STRING
+    default: ''
+  Hw1_Ch:
+    type: INT
+    min: 3.0
+    max: 20.0
+    default: 0.0
+  Module_2:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Hw2_COMPort:
+    type: INT
+    min: 0.0
+    max: 20.0
+    default: 0.0
+  Hw2_ID:
+    type: STRING
+    default: ''
+  Hw2_Ch:
+    type: INT
+    min: 2.0
+    max: 20.0
+    default: 0.0
+  Module_3:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Hw3_COMPort:
+    type: INT
+    min: 0.0
+    max: 20.0
+    default: 0.0
+  Hw3_ID:
+    type: STRING
+    default: ''
+  Hw3_Ch:
+    type: INT
+    min: 2.0
+    max: 20.0
+    default: 0.0
+  Module_4:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Hw4_COMPort:
+    type: INT
+    min: 0.0
+    max: 20.0
+    default: 0.0
+  Hw4_ID:
+    type: STRING
+    default: ''
+  Hw4_Ch:
+    type: INT
+    min: 2.0
+    max: 20.0
+    default: 0.0
+  Module_5:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Hw5_COMPort:
+    type: INT
+    min: 0.0
+    max: 20.0
+    default: 0.0
+  Hw5_ID:
+    type: STRING
+    default: ''
+  Hw5_Ch:
+    type: INT
+    min: 2.0
+    max: 20.0
+    default: 0.0
+  Module_6:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Hw6_COMPort:
+    type: INT
+    min: 0.0
+    max: 20.0
+    default: 0.0
+  Hw6_ID:
+    type: STRING
+    default: ''
+  Hw6_Ch:
+    type: INT
+    min: 2.0
+    max: 20.0
+    default: 0.0
+  UserGain:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  UserSoftware:
+    type: ENUM
+    min: 0.0
+    max: 20.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  USERXYOffsets:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+ISOLATION_LOW:
+  Value:
+    type: INT
+    min: -1.0
+    max: 1000000000000.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+VOLTAGEDIVIDER:
+  InVolt:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OutVolt:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  InPin:
+    type: PIN
+    default: -99999999999.0
+  OutPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  InCurrent:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+DISCOIL:
+  Value:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  Current:
+    type: INT
+    min: -1.0
+    max: 0.5
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 60.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+VI_ADAPTER:
+  VIName:
+    type: STRING
+    default: ''
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  OpenFrontPnl:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  CloseFrPnlAfterCall:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+  Value:
+    type: INT
+    min: -999999999.0
+    max: 999999999.0
+    default: 0.0
+  TolP:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolN:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Pinlist:
+    type: PIN
+    default: -99999999999.0
+  UserParam:
+    type: STRING
+    default: ''
+  Unit:
+    type: STRING
+    default: ''
+CLUSTER_IGNR_PW:
+  Name:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+  Value:
+    type: INT
+    min: -99999999999.0
+    max: 99999999999.0
+    default: -99999999999.0
+  PinList:
+    type: PIN
+    default: -99999999999.0
+OPENFIX_CONN:
+  Value:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  Sensor:
+    type: INT
+    min: 0.0
+    max: 64.0
+    default: 0.0
+  SensorCh:
+    type: PIN
+    default: -99999999999.0
+  TestPin:
+    type: PIN
+    default: -99999999999.0
+  RefPin:
+    type: PIN
+    default: -99999999999.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasureMode:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - RMS Low
+    - AC Low
+    - RMS High
+    - AC High
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Volt:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  Frequency:
+    type: INT
+    min: -1.0
+    max: 100000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+CHECK_STUCK_UNK:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+CHECK_STUCK_GND:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+CHECK_STUCK_VCC:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+CHECK_STUCK_NC:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+CHECK_STUCK_MIX:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+CHECK_STUCK_DIG:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+CHECK_STUCK_ANA:
+  PinDig:
+    type: PIN
+    default: -99999999999.0
+  V_Ana:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  STATUS:
+    type: STRING
+    default: ''
+  Kind:
+    type: ENUM
+    min: 0.0
+    max: 10.0
+    default: UNK
+    choices:
+    - UNK
+    - GND
+    - PWR
+    - NC
+    - MIX
+    - DIG
+    - ANA
+  V_ana_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_min:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_min:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Technology:
+    type: STRING
+    default: ''
+  V_ana_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OH_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  OL_dig_max:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  IH_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  IL_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Z_dig_max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  TolAnalog:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  FIXED_LOW:
+    type: PIN
+    default: -99999999999.0
+  FIXED_HIGH:
+    type: PIN
+    default: -99999999999.0
+  FIXED_PULSE:
+    type: PIN
+    default: -99999999999.0
+  Delay:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  Name:
+    type: STRING
+    default: ''
+  ClusterName:
+    type: STRING
+    default: ''
+  valid_STATUS:
+    type: STRING
+    default: ''
+  ModuleType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: NONE
+    choices:
+    - NONE
+    - VL
+    - VBS
+    - VL_DYNAMIC
+    - PYTHON
+LED_SENSOR:
+  PositivePin:
+    type: PIN
+    default: -99999999999.0
+  NegativePin:
+    type: PIN
+    default: -99999999999.0
+  SensorPin:
+    type: PIN
+    default: -99999999999.0
+  Time:
+    type: INT
+    min: 0.0
+    max: 10.0
+    default: 0.0
+  CaptureType:
+    type: ENUM
+    min: 0.0
+    max: 2.0
+    default: None
+    choices:
+    - None
+    - Range
+    - FactorPWM
+  Range:
+    type: ENUM
+    min: 1.0
+    max: 6.0
+    default: Low
+    choices:
+    - Low
+    - Medium
+    - High
+    - Super
+    - Ultra
+    - UserRange
+  FactorPWM:
+    type: INT
+    min: 0.0
+    max: 15.0
+    default: 0.0
+  MeasureView:
+    type: ENUM
+    min: 0.0
+    max: 6.0
+    default: HUE
+    choices:
+    - HUE
+    - Saturation
+    - Intensity
+    - x
+    - y
+    - Watt
+    - Wave Length
+    - CCT
+    - Delta E
+    - RGB
+    - Red
+    - Green
+    - Blue
+    - XYZ
+    - X
+    - Y
+    - Z
+  TestResult:
+    type: ENUM
+    min: -1.0
+    max: 3.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  PowerMode:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: Standard
+    choices:
+    - Standard
+    - Ext_HV
+    - None
+  User:
+    type: ENUM
+    min: 0.0
+    max: 3.0
+    default: None
+    choices:
+    - None
+    - Calibration
+    - Software
+ALI:
+  Value:
+    type: INT
+    min: -0.06
+    max: 0.06
+    default: 0.0
+  TolPosAbs:
+    type: INT
+    min: 0.0
+    max: 0.06
+    default: 0.0
+  TolNegAbs:
+    type: INT
+    min: 0.0
+    max: 0.06
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -100000000000.0
+    max: 100000000000.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -100000000000.0
+    max: 100000000000.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: 0.0
+    max: 1000000.0
+    default: 0.0
+  Time:
+    type: INT
+    min: 0.0
+    max: 1.0
+    default: 0.0
+NVL_APPLY:
+  NVL_Command:
+    type: STRING
+    default: ''
+NVL_MEASURE:
+  NVL_Command:
+    type: STRING
+    default: ''
+NVL_REMOVE:
+  NVL_Command:
+    type: STRING
+    default: ''
+ISOLATION_HIGH:
+  Value:
+    type: INT
+    min: -1.0
+    max: 1000000000000.0
+    default: 0.0
+  Pin1:
+    type: PIN
+    default: -99999999999.0
+  Pin2:
+    type: PIN
+    default: -99999999999.0
+  Time:
+    type: INT
+    min: -1.0
+    max: 60.0
+    default: 0.0
+NVL_CONNECT:
+  NVL_Command:
+    type: STRING
+    default: ''
+OCR:
+  Name:
+    type: STRING
+    default: ''
+  Pattern:
+    type: STRING
+    default: ''
+TS_ADAPTER:
+  SeqName:
+    type: STRING
+    default: ''
+  UserParam:
+    type: STRING
+    default: ''
+FLYPOD_ADD:
+  PinList:
+    type: PIN
+    default: -99999999999.0
+  Mode:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: Add
+    choices:
+    - Add
+    - Remove
+  Locked:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+FLYPOD_REMOVE:
+  PinList:
+    type: PIN
+    default: -99999999999.0
+  Mode:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: Add
+    choices:
+    - Add
+    - Remove
+  Locked:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+PYTHON_ADAPTER:
+  FileName:
+    type: STRING
+    default: ''
+  FunctionName:
+    type: STRING
+    default: ''
+  UserParam:
+    type: STRING
+    default: ''
+POWER_CHECK:
+  Value:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  TolPos:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  TolNeg:
+    type: INT
+    min: 0.0
+    max: 100.0
+    default: 0.0
+  PinPositive:
+    type: PIN
+    default: -99999999999.0
+  PinNegative:
+    type: PIN
+    default: -99999999999.0
+  TestResult:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+  MeasureType:
+    type: ENUM
+    min: -99999999999.0
+    max: 99999999999.0
+    default: Default
+    choices:
+    - Default
+    - Normal
+    - Average
+    - RecOnError
+    - Maximum
+    - Minimum
+    - PeakToPeak
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 1000000.0
+    default: 0.0
+  StrobeTime:
+    type: INT
+    min: -1.0
+    max: 1.0
+    default: 0.0
+  AC:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: 'TRUE'
+    choices:
+    - 'TRUE'
+    - 'FALSE'
+OBP:
+  ProjectName:
+    type: STRING
+    default: ''
+  Time:
+    type: INT
+    min: 0.0
+    max: 60.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: 0.0
+    max: 10.0
+    default: 0.0
+  TestResult:
+    type: ENUM
+    min: -1.0
+    max: 3.0
+    default: Default
+    choices:
+    - Default
+    - Test Result
+    - Force Pass
+    - Force Fail
+    - Force Skip
+KELVIN_BT:
+  FlyPOD:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: OnProbe1
+    choices:
+    - OnProbe1
+    - OnProbe2
+    - OnProbe3
+    - OnProbe4
+  Cell1Name:
+    type: STRING
+    default: ''
+  Cell2Name:
+    type: STRING
+    default: ''
+  Cell3Name:
+    type: STRING
+    default: ''
+  Cell4Name:
+    type: STRING
+    default: ''
+LEAKAGE_NET:
+  PinPositive:
+    type: PIN
+    default: -99999999999.0
+  PinNegative:
+    type: PIN
+    default: -99999999999.0
+  Max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Min:
+    type: INT
+    min: 0.0
+    max: 0.5
+    default: 0.0
+  ValueCurrent:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  ValueVolt:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasTime:
+    type: INT
+    min: 0.0
+    max: 100000000000.0
+    default: 0.0
+  PreTime:
+    type: INT
+    min: 0.0
+    max: 100000000000.0
+    default: 0.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+LEAKTEST:
+  PinPositive:
+    type: PIN
+    default: -99999999999.0
+  PinNegative:
+    type: PIN
+    default: -99999999999.0
+  Max:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  Min:
+    type: INT
+    min: 0.0
+    max: 0.5
+    default: 0.0
+  ValueCurrent:
+    type: INT
+    min: -0.5
+    max: 0.5
+    default: 0.0
+  ValueVolt:
+    type: INT
+    min: -100.0
+    max: 100.0
+    default: 0.0
+  Recycle:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  MeasTime:
+    type: INT
+    min: 0.0
+    max: 100000000000.0
+    default: 0.0
+  PreTime:
+    type: INT
+    min: 0.0
+    max: 100000000000.0
+    default: 0.0
+  Quality:
+    type: INT
+    min: -1.0
+    max: 100.0
+    default: 0.0
+  HighResolution:
+    type: ENUM
+    min: 0.0
+    max: 1.0
+    default: 'NO'
+    choices:
+    - 'NO'
+    - 'YES'
+KELVIN_BT8:
+  FlyPOD:
+    type: ENUM
+    min: 0.0
+    max: 0.0
+    default: OnProbe1
+    choices:
+    - OnProbe1
+    - OnProbe2
+    - OnProbe3
+    - OnProbe4
+  ContactPoint:
+    type: PIN
+    default: -99999999999.0
+  Cell1Name:
+    type: STRING
+    default: ''
+  Cell2Name:
+    type: STRING
+    default: ''
+  Cell3Name:
+    type: STRING
+    default: ''
+  Cell4Name:
+    type: STRING
+    default: ''
+  Cell5Name:
+    type: STRING
+    default: ''
+  Cell6Name:
+    type: STRING
+    default: ''
+  Cell7Name:
+    type: STRING
+    default: ''
+  Cell8Name:
+    type: STRING
+    default: ''
