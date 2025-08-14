@@ -180,6 +180,10 @@ class MacroPinsPage(QtWidgets.QWidget):
         idx = -1
         if getattr(sc.macro, "id_function", None) is not None:
             idx = self._index_for_function_id(sc.macro.id_function)
+            # If the ID points to a different macro (YAML order changed),
+            # fall back to matching by macro name.
+            if idx >= 0 and self.macro_combo.itemText(idx) != sc.macro.name:
+                idx = -1
         if idx < 0:
             idx = self._index_for_macro_name(sc.macro.name)
         self.macro_combo.setCurrentIndex(idx)
