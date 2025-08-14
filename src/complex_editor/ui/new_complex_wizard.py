@@ -21,19 +21,6 @@ from ..io.buffer_loader import WizardPrefill
 from ..util.macro_xml_translator import xml_to_params, params_to_xml
 
 
-def _safe_numeric(init, default=0.0):
-    """Coerce *init* to ``float`` with sentinel handling."""
-    if init is None:
-        return float(default)
-    s = str(init).strip()
-    if not s or s.lower() in {"default", "none", "null", "auto"}:
-        return float(default)
-    try:
-        return float(s.replace(",", ""))
-    except Exception:
-        return float(default)
-
-
 class BasicsPage(QtWidgets.QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -366,6 +353,11 @@ class ParamPage(QtWidgets.QWidget):
                             w.setMinimum(float(min_val))
                         if max_val is not None:
                             w.setMaximum(float(max_val))
+                    init = p.default if p.default is not None else min_val
+                    if isinstance(w, QtWidgets.QSpinBox) and init is not None:
+                        w.setValue(int(float(init)))
+                    elif isinstance(w, QtWidgets.QDoubleSpinBox) and init is not None:
+                        w.setValue(float(init))
                 elif isinstance(spec, list):
                     w = QtWidgets.QComboBox()
                     w.addItems([str(s) for s in spec])
@@ -410,25 +402,10 @@ class ParamPage(QtWidgets.QWidget):
                 self.grid.addWidget(label, row, col * 2)
                 self.grid.addWidget(w, row, col * 2 + 1)
                 val = params.get(p.name, p.default)
-                if isinstance(w, QtWidgets.QSpinBox):
-                    default = p.default
-                    if isinstance(spec, dict) and spec.get("default") is not None:
-                        default = spec.get("default")
-                    num = int(
-                        _safe_numeric(
-                            val,
-                            default if default is not None else w.minimum(),
-                        )
-                    )
-                    w.setValue(num)
-                elif isinstance(w, QtWidgets.QDoubleSpinBox):
-                    default = p.default
-                    if isinstance(spec, dict) and spec.get("default") is not None:
-                        default = spec.get("default")
-                    num = _safe_numeric(
-                        val, default if default is not None else w.minimum()
-                    )
-                    w.setValue(num)
+                if isinstance(w, QtWidgets.QSpinBox) and val is not None:
+                    w.setValue(int(float(val)))
+                elif isinstance(w, QtWidgets.QDoubleSpinBox) and val is not None:
+                    w.setValue(float(val))
                 elif isinstance(w, QtWidgets.QCheckBox):
                     w.setChecked(str(val).lower() in ("1", "true", "yes"))
                 elif isinstance(w, QtWidgets.QComboBox) and val is not None:
@@ -662,16 +639,9 @@ class ReviewPage(QtWidgets.QWidget):
 
 
 class NewComplexWizard(QtWidgets.QDialog):
-    def __init__(
-        self,
-        macro_map: dict[int, MacroDef] | None,
-        parent=None,
-        *,
-        title: str | None = None,
-    ) -> None:
+    def __init__(self, macro_map: dict[int, MacroDef] | None, parent=None) -> None:
         super().__init__(parent)
-        self._custom_title = title
-        self.setWindowTitle(title or "New Complex")
+        self.setWindowTitle("New Complex")
         self.resize(600, 500)
         # Always build the macro map from the YAML spec to avoid relying on the
         # MDB for parameter information.
@@ -680,9 +650,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         self.current_index: Optional[int] = None
 
         layout = QtWidgets.QVBoxLayout(self)
-        self.step_indicator = StepIndicator(
-            ["Basics", "Subcomponents", "Parameters", "Review"]
-        )
+        self.step_indicator = StepIndicator(["Basics","Subcomponents","Parameters","Review"])
         layout.addWidget(self.step_indicator)
         self.stack = QtWidgets.QStackedWidget()
         layout.addWidget(self.stack)
@@ -726,8 +694,6 @@ class NewComplexWizard(QtWidgets.QDialog):
             self._edit_selected_params_review
         )
         self.review_page.save_btn.clicked.connect(self._finish)
-        self.step_indicator.step_clicked.connect(self._on_step_clicked)
-        self.stack.currentChanged.connect(self._on_page_changed)
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
         self.mode = "new"
@@ -736,7 +702,6 @@ class NewComplexWizard(QtWidgets.QDialog):
         self._update_edit_buttons(-1)
 
         self._update_nav()
-        self._on_page_changed(self.stack.currentIndex())
 
     def _on_page_changed(self, idx: int) -> None:
         page = self.stack.widget(idx)
@@ -750,34 +715,13 @@ class NewComplexWizard(QtWidgets.QDialog):
             step = 3
         else:
             step = 0
-        self._update_step_indicator(step)
-
-    def _update_step_indicator(self, current_idx: int) -> None:
-        self.step_indicator.set_current(current_idx)
-
-    def _on_step_clicked(self, idx: int) -> None:
-        if idx == 0:
-            self.stack.setCurrentWidget(self.basics_page)
-        elif idx == 1:
-            self.stack.setCurrentWidget(self.list_page)
-        elif idx == 2:
-            if self.current_index is None and self.sub_components:
-                self.current_index = 0
-            if self.current_index is not None:
-                self._open_param_page()
-            return
-        elif idx == 3:
-            self.review_page.populate(self.sub_components)
-            self.stack.setCurrentWidget(self.review_page)
-        self._update_nav()
+        self.step_indicator.set_current(step)
 
     @classmethod
-    def from_wizard_prefill(
-        cls, prefill: WizardPrefill, parent=None, *, title: str | None = None
-    ) -> "NewComplexWizard":
+    def from_wizard_prefill(cls, prefill: WizardPrefill, parent=None) -> "NewComplexWizard":
         """Build a wizard pre-populated from :class:`WizardPrefill`."""
 
-        wiz = cls(None, parent, title=title)
+        wiz = cls(None, parent)
         if prefill.complex_name:
             wiz.basics_page.pn_edit.setText(prefill.complex_name)
         max_pin = 0
@@ -790,26 +734,16 @@ class NewComplexWizard(QtWidgets.QDialog):
                 mi.id_function = sc.get("id_function")
             s_xml = sc.get("pins_s") or sc.get("S")
             subc = SubComponent(mi, pins)
-            val_field = sc.get("value")
-            if val_field not in (None, ""):
-                setattr(subc, "value", val_field)
-            macros = xml_to_params(s_xml) if s_xml else {}
-            sel = sc.get("macro_name") or (macros and next(iter(macros))) or mi.name
-            if sel not in macros:
-                macros.setdefault(sel, {})
-            mi.name = sel
-            mi.params = dict(macros.get(sel, {}))
-            if val_field not in (None, ""):
-                key = next(
-                    (k for k in ALLOWED_PARAMS.get(mi.name, {}).keys() if k.lower() == "value"),
-                    None,
-                )
-                if key and key not in mi.params:
-                    mi.params[key] = str(val_field)
-                    macros.setdefault(mi.name, {})[key] = str(val_field)
-            setattr(subc, "_pins_s_macros", macros)
             if s_xml:
-                setattr(subc, "pin_s", s_xml)
+                macros = xml_to_params(s_xml)
+                if macros:
+                    sel = sc.get("macro_name") or next(iter(macros))
+                    if sel not in macros:
+                        sel = next(iter(macros))
+                    mi.name = sel
+                    mi.params = dict(macros.get(sel, {}))
+                    setattr(subc, "all_macros", macros)
+                    setattr(subc, "pin_s", s_xml)
             wiz.sub_components.append(subc)
             text = f"{mi.name} ({','.join(str(p) for p in pins)})"
             wiz.list_page.list.addItem(text)
@@ -833,16 +767,11 @@ class NewComplexWizard(QtWidgets.QDialog):
 
     @classmethod
     def from_existing(
-        cls,
-        prefill: WizardPrefill,
-        complex_id: int,
-        parent=None,
-        *,
-        title: str | None = None,
+        cls, prefill: WizardPrefill, complex_id: int, parent=None
     ) -> "NewComplexWizard":
         """Open the wizard in *edit* mode using ``prefill`` data."""
 
-        wiz = cls(None, parent, title=title or prefill.complex_name or None)
+        wiz = cls(None, parent)
         wiz.mode = "edit"
         wiz.editing_complex_id = complex_id
 
@@ -860,26 +789,16 @@ class NewComplexWizard(QtWidgets.QDialog):
                 mi.id_function = sc.get("id_function")
             s_xml = sc.get("pins_s") or sc.get("S")
             subc = SubComponent(mi, pins)
-            val_field = sc.get("value")
-            if val_field not in (None, ""):
-                setattr(subc, "value", val_field)
-            macros = xml_to_params(s_xml) if s_xml else {}
-            sel = sc.get("macro_name") or (macros and next(iter(macros))) or mi.name
-            if sel not in macros:
-                macros.setdefault(sel, {})
-            mi.name = sel
-            mi.params = dict(macros.get(sel, {}))
-            if val_field not in (None, ""):
-                key = next(
-                    (k for k in ALLOWED_PARAMS.get(mi.name, {}).keys() if k.lower() == "value"),
-                    None,
-                )
-                if key and key not in mi.params:
-                    mi.params[key] = str(val_field)
-                    macros.setdefault(mi.name, {})[key] = str(val_field)
-            setattr(subc, "_pins_s_macros", macros)
             if s_xml:
-                setattr(subc, "pin_s", s_xml)
+                macros = xml_to_params(s_xml)
+                if macros:
+                    sel = sc.get("macro_name") or next(iter(macros))
+                    if sel not in macros:
+                        sel = next(iter(macros))
+                    mi.name = sel
+                    mi.params = dict(macros.get(sel, {}))
+                    setattr(subc, "all_macros", macros)
+                    setattr(subc, "pin_s", s_xml)
             wiz.sub_components.append(subc)
             text = f"{mi.name} ({','.join(str(p) for p in pins)})"
             wiz.list_page.list.addItem(text)
@@ -993,9 +912,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         sc.macro.name = macro.name
         sc.pins = pins
-        macros = getattr(sc, "_pins_s_macros", getattr(sc, "all_macros", {}))
-        if isinstance(macros, dict):
-            sc.macro.params = dict(macros.get(sc.macro.name, {}))
+        if hasattr(sc, "all_macros") and isinstance(sc.all_macros, dict):
+            sc.macro.params = dict(sc.all_macros.get(sc.macro.name, {}))
             if sc.macro.params:
                 self.param_page.warn_label.hide()
             else:
@@ -1027,10 +945,10 @@ class NewComplexWizard(QtWidgets.QDialog):
         sc = self.sub_components[self.current_index]
         all_vals = self.param_page.param_values()
         sc.macro.params = all_vals
-        macros = getattr(sc, "_pins_s_macros", getattr(sc, "all_macros", {}))
+        macros = getattr(sc, "all_macros", {})
         macros[sc.macro.name] = all_vals
-        setattr(sc, "_pins_s_macros", macros)
-        xml = params_to_xml(macros, encoding="utf-16", schema=ALLOWED_PARAMS)
+        setattr(sc, "all_macros", macros)
+        xml = params_to_xml(macros, schema=ALLOWED_PARAMS)
         setattr(sc, "pin_s", xml.decode("utf-16"))
         macro_def = next(
             (m for m in self.macro_map.values() if m.name == sc.macro.name), None

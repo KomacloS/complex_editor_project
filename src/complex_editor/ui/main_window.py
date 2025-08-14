@@ -291,10 +291,7 @@ class MainWindow(QtWidgets.QMainWindow):
         prefill = to_wizard_prefill_from_db(
             raw, self._macro_id_from_name, self._pin_normalizer
         )
-        title = getattr(raw, "name", None)
-        wiz = NewComplexWizard.from_existing(
-            prefill, cid, parent=self, title=title or "New Complex"
-        )
+        wiz = NewComplexWizard.from_existing(prefill, cid, parent=self)
 
         if wiz.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             from ..db.mdb_api import SubComponent as DbSubComponent, ComplexDevice as DbComplex

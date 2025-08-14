@@ -2,27 +2,23 @@ from __future__ import annotations
 
 from typing import List
 
-from PyQt6 import QtWidgets, QtCore
+from PyQt6 import QtWidgets
 
 
 class StepIndicator(QtWidgets.QWidget):
     """Simple horizontal step indicator used by the wizard."""
 
-    step_clicked = QtCore.pyqtSignal(int)
-
     def __init__(self, steps: List[str], parent=None) -> None:
         super().__init__(parent)
-        self._labels: List[QtWidgets.QPushButton] = []
+        self._labels: List[QtWidgets.QLabel] = []
         self._current = -1
         layout = QtWidgets.QHBoxLayout(self)
         layout.setSpacing(4)
-        for idx, name in enumerate(steps):
-            btn = QtWidgets.QPushButton(name)
-            btn.setFlat(True)
-            btn.setStyleSheet("padding:4px;border:1px solid #888;")
-            btn.clicked.connect(lambda _=False, i=idx: self.step_clicked.emit(i))
-            layout.addWidget(btn)
-            self._labels.append(btn)
+        for name in steps:
+            lbl = QtWidgets.QLabel(name)
+            lbl.setStyleSheet("padding:4px;border:1px solid #888;")
+            layout.addWidget(lbl)
+            self._labels.append(lbl)
         layout.addStretch()
         self.set_current(0)
 
