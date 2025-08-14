@@ -210,12 +210,27 @@ class MDB:
         return insert_complex(self._conn, complex_dev)
 
     # ── modifiers --------------------------------------------------
-    def update_complex(self, comp_id: int, **fields):
+    def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
+        """Update a complex either via structured ``ComplexDevice`` or raw fields."""
+
+        cur = self._cur()
+        if updated is not None:
+            cur.execute(
+                f"UPDATE {MASTER_T} SET Name=?, TotalPinNumber=? WHERE {PK_MASTER}=?",
+                updated.name,
+                updated.total_pins,
+                comp_id,
+            )
+            cur.execute(f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=?", comp_id)
+            for sub in updated.subcomponents:
+                self._insert_sub(cur, comp_id, sub)
+            return
+
         if not fields:
             return
         sql = ", ".join(f"[{k}]=?" for k in fields)
         vals = list(fields.values()) + [comp_id]
-        self._cur().execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
+        cur.execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
 
     def delete_complex(self, comp_id: int, cascade: bool = True):
         cur = self._cur()

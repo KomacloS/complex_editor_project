@@ -647,6 +647,8 @@ class NewComplexWizard(QtWidgets.QDialog):
         self._mapping_ok = False  # ② flag updated by pin-table
         self._params_ok = True
         self._param_page_disabled = False
+        self.mode = "new"
+        self.editing_complex_id: Optional[int] = None
 
         self._update_edit_buttons(-1)
 
@@ -689,6 +691,60 @@ class NewComplexWizard(QtWidgets.QDialog):
         wiz.param_page.warn_label.setText(
             "Parameters not preloaded (PinS pending)."
         )
+        wiz.param_page.warn_label.show()
+        wiz._mapping_ok = True
+        wiz.stack.setCurrentWidget(wiz.review_page)
+        wiz._update_nav()
+        return wiz
+
+    @classmethod
+    def from_existing(
+        cls, prefill: WizardPrefill, complex_id: int, parent=None
+    ) -> "NewComplexWizard":
+        """Open the wizard in *edit* mode using ``prefill`` data."""
+
+        wiz = cls(None, parent)
+        wiz.mode = "edit"
+        wiz.editing_complex_id = complex_id
+        wiz._param_page_disabled = True
+
+        if prefill.complex_name:
+            wiz.basics_page.pn_edit.setText(prefill.complex_name)
+
+        pin_cnt = getattr(prefill, "pin_count", 0)
+        max_pin = 0
+        for sc in prefill.sub_components:
+            pins = list(sc.get("pins") or [])
+            if pins:
+                max_pin = max(max_pin, max(pins))
+            mi = MacroInstance(sc.get("macro_name", ""), {})
+            if sc.get("id_function") is not None:
+                mi.id_function = sc.get("id_function")
+            subc = SubComponent(mi, pins)
+            wiz.sub_components.append(subc)
+            text = f"{mi.name} ({','.join(str(p) for p in pins)})"
+            wiz.list_page.list.addItem(text)
+
+        # prefer explicit pin count if provided
+        if pin_cnt:
+            wiz.basics_page.pin_spin.setValue(int(pin_cnt))
+        elif max_pin:
+            wiz.basics_page.pin_spin.setValue(max_pin)
+
+        warnings: List[str] = []
+        used: Dict[int, str] = {}
+        for sc in wiz.sub_components:
+            if getattr(sc.macro, "id_function", None) is None:
+                warnings.append(f"Macro '{sc.macro.name}' has no IDFunction")
+            for pin in sc.pins:
+                if pin in used:
+                    warnings.append(f"Pad {pin} used by multiple sub-components")
+                else:
+                    used[pin] = sc.macro.name
+
+        wiz.review_page.populate(wiz.sub_components, warnings)
+        wiz.param_page.group_box.hide()
+        wiz.param_page.warn_label.setText("(PinS editing coming soon)")
         wiz.param_page.warn_label.show()
         wiz._mapping_ok = True
         wiz.stack.setCurrentWidget(wiz.review_page)
@@ -925,6 +981,17 @@ class NewComplexWizard(QtWidgets.QDialog):
         pins = [str(i) for i in range(1, pin_count + 1)]
         self.result_device = ComplexDevice(0, pins, MacroInstance("", {}))
         self.accept()
+
+    # public --------------------------------------------------------------
+    def to_complex_device(self) -> ComplexDevice:
+        """Return the current wizard state as a :class:`ComplexDevice`."""
+
+        pin_count = self.basics_page.pin_spin.value()
+        pins = [str(i) for i in range(1, pin_count + 1)]
+        dev = ComplexDevice(0, pins, MacroInstance("", {}))
+        dev.subcomponents = self.sub_components
+        dev.name = self.basics_page.pn_edit.text()
+        return dev
 
     def _update_nav(self) -> None:
         """Enable/disable Back & Next based on current page content."""
