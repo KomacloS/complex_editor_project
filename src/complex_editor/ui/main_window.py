@@ -18,6 +18,7 @@ from ..io.buffer_loader import (
     load_complex_from_buffer_json,
     to_wizard_prefill,
 )
+from ..io.db_adapter import to_wizard_prefill_from_db
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -273,53 +274,44 @@ class MainWindow(QtWidgets.QMainWindow):
         assert self.db is not None
         raw = self.db.get_complex(cid)
 
-        # Top-level pins list (1..TotalPinNumber)
-        total = int(getattr(raw, "total_pins", 0) or 0)
-        pins_list = [str(i) for i in range(1, total + 1)]
-
-        # Wrap to the shape ComplexEditor expects:
-        # - .pins: List[str]
-        # - .macro: MacroInstance (name used by header)
-        # - .subcomponents: List[MacroInstance] (name + pins mapping)
-        class _DomWrapper:
-            pass
-
-        dom = _DomWrapper()
-        dom.id_comp_desc = getattr(raw, "id_comp_desc", None)
-        dom.name = getattr(raw, "name", "")
-        dom.total_pins = total
-        dom.pins = pins_list
-        dom.id_function = 0
-        dom.macro = MacroInstance("(from DB)", {})  # placeholder top macro
-
-        # convert every DB subcomponent to a MacroInstance that carries
-        # the chosen macro (by *name*) and the assigned pin map
+        # annotate sub-components with macro names for the adapter
         self._ensure_func_map()
-        sub_macros: List[MacroInstance] = []
         for sc in getattr(raw, "subcomponents", []) or []:
-            macro_name = self._func_name(sc.id_function)
-            pin_map = {str(k): str(v) for k, v in (sc.pins or {}).items()}
-            sub_macros.append(MacroInstance(macro_name, pin_map))
-        dom.subcomponents = sub_macros
+            setattr(sc, "macro_name", self._func_name(sc.id_function))
 
-        # Editor also likes having a macro definition map (by ID) for validation.
-        cursor = self.db._conn.cursor()
-        macro_map = schema_introspect.discover_macro_map(cursor) or {}
+        prefill = to_wizard_prefill_from_db(
+            raw, self._macro_id_from_name, self._pin_normalizer
+        )
+        wiz = NewComplexWizard.from_existing(prefill, cid, parent=self)
 
-        dlg = ComplexEditor(macro_map)
-        dlg.load_from_model(dom)
+        if wiz.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            from ..db.mdb_api import SubComponent as DbSubComponent, ComplexDevice as DbComplex
 
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            try:
-                updates = dlg.to_update_dict()
-            except ValueError as exc:
-                QtWidgets.QMessageBox.warning(self, "Invalid", str(exc))
-                return
-            # NOTE: wiring the "save back to MDB" will be done in the next step
-            # when we add the reverse adapter (GUI -> DB).
-            self.db.update_complex(cid, **updates)
+            pin_count = wiz.basics_page.pin_spin.value()
+            updated = DbComplex(cid, wiz.basics_page.pn_edit.text(), pin_count, [])
+            for sc in wiz.sub_components:
+                id_func = getattr(sc.macro, "id_function", None)
+                if id_func is None:
+                    id_func = self._macro_id_from_name(sc.macro.name) or 0
+                pin_map = {chr(ord('A') + i): p for i, p in enumerate(sc.pins)}
+                updated.subcomponents.append(
+                    DbSubComponent(
+                        None,
+                        int(id_func),
+                        "",
+                        None,
+                        None,
+                        None,
+                        None,
+                        pin_map,
+                    )
+                )
+            self.db.update_complex(cid, updated=updated)
             self.db._conn.commit()
             self._refresh_list()
+            QtWidgets.QMessageBox.information(
+                self, "Updated", "Complex updated"
+            )
 
     def _delete_selected(self) -> None:
         row = self.list.currentRow()
