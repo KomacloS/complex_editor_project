@@ -6,7 +6,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from complex_editor.ui.adapters import to_editor_model
-from complex_editor.utils.macro_xml_translator import params_to_xml
+from complex_editor.util.macro_xml_translator import params_to_xml
 
 
 def test_adapter_populates_macro_params() -> None:
