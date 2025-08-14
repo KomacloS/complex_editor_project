@@ -8,8 +8,10 @@ without pulling in any GUI dependencies.  The conversion is intentionally
 read-only and side-effect free.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, TYPE_CHECKING
+
+from ..utils.macro_xml_translator import xml_to_params
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from ..db.mdb_api import MDB, ComplexDevice, SubComponent
@@ -17,11 +19,19 @@ if TYPE_CHECKING:  # pragma: no cover - for type checkers only
 
 @dataclass
 class EditorMacro:
-    """Simplified macro representation for the editor."""
+    """Simplified sub-component representation for the editor.
+
+    ``params`` is kept for backwards compatibility with existing callers but
+    mirrors :attr:`macro_params` which contains the parameters for the currently
+    selected macro.
+    """
 
     name: str
     pins: Dict[str, str]
     params: Dict[str, Any]
+    selected_macro: str = ""
+    macro_params: Dict[str, str] = field(default_factory=dict)
+    all_macros: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -62,8 +72,34 @@ def to_editor_model(db: "MDB", cx_db: "ComplexDevice") -> EditorComplex:
     sub_macros: List[EditorMacro] = []
     for sc in getattr(cx_db, "subcomponents", []) or []:
         fname = func_map.get(sc.id_function, f"Function {sc.id_function}")
-        pin_map = {str(k): str(v) for k, v in (sc.pins or {}).items()}
-        em = EditorMacro(name=fname, pins=pin_map, params={})
+        pin_map = {
+            str(k): str(v)
+            for k, v in (sc.pins or {}).items()
+            if str(k) != "S"
+        }
+
+        all_macros: Dict[str, Dict[str, str]] = {}
+        selected_macro = fname
+        macro_params: Dict[str, str] = {}
+        s_xml = (sc.pins or {}).get("S") if getattr(sc, "pins", None) else None
+        if s_xml:
+            all_macros = xml_to_params(s_xml)
+            if len(all_macros) == 1:
+                selected_macro = next(iter(all_macros))
+            elif fname in all_macros:
+                selected_macro = fname
+            elif all_macros:
+                selected_macro = next(iter(all_macros))
+            macro_params = dict(all_macros.get(selected_macro, {}))
+
+        em = EditorMacro(
+            name=fname,
+            pins=pin_map,
+            params=macro_params,
+            selected_macro=selected_macro,
+            macro_params=macro_params,
+            all_macros=all_macros,
+        )
         # attach optional attributes used by the editor table
         if getattr(sc, "id_sub_component", None) is not None:
             em.sub_id = int(sc.id_sub_component)
