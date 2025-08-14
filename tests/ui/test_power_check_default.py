@@ -16,7 +16,7 @@ from PyQt6 import QtWidgets  # noqa: E402
 
 
 def test_power_check_default(qtbot):
-    macros = {"POWER_CHECK": {"Value": "Default", "TolPos": "Default"}}
+    macros = {"POWER_CHECK": {"Value": "Default", "TestResult": "Default"}}
     xml = params_to_xml(macros, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
     prefill = WizardPrefill(
         complex_name="X",
@@ -28,11 +28,13 @@ def test_power_check_default(qtbot):
     wiz._open_param_page()
     val_widget = wiz.param_page.widgets.get("Value")
     assert isinstance(val_widget, QtWidgets.QSpinBox)
-    assert val_widget.value() == 0
+    assert "Value" in wiz.param_page.special_values
     enum_widget = wiz.param_page.widgets.get("TestResult")
     assert isinstance(enum_widget, QtWidgets.QComboBox)
     assert enum_widget.currentText() == "Default"
+    assert not wiz.param_page.errors
     wiz._save_params()
     sc = wiz.sub_components[0]
     parsed = xml_to_params(getattr(sc, "pin_s"))
-    assert parsed["POWER_CHECK"]["Value"] == "0"
+    assert parsed["POWER_CHECK"]["Value"] == "Default"
+    assert parsed["POWER_CHECK"]["TestResult"] == "Default"
