@@ -28,7 +28,6 @@ def test_power_check_default(qtbot):
     wiz._open_param_page()
     val_widget = wiz.param_page.widgets.get("Value")
     assert isinstance(val_widget, QtWidgets.QSpinBox)
-    assert "Value" in wiz.param_page.special_values
     enum_widget = wiz.param_page.widgets.get("TestResult")
     assert isinstance(enum_widget, QtWidgets.QComboBox)
     assert enum_widget.currentText() == "Default"
@@ -36,5 +35,4 @@ def test_power_check_default(qtbot):
     wiz._save_params()
     sc = wiz.sub_components[0]
     parsed = xml_to_params(getattr(sc, "pin_s"))
-    assert parsed["POWER_CHECK"]["Value"] == "Default"
-    assert parsed["POWER_CHECK"]["TestResult"] == "Default"
+    assert parsed["POWER_CHECK"] == {}

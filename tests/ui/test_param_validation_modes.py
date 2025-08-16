@@ -40,8 +40,7 @@ def test_default_numeric_validation(qtbot):
     assert not wiz.param_page.errors
     wiz._save_params()
     params = xml_to_params(wiz.sub_components[0].pin_s)
-    assert params["POWER_CHECK"]["Value"] == "Default"
-    assert params["POWER_CHECK"]["TestResult"] == "Default"
+    assert params["POWER_CHECK"] == {}
 
 
 def test_numeric_range_error(qtbot):

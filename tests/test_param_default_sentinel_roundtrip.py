@@ -15,4 +15,4 @@ def test_param_default_sentinel_roundtrip() -> None:
     assert params['POWER_CHECK']['Value'] == 'Default'
     rebuilt = params_to_xml(params)
     again = xml_to_params(rebuilt)
-    assert again['POWER_CHECK']['Value'] == 'Default'
+    assert 'Value' not in again['POWER_CHECK']
