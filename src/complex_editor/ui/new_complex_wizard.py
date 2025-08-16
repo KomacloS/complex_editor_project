@@ -15,7 +15,7 @@ from ..domain import (
     SubComponent,
     MacroParam,
 )
-from ..param_spec import ALLOWED_PARAMS
+from ..param_spec import ALLOWED_PARAMS, resolve_macro_name
 from ..db import discover_macro_map
 from ..io.buffer_loader import WizardPrefill
 from ..util.macro_xml_translator import xml_to_params, params_to_xml
@@ -29,18 +29,22 @@ def _is_default(val: object) -> bool:
     return isinstance(val, str) and _norm(val) == "default"
 
 
-_LOWER_SCHEMA = {
-    _norm(m): { _norm(p): spec for p, spec in params.items() }
+_PARAM_SCHEMA = {
+    m: { _norm(p): spec for p, spec in params.items() }
     for m, params in ALLOWED_PARAMS.items()
 }
 
 
 def _macro_spec(name: str) -> dict | None:
-    return ALLOWED_PARAMS.get(name) or _LOWER_SCHEMA.get(_norm(name))
+    canonical = resolve_macro_name(name)
+    return ALLOWED_PARAMS.get(canonical) if canonical else None
 
 
 def _param_spec(macro: str, param: str):
-    macro_map = _LOWER_SCHEMA.get(_norm(macro))
+    canonical = resolve_macro_name(macro)
+    if not canonical:
+        return None
+    macro_map = _PARAM_SCHEMA.get(canonical)
     return macro_map.get(_norm(param)) if macro_map else None
 
 
@@ -70,6 +74,48 @@ def _safe_numeric(init, default: float | str | None = 0.0) -> float:
         return num
     fallback = _coerce(default)
     return fallback if fallback is not None else 0.0
+
+
+_COMMON_ENUMS = {"DEFAULT", "ON", "OFF", "LOW", "HIGH"}
+
+
+def _infer_widget_for_value(param_name: str, raw_value: object) -> QtWidgets.QWidget:
+    """Infer a reasonable widget for ``raw_value`` when no schema is present."""
+
+    s = "" if raw_value is None else str(raw_value).strip()
+    try:
+        ival = int(s)
+        w = QtWidgets.QSpinBox()
+        w.setRange(-(10 ** 9), 10 ** 9)
+        w.setSingleStep(1)
+        w.setValue(ival)
+        return w
+    except Exception:
+        pass
+    try:
+        fval = float(s)
+        w = QtWidgets.QDoubleSpinBox()
+        w.setRange(-1e12, 1e12)
+        w.setSingleStep(0.01)
+        w.setDecimals(2)
+        w.setValue(fval)
+        return w
+    except Exception:
+        pass
+    if s.upper() in _COMMON_ENUMS:
+        w = QtWidgets.QComboBox()
+        w.setEditable(True)
+        for opt in sorted(_COMMON_ENUMS):
+            w.addItem("Default" if opt == "DEFAULT" else opt)
+        idx = w.findText(s, QtCore.Qt.MatchFlag.MatchFixedString)
+        if idx >= 0:
+            w.setCurrentIndex(idx)
+        else:
+            w.setEditText(s)
+        return w
+    w = QtWidgets.QLineEdit()
+    w.setText(s)
+    return w
 
 
 class BasicsPage(QtWidgets.QWidget):
@@ -316,50 +362,54 @@ class ParamPage(QtWidgets.QWidget):
                 logging.getLogger(__name__).warning(
                     "Macro %s has no parameter definition in DB or YAML", macro.name
                 )
-                self.group_box.hide()
                 self.warn_label.setText(
-                    f"\N{WARNING SIGN} Parameters for '{macro.name}' could not be found. Check your YAML file."
+                    f"\N{WARNING SIGN} Parameters for '{macro.name}' could not be found."
                 )
                 self.warn_label.show()
-                return
+                allowed = {}
+            else:
+                self.warn_label.hide()
+
             # ---- merge YAML params not present in MacroDef ----
-            existing = {p.name.lower() for p in macro.params}
-            for pname, spec in allowed.items():
-                if pname.lower() in existing:
-                    continue
-                if isinstance(spec, dict):
-                    if "choices" in spec or spec.get("type") == "ENUM":
-                        ptype = "ENUM"
-                        default = spec.get("default")
-                        macro.params.append(
-                            MacroParam(pname, ptype, str(default) if default is not None else None, None, None)
-                        )
+            if allowed:
+                existing = {p.name.lower() for p in macro.params}
+                for pname, spec in allowed.items():
+                    if pname.lower() in existing:
                         continue
-                    min_v = spec.get("min")
-                    max_v = spec.get("max")
-                    is_int = (
-                        min_v is not None
-                        and max_v is not None
-                        and float(min_v).is_integer()
-                        and float(max_v).is_integer()
-                    )
-                    ptype = "INT" if is_int else "FLOAT"
-                    macro.params.append(
-                        MacroParam(
-                            pname,
-                            ptype,
-                            str(spec.get("default")) if spec.get("default") is not None else None,
-                            str(min_v) if min_v is not None else None,
-                            str(max_v) if max_v is not None else None,
+                    if isinstance(spec, dict):
+                        if "choices" in spec or spec.get("type") == "ENUM":
+                            ptype = "ENUM"
+                            default = spec.get("default")
+                            macro.params.append(
+                                MacroParam(pname, ptype, str(default) if default is not None else None, None, None)
+                            )
+                            continue
+                        min_v = spec.get("min")
+                        max_v = spec.get("max")
+                        is_int = (
+                            min_v is not None
+                            and max_v is not None
+                            and float(min_v).is_integer()
+                            and float(max_v).is_integer()
                         )
-                    )
-                elif isinstance(spec, list):
-                    default = spec[0] if spec else None
-                    macro.params.append(
-                        MacroParam(pname, "ENUM", str(default) if default is not None else None, None, None)
-                    )
-                else:
-                    macro.params.append(MacroParam(pname, "INT", None, None, None))
+                        ptype = "INT" if is_int else "FLOAT"
+                        macro.params.append(
+                            MacroParam(
+                                pname,
+                                ptype,
+                                str(spec.get("default")) if spec.get("default") is not None else None,
+                                str(min_v) if min_v is not None else None,
+                                str(max_v) if max_v is not None else None,
+                            )
+                        )
+                    elif isinstance(spec, list):
+                        default = spec[0] if spec else None
+                        macro.params.append(
+                            MacroParam(pname, "ENUM", str(default) if default is not None else None, None, None)
+                        )
+                    else:
+                        macro.params.append(MacroParam(pname, "INT", None, None, None))
+
             self.required = {p.name for p in macro.params if p.default is None}
             row = 0
             col = 0
@@ -377,6 +427,19 @@ class ParamPage(QtWidgets.QWidget):
                 label = QtWidgets.QLabel(p.name)
                 spec = _param_spec(macro.name, p.name)
                 w: QtWidgets.QWidget
+                val = _get_case_insensitive(params, p.name)
+                if spec is None:
+                    w = _infer_widget_for_value(p.name, val if val is not None else p.default)
+                    self.widgets[p.name] = w
+                    self.grid.addWidget(label, row, col * 2)
+                    self.grid.addWidget(w, row, col * 2 + 1)
+                    if isinstance(w, QtWidgets.QSpinBox) or isinstance(w, QtWidgets.QDoubleSpinBox):
+                        w.valueChanged.connect(lambda _v, n=p.name: self._on_spin_change(n))
+                    elif isinstance(w, QtWidgets.QComboBox):
+                        w.currentIndexChanged.connect(self._validate)
+                    elif isinstance(w, QtWidgets.QLineEdit):
+                        w.textChanged.connect(self._validate)
+                    continue
                 if macro.name == "GATE" and p.name in {
                     "Check_A",
                     "Check_B",
@@ -449,7 +512,6 @@ class ParamPage(QtWidgets.QWidget):
                 self.widgets[p.name] = w
                 self.grid.addWidget(label, row, col * 2)
                 self.grid.addWidget(w, row, col * 2 + 1)
-                val = _get_case_insensitive(params, p.name)
                 if val is None:
                     val = p.default
                 if isinstance(w, QtWidgets.QSpinBox):
@@ -490,6 +552,8 @@ class ParamPage(QtWidgets.QWidget):
                     idx = w.findText(str(val))
                     if idx >= 0:
                         w.setCurrentIndex(idx)
+                    else:
+                        w.setCurrentText(str(val))
                     w.currentIndexChanged.connect(self._validate)
                 elif isinstance(w, QtWidgets.QLineEdit):
                     if val is not None and not (
@@ -857,7 +921,13 @@ class NewComplexWizard(QtWidgets.QDialog):
             mi.params = dict(macros.get(sel, {}))
             if val_field not in (None, ""):
                 key = next(
-                    (k for k in ALLOWED_PARAMS.get(mi.name, {}).keys() if k.lower() == "value"),
+                    (
+                        k
+                        for k in ALLOWED_PARAMS.get(
+                            resolve_macro_name(mi.name), {}
+                        ).keys()
+                        if k.lower() == "value"
+                    ),
                     None,
                 )
                 if key and key not in mi.params:
@@ -927,7 +997,13 @@ class NewComplexWizard(QtWidgets.QDialog):
             mi.params = dict(macros.get(sel, {}))
             if val_field not in (None, ""):
                 key = next(
-                    (k for k in ALLOWED_PARAMS.get(mi.name, {}).keys() if k.lower() == "value"),
+                    (
+                        k
+                        for k in ALLOWED_PARAMS.get(
+                            resolve_macro_name(mi.name), {}
+                        ).keys()
+                        if k.lower() == "value"
+                    ),
                     None,
                 )
                 if key and key not in mi.params:
