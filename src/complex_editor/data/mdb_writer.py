@@ -4,7 +4,8 @@ from typing import List
 
 import pyodbc
 
-from complex_editor.domain.pinxml import MacroInstance, PinXML
+from complex_editor.util.macro_xml_translator import params_to_xml
+from complex_editor.param_spec import ALLOWED_PARAMS
 
 
 class MdbWriter:
@@ -34,9 +35,8 @@ class MdbWriter:
         sub_id: int,
         macros: List[dict],  # [{'name': …, 'params': {...}}, …]
     ) -> None:
-        xml_blob = PinXML.serialize(
-            [MacroInstance(m["name"], m["params"]) for m in macros]
-        )
+        macro_map = {m["name"]: m.get("params", {}) for m in macros}
+        xml_blob = params_to_xml(macro_map, encoding="utf-16", schema=ALLOWED_PARAMS)
 
         cursor = conn.cursor()
         cursor.execute(

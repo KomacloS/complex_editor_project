@@ -11,7 +11,7 @@ read-only and side-effect free.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, TYPE_CHECKING
 
-from ..util.macro_xml_translator import xml_to_params
+from ..util.macro_xml_translator import xml_to_params, _ensure_text
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from ..db.mdb_api import MDB, ComplexDevice, SubComponent
@@ -33,6 +33,7 @@ class EditorMacro:
     macro_params: Dict[str, str] = field(default_factory=dict)
     all_macros: Dict[str, Dict[str, str]] = field(default_factory=dict)
     pin_s_error: bool = False
+    pin_s_raw: str = ""
 
 
 @dataclass
@@ -83,8 +84,10 @@ def to_editor_model(db: "MDB", cx_db: "ComplexDevice") -> EditorComplex:
         selected_macro = fname
         macro_params: Dict[str, str] = {}
         pin_s_error = False
+        pin_s_raw = ""
         s_xml = (sc.pins or {}).get("S") if getattr(sc, "pins", None) else None
         if s_xml:
+            pin_s_raw = _ensure_text(s_xml)
             try:
                 all_macros = xml_to_params(s_xml)
             except Exception:
@@ -109,6 +112,7 @@ def to_editor_model(db: "MDB", cx_db: "ComplexDevice") -> EditorComplex:
             macro_params=macro_params,
             all_macros=all_macros,
             pin_s_error=pin_s_error,
+            pin_s_raw=pin_s_raw,
         )
         # attach optional attributes used by the editor table
         if getattr(sc, "id_sub_component", None) is not None:

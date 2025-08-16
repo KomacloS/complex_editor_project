@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 import json
 
 from .adapters import EditorComplex, EditorMacro
-from ..util.macro_xml_translator import xml_to_params
+from ..util.macro_xml_translator import xml_to_params, _ensure_text
 
 
 def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
@@ -46,7 +46,9 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
             selected_macro = macro_name
             macro_params: Dict[str, str] = {}
             pin_s_error = False
+            pin_s_raw = ""
             if s_xml:
+                pin_s_raw = _ensure_text(s_xml)
                 try:
                     all_macros = xml_to_params(s_xml)
                 except Exception:
@@ -71,6 +73,7 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
                 macro_params=macro_params,
                 all_macros=all_macros,
                 pin_s_error=pin_s_error,
+                pin_s_raw=pin_s_raw,
             )
             if sc.get("id") is not None:
                 em.sub_id = sc.get("id")

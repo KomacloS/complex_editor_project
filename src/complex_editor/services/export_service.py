@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from ..db import table_exists
 from ..domain import ComplexDevice
-from ..domain.pinxml import MacroInstance as PinMacroInstance
-from ..domain.pinxml import PinXML
+from ..util.macro_xml_translator import params_to_xml
+from ..param_spec import ALLOWED_PARAMS
 
 
 def insert_complex(conn, complex_dev: ComplexDevice) -> int:
@@ -17,8 +17,10 @@ def insert_complex(conn, complex_dev: ComplexDevice) -> int:
     max_id = row[0] if row and row[0] is not None else 0
     next_id = max_id + 1
 
-    pin_s = PinXML.serialize(
-        [PinMacroInstance(complex_dev.macro.name, complex_dev.macro.params)]
+    pin_s = params_to_xml(
+        {complex_dev.macro.name: complex_dev.macro.params},
+        encoding="utf-16",
+        schema=ALLOWED_PARAMS,
     )
     if len(complex_dev.pins) < 2:
         raise ValueError("At least two pins required")

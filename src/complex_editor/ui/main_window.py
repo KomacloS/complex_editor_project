@@ -14,7 +14,7 @@ from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
-from ..util.macro_xml_translator import params_to_xml
+from ..util.macro_xml_translator import params_to_xml, _ensure_text
 from ..param_spec import ALLOWED_PARAMS
 from .new_complex_wizard import NewComplexWizard
 from ..io.buffer_loader import (
@@ -22,7 +22,6 @@ from ..io.buffer_loader import (
     to_wizard_prefill,
 )
 from ..io.db_adapter import to_wizard_prefill_from_db
-from .buffer_ops import format_pins
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -161,14 +160,24 @@ class MainWindow(QtWidgets.QMainWindow):
         assert self.db is not None
         cx = self.db.get_complex(cid)
 
-        # Build display rows: Macro, Pins, Value
+        # Build display rows: Macro, PinA-D, PinS (raw XML), Value
         display_rows: List[Dict[str, str]] = []
         for sc in getattr(cx, "subcomponents", []) or []:
             name = self._func_name(sc.id_function)
-            pin_items = {k: str(v) for k, v in (sc.pins or {}).items()}
-            pins_str = format_pins(pin_items)
+            pin_map = {k: str(v) for k, v in (sc.pins or {}).items()}
+            pin_s = pin_map.get("S") or ""
+            if pin_s:
+                pin_s = _ensure_text(pin_s)
             display_rows.append(
-                {"Macro": name, "Pins": pins_str, "Value": "" if sc.value is None else str(sc.value)}
+                {
+                    "Macro": name,
+                    "PinA": pin_map.get("A", ""),
+                    "PinB": pin_map.get("B", ""),
+                    "PinC": pin_map.get("C", ""),
+                    "PinD": pin_map.get("D", ""),
+                    "PinS": pin_s,
+                    "Value": "" if sc.value is None else str(sc.value),
+                }
             )
 
         if not display_rows:
@@ -176,7 +185,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sub_table.setColumnCount(0)
             return
 
-        headers = ["Macro", "Pins", "Value"]
+        headers = ["Macro", "PinA", "PinB", "PinC", "PinD", "PinS", "Value"]
         self.sub_table.setColumnCount(len(headers))
         self.sub_table.setHorizontalHeaderLabels(headers)
         self.sub_table.setRowCount(len(display_rows))
@@ -190,13 +199,24 @@ class MainWindow(QtWidgets.QMainWindow):
         """Fill the right table with subcomponents from a buffer."""
         display_rows: List[Dict[str, str]] = []
         for sc in cx.subcomponents:
-            pin_items = sc.pins or {}
-            pins_str = format_pins(pin_items)
+            pin_map = sc.pins or {}
+            pin_s = getattr(sc, "pin_s_raw", "")
+            if not pin_s and getattr(sc, "all_macros", None):
+                try:
+                    pin_s = params_to_xml(sc.all_macros, encoding="utf-16", schema=ALLOWED_PARAMS).decode(
+                        "utf-16"
+                    )
+                except Exception:
+                    pin_s = ""
             display_rows.append(
                 {
                     "SubID": str(getattr(sc, "sub_id", "")),
                     "Macro": sc.name,
-                    "Pins": pins_str,
+                    "PinA": pin_map.get("A", ""),
+                    "PinB": pin_map.get("B", ""),
+                    "PinC": pin_map.get("C", ""),
+                    "PinD": pin_map.get("D", ""),
+                    "PinS": pin_s,
                     "Value": "" if getattr(sc, "value", None) in (None, "") else str(getattr(sc, "value")),
                     "ForceBits": "" if getattr(sc, "force_bits", None) in (None, "") else str(getattr(sc, "force_bits")),
                 }
@@ -207,7 +227,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sub_table.setColumnCount(0)
             return
 
-        headers = ["SubID", "Macro", "Pins", "Value", "ForceBits"]
+        headers = ["SubID", "Macro", "PinA", "PinB", "PinC", "PinD", "PinS", "Value", "ForceBits"]
         self.sub_table.setColumnCount(len(headers))
         self.sub_table.setHorizontalHeaderLabels(headers)
         self.sub_table.setRowCount(len(display_rows))
@@ -272,7 +292,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 for raw_sc, sc in zip(raw_cx.get("subcomponents", []), cx.subcomponents):
                     sc.all_macros[sc.selected_macro] = sc.macro_params
                     xml = params_to_xml(sc.all_macros, encoding="utf-16", schema=ALLOWED_PARAMS)
-                    raw_sc.setdefault("pins", {})["S"] = xml.decode("utf-16")
+                    xml_str = xml.decode("utf-16")
+                    raw_sc.setdefault("pins", {})["S"] = xml_str
+                    sc.pin_s_raw = xml_str
                 save_buffer(self._buffer_path, self._buffer_raw)
             return
 
@@ -288,10 +310,7 @@ class MainWindow(QtWidgets.QMainWindow):
         prefill = to_wizard_prefill_from_db(
             raw, self._macro_id_from_name, self._pin_normalizer
         )
-        title = getattr(raw, "name", None)
-        wiz = NewComplexWizard.from_existing(
-            prefill, cid, parent=self, title=title or "New Complex"
-        )
+        wiz = NewComplexWizard.from_existing(prefill, cid, parent=self)
 
         if wiz.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             from ..db.mdb_api import SubComponent as DbSubComponent, ComplexDevice as DbComplex
