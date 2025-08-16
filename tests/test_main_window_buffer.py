@@ -56,8 +56,10 @@ def test_main_window_buffer_mode_populates_tables(qtbot, tmp_path: Path) -> None
     win._on_selected()
     assert win.sub_table.rowCount() == 2
     headers = [win.sub_table.horizontalHeaderItem(i).text() for i in range(win.sub_table.columnCount())]
-    assert "Macro" in headers and "Pins" in headers
+    for col in ["Macro", "PinA", "PinB", "PinC", "PinD", "PinS"]:
+        assert col in headers
 
     row0 = {headers[i]: (win.sub_table.item(0, i).text() if win.sub_table.item(0, i) else "") for i in range(win.sub_table.columnCount())}
     assert row0["Macro"] == "RELAIS"
-    assert "A=1" in row0["Pins"] and "D=4" in row0["Pins"]
+    assert row0["PinA"] == "1" and row0["PinD"] == "4"
+    assert row0["PinS"] == ""

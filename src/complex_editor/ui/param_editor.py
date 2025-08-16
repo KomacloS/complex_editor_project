@@ -3,7 +3,7 @@ from __future__ import annotations
 """Simple dialog for editing macro parameters."""
 
 from typing import Dict, Mapping
-from PyQt6 import QtWidgets
+from PyQt6 import QtWidgets, QtCore
 
 
 class MacroParamsDialog(QtWidgets.QDialog):
@@ -16,6 +16,7 @@ class MacroParamsDialog(QtWidgets.QDialog):
 
         self.table = QtWidgets.QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["Param", "Value"])
+        self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
 
         btn_layout = QtWidgets.QHBoxLayout()
@@ -47,24 +48,46 @@ class MacroParamsDialog(QtWidgets.QDialog):
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(str(key)))
-            self.table.setItem(r, 1, QtWidgets.QTableWidgetItem(str(val)))
+            self.table.setCellWidget(r, 1, self._spinbox(str(val)))
 
     def params(self) -> Dict[str, str]:
         result: Dict[str, str] = {}
         for r in range(self.table.rowCount()):
             k_item = self.table.item(r, 0)
-            v_item = self.table.item(r, 1)
             key = k_item.text().strip() if k_item else ""
-            val = v_item.text() if v_item else ""
+            val = ""
+            widget = self.table.cellWidget(r, 1)
+            if isinstance(widget, QtWidgets.QDoubleSpinBox):
+                val = str(widget.value())
+            else:
+                v_item = self.table.item(r, 1)
+                val = v_item.text() if v_item else ""
             if key:
                 result[key] = val
         return result
 
     # ----------------------------------------------------------------- callbacks
     def _add_row(self) -> None:
-        self.table.insertRow(self.table.rowCount())
+        r = self.table.rowCount()
+        self.table.insertRow(r)
+        self.table.setCellWidget(r, 1, self._spinbox())
+        self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(""))
 
     def _remove_row(self) -> None:
         row = self.table.currentRow()
         if row >= 0:
             self.table.removeRow(row)
+
+    # --------------------------------------------------------------- internals
+    def _spinbox(self, val: str | None = None) -> QtWidgets.QDoubleSpinBox:
+        box = QtWidgets.QDoubleSpinBox()
+        box.setRange(-1e9, 1e9)
+        box.setDecimals(6)
+        box.setSingleStep(0.1)
+        box.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        if val is not None:
+            try:
+                box.setValue(float(val))
+            except ValueError:
+                box.setValue(0.0)
+        return box

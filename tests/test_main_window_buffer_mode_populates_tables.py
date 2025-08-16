@@ -40,5 +40,7 @@ def test_main_window_buffer_mode_populates_tables(qtbot, tmp_path: Path) -> None
         win.sub_table.horizontalHeaderItem(i).text(): (win.sub_table.item(0, i).text() if win.sub_table.item(0, i) else "")
         for i in range(win.sub_table.columnCount())
     }
-    assert "S" not in row0["Pins"]
-    assert "A=1" in row0["Pins"] and "D=4" in row0["Pins"]
+    for col in ["PinA", "PinB", "PinC", "PinD", "PinS"]:
+        assert col in row0
+    assert row0["PinA"] == "1" and row0["PinD"] == "4"
+    assert row0["PinS"] == "<xml>ignored</xml>"

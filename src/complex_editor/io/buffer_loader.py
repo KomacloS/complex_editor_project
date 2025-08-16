@@ -102,10 +102,11 @@ def load_complex_from_buffer_json(path: str | Path) -> BufferComplex:
         raw_pins = entry.get("PinMap") or entry.get("Pins")
         if isinstance(raw_pins, dict):
             for k, v in raw_pins.items():
-                if str(k) == "S":
+                key = str(k)
+                if key in {"S", "PinS"}:
                     s_xml = str(v)
                 else:
-                    pin_map[str(k)] = str(v)
+                    pin_map[key] = str(v)
         else:
             for key, val in entry.items():
                 if not key:
