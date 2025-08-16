@@ -211,3 +211,46 @@ def test_param_page_missing_banner(qapp, caplog):
         "Macro NOPE has no parameter definition in DB or YAML" in rec.getMessage()
         for rec in caplog.records
     )
+
+
+def test_gate_check_optional(qapp):
+    macro = MacroDef(
+        id_function=1,
+        name="GATE",
+        params=[
+            MacroParam("PathPin_A", None, None, None, None),
+            MacroParam("Check_A", None, None, None, None),
+        ],
+    )
+    page = ParamPage()
+    page.build_widgets(macro, {})
+    assert "Check_A" not in page.required
+    path = page.widgets["PathPin_A"]
+    check = page.widgets["Check_A"]
+    assert isinstance(path, QtWidgets.QLineEdit)
+    assert isinstance(check, QtWidgets.QLineEdit)
+    path.setText("0101")
+    check.setText("")
+    page._validate()
+    assert page.errors == []
+    assert "background:#FFCCCC" not in check.styleSheet()
+
+
+def test_gate_check_length_mismatch(qapp):
+    macro = MacroDef(
+        id_function=1,
+        name="GATE",
+        params=[
+            MacroParam("PathPin_A", None, None, None, None),
+            MacroParam("Check_A", None, None, None, None),
+        ],
+    )
+    page = ParamPage()
+    page.build_widgets(macro, {})
+    path = page.widgets["PathPin_A"]
+    check = page.widgets["Check_A"]
+    path.setText("0101")
+    check.setText("0")
+    page._validate()
+    assert any("Check_A" in e and "length" in e for e in page.errors)
+    assert "background:#FFCCCC" in check.styleSheet()

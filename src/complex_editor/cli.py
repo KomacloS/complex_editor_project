@@ -13,9 +13,9 @@ from .db import (
     table_exists,
 )
 from .domain import ComplexDevice, MacroInstance
-from .domain.pinxml import MacroInstance as PinMacroInstance
-from .domain.pinxml import PinXML
 from .services import insert_complex
+from .util.macro_xml_translator import params_to_xml
+from .param_spec import ALLOWED_PARAMS
 
 
 def list_complexes_cmd(args: argparse.Namespace) -> int:
@@ -69,8 +69,7 @@ def make_pinxml_cmd(args: argparse.Namespace) -> int:
             return 1
         name, value = item.split("=", 1)
         params_pairs.append((name, value))
-    macro = PinMacroInstance(args.macro, dict(params_pairs))
-    xml_blob = PinXML.serialize([macro])
+    xml_blob = params_to_xml({args.macro: dict(params_pairs)}, encoding="utf-16", schema=ALLOWED_PARAMS)
     hex_dump = " ".join(f"{b:02x}" for b in xml_blob)
     print(hex_dump)
     return 0

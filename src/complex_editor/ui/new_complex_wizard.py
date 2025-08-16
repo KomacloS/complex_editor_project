@@ -432,6 +432,9 @@ class ParamPage(QtWidgets.QWidget):
                         macro.params.append(MacroParam(pname, "INT", None, None, None))
 
             self.required = {p.name for p in macro.params if p.default is None}
+            if macro.name == "GATE":
+                for suf in "ABCD":
+                    self.required.discard(f"Check_{suf}")
             row = 0
             col = 0
             mid = (len(macro.params) + 1) // 2
@@ -679,7 +682,7 @@ class ParamPage(QtWidgets.QWidget):
                 msg = f"{pname} must be one of {', '.join(choices)}"
             elif isinstance(spec, dict) and ("min" in spec or "max" in spec):
                 lo, hi = spec.get("min"), spec.get("max")
-                if _is_default(value):
+                if _is_default(value) or value in ("", None):
                     ok = True
                 else:
                     try:
@@ -708,11 +711,20 @@ class ParamPage(QtWidgets.QWidget):
                     if text in {"-1", "-1.0"}:
                         text = ""
                     values[name] = text
-            lengths = {len(v) for v in values.values() if v}
-            if len(lengths) > 1:
-                gate_errs.append("PathPin/Check fields must all have the same length")
-                for name in values:
-                    widget = self.widgets.get(name)
+            for suf in "ABCD":
+                path = values.get(f"PathPin_{suf}", "")
+                check = values.get(f"Check_{suf}", "")
+                if check and not path:
+                    gate_errs.append(f"Check_{suf} requires PathPin_{suf}")
+                    for name in (f"Check_{suf}", f"PathPin_{suf}"):
+                        widget = self.widgets.get(name)
+                        if widget is not None:
+                            widget.setStyleSheet("background:#FFCCCC;")
+                elif check and len(check) != len(path):
+                    gate_errs.append(
+                        f"Check_{suf} length must match PathPin_{suf}"
+                    )
+                    widget = self.widgets.get(f"Check_{suf}")
                     if widget is not None:
                         widget.setStyleSheet("background:#FFCCCC;")
             for name in path_names:
