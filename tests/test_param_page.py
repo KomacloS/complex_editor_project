@@ -189,12 +189,15 @@ def test_param_page_build(qapp, macro_name):
 
 
 def test_param_page_build_missing_macro(qapp):
-    """Macros without YAML definitions should show a warning banner."""
+    """Macros without YAML definitions should still allow editing."""
     macro = make_macro("FALLBACK")
     page = ParamPage()
-    page.build_widgets(macro, {})
-    assert not page.group_box.isVisible()
+    page.build_widgets(macro, {"IntParam": "5", "EnumParam": "OFF"})
+    assert not page.group_box.isHidden()
+    assert not page.warn_label.isHidden()
     assert "could not be found" in page.warn_label.text()
+    assert isinstance(page.widgets["IntParam"], QtWidgets.QSpinBox)
+    assert isinstance(page.widgets["EnumParam"], QtWidgets.QComboBox)
 
 
 def test_param_page_missing_banner(qapp, caplog):

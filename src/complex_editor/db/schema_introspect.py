@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict
 import logging
 
-from complex_editor.param_spec import ALLOWED_PARAMS
+from complex_editor.param_spec import ALLOWED_PARAMS, resolve_macro_name
 
 from ..domain import MacroDef, MacroParam
 from .access_driver import fetch_macro_pairs
@@ -127,7 +127,7 @@ def discover_macro_map(cursor_or_conn) -> Dict[int, MacroDef]:
     for m in macro_map.values():
         if m.params:
             continue
-        spec = ALLOWED_PARAMS.get(m.name.strip(), {})
+        spec = ALLOWED_PARAMS.get(resolve_macro_name(m.name.strip()), {})
         if not spec:
             log.warning("Macro %s has no parameter definition in DB or YAML", m.name)
             continue
