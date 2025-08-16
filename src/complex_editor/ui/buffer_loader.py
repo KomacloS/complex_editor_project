@@ -45,15 +45,23 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
             all_macros: Dict[str, Dict[str, str]] = {}
             selected_macro = macro_name
             macro_params: Dict[str, str] = {}
+            pin_s_error = False
             if s_xml:
-                all_macros = xml_to_params(s_xml)
-                if len(all_macros) == 1:
-                    selected_macro = next(iter(all_macros))
-                elif macro_name in all_macros:
-                    selected_macro = macro_name
-                elif all_macros:
-                    selected_macro = next(iter(all_macros))
-                macro_params = dict(all_macros.get(selected_macro, {}))
+                try:
+                    all_macros = xml_to_params(s_xml)
+                except Exception:
+                    all_macros = {}
+                    pin_s_error = True
+                else:
+                    if len(all_macros) == 1:
+                        selected_macro = next(iter(all_macros))
+                    elif macro_name in all_macros:
+                        selected_macro = macro_name
+                    elif all_macros:
+                        selected_macro = next(iter(all_macros))
+                    macro_params = dict(all_macros.get(selected_macro, {}))
+                    if not all_macros:
+                        pin_s_error = True
 
             em = EditorMacro(
                 name=macro_name,
@@ -62,6 +70,7 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
                 selected_macro=selected_macro,
                 macro_params=macro_params,
                 all_macros=all_macros,
+                pin_s_error=pin_s_error,
             )
             if sc.get("id") is not None:
                 em.sub_id = sc.get("id")

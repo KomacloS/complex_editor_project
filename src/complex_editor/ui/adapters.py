@@ -32,6 +32,7 @@ class EditorMacro:
     selected_macro: str = ""
     macro_params: Dict[str, str] = field(default_factory=dict)
     all_macros: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    pin_s_error: bool = False
 
 
 @dataclass
@@ -81,16 +82,24 @@ def to_editor_model(db: "MDB", cx_db: "ComplexDevice") -> EditorComplex:
         all_macros: Dict[str, Dict[str, str]] = {}
         selected_macro = fname
         macro_params: Dict[str, str] = {}
+        pin_s_error = False
         s_xml = (sc.pins or {}).get("S") if getattr(sc, "pins", None) else None
         if s_xml:
-            all_macros = xml_to_params(s_xml)
-            if len(all_macros) == 1:
-                selected_macro = next(iter(all_macros))
-            elif fname in all_macros:
-                selected_macro = fname
-            elif all_macros:
-                selected_macro = next(iter(all_macros))
-            macro_params = dict(all_macros.get(selected_macro, {}))
+            try:
+                all_macros = xml_to_params(s_xml)
+            except Exception:
+                all_macros = {}
+                pin_s_error = True
+            else:
+                if len(all_macros) == 1:
+                    selected_macro = next(iter(all_macros))
+                elif fname in all_macros:
+                    selected_macro = fname
+                elif all_macros:
+                    selected_macro = next(iter(all_macros))
+                macro_params = dict(all_macros.get(selected_macro, {}))
+                if not all_macros:
+                    pin_s_error = True
 
         em = EditorMacro(
             name=fname,
@@ -99,6 +108,7 @@ def to_editor_model(db: "MDB", cx_db: "ComplexDevice") -> EditorComplex:
             selected_macro=selected_macro,
             macro_params=macro_params,
             all_macros=all_macros,
+            pin_s_error=pin_s_error,
         )
         # attach optional attributes used by the editor table
         if getattr(sc, "id_sub_component", None) is not None:
