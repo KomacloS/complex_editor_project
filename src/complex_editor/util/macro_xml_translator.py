@@ -8,6 +8,7 @@ have any dependency on the rest of the project so they can be reused by the GUI
 as well as command line tools.
 """
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 import xml.etree.ElementTree as ET
@@ -76,15 +77,25 @@ def params_to_xml(
     The output always contains an XML declaration and is encoded using
     ``encoding`` (``utf-16`` by default for compatibility with legacy tools).
 
-    The optional ``schema`` parameter may contain validation/coercion rules, but
-    it is currently only a placeholder and values are written verbatim.
+    The optional ``schema`` parameter may provide default values for parameters.
+    If provided (or if the built-in defaults are loaded), parameters matching
+    their default values are omitted from the resulting XML.  The ``GATE`` macro
+    is also validated so that ``Check_[A-D]`` parameters either match the length
+    of their corresponding ``PathPin_[A-D]`` values or are left empty.
     """
+
+    defaults = _extract_defaults(schema) if schema is not None else _load_defaults()
 
     root = ET.Element("R")
     macros_el = ET.SubElement(root, "Macros")
     for mname, params in macros.items():
+        if mname == "GATE":
+            _validate_gate(params)
         m_el = ET.SubElement(macros_el, "Macro", {"Name": str(mname)})
+        dvals = defaults.get(mname, {})
         for pname, value in (params or {}).items():
+            if pname in dvals and _is_default(value, dvals[pname]):
+                continue
             ET.SubElement(
                 m_el,
                 "Param",
@@ -104,3 +115,58 @@ def load_schema(path: str | Path) -> Mapping[str, Any]:
     p = Path(path)
     with p.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+# ---------------------------------------------------------------------------
+# helper utilities
+
+
+def _is_default(val: Any, default: Any) -> bool:
+    if val in (None, ""):
+        return True
+    if isinstance(val, str) and val.strip().lower() == "default":
+        return True
+    try:
+        return float(val) == float(default)
+    except (TypeError, ValueError):
+        return str(val) == str(default)
+
+
+@lru_cache(maxsize=1)
+def _load_defaults(
+    path: Path = Path(__file__).resolve().parents[1]
+    / "resources"
+    / "function_param_allowed.yaml",
+) -> Mapping[str, Dict[str, Any]]:
+    data = load_schema(path)
+    return _extract_defaults(data)
+
+
+def _extract_defaults(data: Mapping[str, Mapping[str, Any]]) -> Mapping[str, Dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for fname, params in data.items():
+        if isinstance(params, Mapping):
+            d: dict[str, Any] = {}
+            for pname, spec in params.items():
+                if isinstance(spec, Mapping) and "default" in spec:
+                    d[pname] = spec["default"]
+            result[fname] = d
+    return result
+
+
+def _validate_gate(params: Mapping[str, Any]) -> None:
+    def _plen(v: Any) -> int:
+        if v is None:
+            return 0
+        s = str(v)
+        return 0 if s in {"", "-1", "-1.0"} else len(s)
+
+    for suf in "ABCD":
+        path_len = _plen(params.get(f"PathPin_{suf}"))
+        check_len = _plen(params.get(f"Check_{suf}"))
+        if path_len == 0 and check_len != 0:
+            raise ValueError(f"Check_{suf} without PathPin_{suf}")
+        if path_len > 0 and check_len not in (0, path_len):
+            raise ValueError(
+                f"Check_{suf} length {check_len} does not match PathPin_{suf} length {path_len}"
+            )
