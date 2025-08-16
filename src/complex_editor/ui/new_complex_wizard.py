@@ -312,6 +312,20 @@ class ParamPage(QtWidgets.QWidget):
         self.heading.setFont(font)
         layout.addWidget(self.heading)
 
+        self.pin_s_banner = QtWidgets.QFrame()
+        self.pin_s_banner.setStyleSheet("background:#FFEB9C;padding:6px")
+        banner_layout = QtWidgets.QHBoxLayout(self.pin_s_banner)
+        banner_layout.setContentsMargins(6, 6, 6, 6)
+        self.pin_s_label = QtWidgets.QLabel(
+            "Some sub-components had unreadable PinS XML. Parameters were not pre-loaded. You can still edit them manually."
+        )
+        self.pin_s_label.setWordWrap(True)
+        banner_layout.addWidget(self.pin_s_label)
+        self.pin_s_more = QtWidgets.QPushButton("Learn more…")
+        banner_layout.addWidget(self.pin_s_more)
+        self.pin_s_banner.hide()
+        layout.addWidget(self.pin_s_banner)
+
         self.scroll = QtWidgets.QScrollArea()
         self.scroll.setWidgetResizable(True)
         layout.addWidget(self.scroll)
@@ -339,6 +353,13 @@ class ParamPage(QtWidgets.QWidget):
         self.macro_name: str = ""
         self.errors: list[str] = []
         self.special_values: dict[str, str] = {}
+
+        self.pin_s_more.clicked.connect(
+            lambda: QtWidgets.QToolTip.showText(
+                self.pin_s_more.mapToGlobal(QtCore.QPoint()),
+                "PinS XML stores default macro parameters. When unreadable, parameters must be entered manually.",
+            )
+        )
 
     def build_widgets(self, macro: MacroDef, params: dict[str, str]) -> None:
         try:
@@ -913,7 +934,17 @@ class NewComplexWizard(QtWidgets.QDialog):
             val_field = sc.get("value")
             if val_field not in (None, ""):
                 setattr(subc, "value", val_field)
-            macros = xml_to_params(s_xml) if s_xml else {}
+            macros: dict[str, dict[str, str]] = {}
+            pin_s_error = False
+            if s_xml:
+                try:
+                    macros = xml_to_params(s_xml)
+                except Exception:
+                    macros = {}
+                    pin_s_error = True
+                else:
+                    if not macros:
+                        pin_s_error = True
             sel = sc.get("macro_name") or (macros and next(iter(macros))) or mi.name
             if sel not in macros:
                 macros.setdefault(sel, {})
@@ -936,6 +967,8 @@ class NewComplexWizard(QtWidgets.QDialog):
             setattr(subc, "_pins_s_macros", macros)
             if s_xml:
                 setattr(subc, "pin_s", s_xml)
+            if pin_s_error:
+                setattr(subc, "pin_s_error", True)
             wiz.sub_components.append(subc)
             text = f"{mi.name} ({','.join(str(p) for p in pins)})"
             wiz.list_page.list.addItem(text)
@@ -989,7 +1022,17 @@ class NewComplexWizard(QtWidgets.QDialog):
             val_field = sc.get("value")
             if val_field not in (None, ""):
                 setattr(subc, "value", val_field)
-            macros = xml_to_params(s_xml) if s_xml else {}
+            macros: dict[str, dict[str, str]] = {}
+            pin_s_error = False
+            if s_xml:
+                try:
+                    macros = xml_to_params(s_xml)
+                except Exception:
+                    macros = {}
+                    pin_s_error = True
+                else:
+                    if not macros:
+                        pin_s_error = True
             sel = sc.get("macro_name") or (macros and next(iter(macros))) or mi.name
             if sel not in macros:
                 macros.setdefault(sel, {})
@@ -1012,6 +1055,8 @@ class NewComplexWizard(QtWidgets.QDialog):
             setattr(subc, "_pins_s_macros", macros)
             if s_xml:
                 setattr(subc, "pin_s", s_xml)
+            if pin_s_error:
+                setattr(subc, "pin_s_error", True)
             wiz.sub_components.append(subc)
             text = f"{mi.name} ({','.join(str(p) for p in pins)})"
             wiz.list_page.list.addItem(text)
@@ -1136,6 +1181,10 @@ class NewComplexWizard(QtWidgets.QDialog):
         else:
             self.param_page.warn_label.setText("No PinS found")
             self.param_page.warn_label.show()
+        if getattr(sc, "pin_s_error", False):
+            self.param_page.pin_s_banner.show()
+        else:
+            self.param_page.pin_s_banner.hide()
         if macro.params:  # normal case
             self.param_page.build_widgets(macro, sc.macro.params)
             self.stack.setCurrentWidget(self.param_page)

@@ -22,6 +22,7 @@ from ..io.buffer_loader import (
     to_wizard_prefill,
 )
 from ..io.db_adapter import to_wizard_prefill_from_db
+from .buffer_ops import format_pins
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -164,11 +165,8 @@ class MainWindow(QtWidgets.QMainWindow):
         display_rows: List[Dict[str, str]] = []
         for sc in getattr(cx, "subcomponents", []) or []:
             name = self._func_name(sc.id_function)
-            pin_items = sc.pins or {}
-            ordered_keys = [k for k in list("ABCDEFGH") + ["S"] if k in pin_items] + [
-                k for k in pin_items.keys() if k not in "ABCDEFGH" and k != "S"
-            ]
-            pins_str = ", ".join(f"{k}:{pin_items[k]}" for k in ordered_keys)
+            pin_items = {k: str(v) for k, v in (sc.pins or {}).items()}
+            pins_str = format_pins(pin_items)
             display_rows.append(
                 {"Macro": name, "Pins": pins_str, "Value": "" if sc.value is None else str(sc.value)}
             )
@@ -193,8 +191,7 @@ class MainWindow(QtWidgets.QMainWindow):
         display_rows: List[Dict[str, str]] = []
         for sc in cx.subcomponents:
             pin_items = sc.pins or {}
-            ordered_keys = [k for k in sorted(pin_items.keys()) if k.isalpha()]
-            pins_str = ", ".join(f"{k}={pin_items[k]}" for k in ordered_keys)
+            pins_str = format_pins(pin_items)
             display_rows.append(
                 {
                     "SubID": str(getattr(sc, "sub_id", "")),

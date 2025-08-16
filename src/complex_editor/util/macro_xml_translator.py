@@ -15,25 +15,34 @@ import xml.etree.ElementTree as ET
 import yaml
 
 
-def _ensure_text(data: bytes | str) -> str:
-    """Return *data* as text.
+def _ensure_text(data: bytes | str | memoryview | bytearray) -> str:
+    """Return *data* as a string.
 
-    Parameters
-    ----------
-    data:
-        Bytes or string containing XML.  Various encodings used by legacy
-        tools are tolerated (``utf-16``, ``utf-16-le`` and ``utf-8``).
+    ``data`` may be a :class:`str`, :class:`bytes`, :class:`bytearray`,
+    :class:`memoryview` or any object implementing the buffer protocol.  The
+    bytes are decoded using a best-effort strategy trying ``utf-16``, ``utf-8``
+    and finally ``latin-1`` so that malformed inputs never raise an exception.
     """
 
     if isinstance(data, str):
         return data
-    for enc in ("utf-16", "utf-16-le", "utf-8"):
+
+    # ``data`` might be a memoryview/bytearray or any object implementing the
+    # buffer protocol.  ``bytes()`` handles these transparently and returns a
+    # ``bytes`` instance which we can decode using a best-effort strategy.
+    if not isinstance(data, (bytes, bytearray)):
+        try:
+            data = bytes(data)
+        except TypeError:
+            return str(data)
+
+    for enc in ("utf-16", "utf-16-le", "utf-8", "latin-1"):
         try:
             return data.decode(enc)
         except UnicodeDecodeError:
             continue
-    # Last resort – decode as utf-8 with replacement to avoid raising.
-    return data.decode("utf-8", errors="replace")
+    # ``latin-1`` will always decode but include replacement as last resort.
+    return data.decode("latin-1", errors="replace")
 
 
 def xml_to_params(xml: bytes | str) -> Dict[str, Dict[str, str]]:

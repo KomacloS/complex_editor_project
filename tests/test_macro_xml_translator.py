@@ -43,3 +43,10 @@ def test_gate_check_length_validation() -> None:
     assert '<Param Name="Check_A" Value="1111"' in xml.decode("utf-16")
     xml2 = params_to_xml({"GATE": {"PathPin_A": "0101"}})
     assert "Check_A" not in xml2.decode("utf-16")
+
+
+def test_xml_to_params_accepts_memoryview_roundtrip() -> None:
+    macros = {"FNODE": {"BurstNr": "5", "StartFreq": "200", "StopFreq": "50000"}}
+    xml = params_to_xml(macros)
+    params = xml_to_params(memoryview(xml))
+    assert params == macros

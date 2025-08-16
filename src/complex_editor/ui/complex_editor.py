@@ -187,7 +187,17 @@ class ComplexEditor(QtWidgets.QDialog):
         macro = self.macro_map.get(id_func)
         self._build_param_widgets(macro)
         pin_s = getattr(row, "PinS", row[6] if len(row) > 6 else None)
-        macros = xml_to_params(pin_s) if pin_s else {}
+        macros = {}
+        pin_s_error = False
+        if pin_s:
+            try:
+                macros = xml_to_params(pin_s)
+            except Exception:
+                macros = {}
+                pin_s_error = True
+            else:
+                if not macros:
+                    pin_s_error = True
         values: Dict[str, str] = {}
         if macros:
             if macro and macro.name in macros:
@@ -219,6 +229,13 @@ class ComplexEditor(QtWidgets.QDialog):
                     w.setText(str(val) if val else "")
         self.dirty = False
         self.dirtyChanged.emit(False)
+        if pin_s_error:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "PinS translation failed",
+                "The PinS XML for this sub-component could not be translated."
+                " Macro parameters may be missing.",
+            )
 
     # ------------------------------------------------------------------ dirty
     def on_dirty(self) -> None:
@@ -304,6 +321,7 @@ class ComplexEditor(QtWidgets.QDialog):
         self.sub_table.setColumnCount(len(headers))
         self.sub_table.setHorizontalHeaderLabels(headers)
         self.sub_table.setRowCount(len(subs))
+        pin_s_problem = False
         for row, sc in enumerate(subs):
             self.sub_table.setItem(row, 0, QtWidgets.QTableWidgetItem(sc.name))
             for col, pin in enumerate(pin_cols, start=1):
@@ -326,6 +344,15 @@ class ComplexEditor(QtWidgets.QDialog):
             btn = QtWidgets.QPushButton("Edit…")
             btn.clicked.connect(lambda _=False, sc=sc: self._edit_params(sc))
             self.sub_table.setCellWidget(row, len(pin_cols) + 2, btn)
+            if getattr(sc, "pin_s_error", False):
+                pin_s_problem = True
+
+        if pin_s_problem:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "PinS translation failed",
+                "Some sub-components had unreadable PinS XML. Parameters were not pre-loaded. You can still edit them manually.",
+            )
 
     # ----------------------------------------------------------------- helpers
     def _switch_macro(self, sc: "EditorMacro", name: str) -> None:
@@ -334,6 +361,12 @@ class ComplexEditor(QtWidgets.QDialog):
         sc.params = sc.macro_params
 
     def _edit_params(self, sc: "EditorMacro") -> None:
+        if getattr(sc, "pin_s_error", False):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "PinS translation failed",
+                "This sub-component had unreadable PinS XML. Parameters were not pre-loaded. You can still edit them manually.",
+            )
         dlg = MacroParamsDialog(sc.macro_params, self)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             updated = dlg.params()
