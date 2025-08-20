@@ -16,12 +16,16 @@ LOGGER = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).resolve().parent / "data"
 RES_DIR = Path(__file__).resolve().parents[1] / "complex_editor" / "resources"
 DEFAULTS_PATH = RES_DIR / "function_param_allowed.yaml"
+PARAM_ALIASES_PATH = DATA_DIR / "macro_param_aliases.yaml"
 
 
 def _load_yaml(path: str | Path) -> Mapping[str, Any]:
     p = Path(path)
-    with p.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
 
 
 @lru_cache(maxsize=1)
@@ -37,6 +41,11 @@ def _load_defaults(path: str | Path = DEFAULTS_PATH) -> Mapping[str, Mapping[str
                     d[pname] = spec["default"]
             result[fname] = d
     return result
+
+
+@lru_cache(maxsize=1)
+def _load_param_aliases(path: str | Path = PARAM_ALIASES_PATH) -> Mapping[str, Mapping[str, str]]:
+    return _load_yaml(path)
 
 
 def _is_default(val: Any, default: Any) -> bool:
@@ -79,6 +88,7 @@ def params_to_xml(
         rules = load_rules(DATA_DIR / "macro_selection_rules.yaml")
     if fn_map is None:
         fn_map = _load_yaml(DATA_DIR / "function_to_xml_macro_map.yaml")
+    param_aliases = _load_param_aliases()
 
     defaults = _load_defaults()
     macros = {}
@@ -94,11 +104,14 @@ def params_to_xml(
             reason = "fallback"
         LOGGER.info("macro-choice", extra={"function": fname, "macro": macro, "reason": reason})
         dvals = defaults.get(fname, {})
-        filtered = {
-            pname: val
-            for pname, val in pvals.items()
-            if not (pname in dvals and _is_default(val, dvals[pname]))
-        }
+        aliases = param_aliases.get(fname, {})
+        inverse_aliases = {v: k for k, v in aliases.items()}
+        filtered = {}
+        for pname, val in pvals.items():
+            if pname in dvals and _is_default(val, dvals[pname]):
+                continue
+            macro_pname = inverse_aliases.get(pname, pname)
+            filtered[macro_pname] = val
         macros[macro] = filtered
     return _params_to_xml(macros)
 
@@ -112,6 +125,7 @@ def xml_to_params(
 
     if inv_map is None:
         inv_map = _load_yaml(DATA_DIR / "xml_macro_to_function_map.yaml")
+    param_aliases = _load_param_aliases()
     macros = _xml_to_params(xml)
     result = {}
     for mname, params in macros.items():
@@ -123,7 +137,9 @@ def xml_to_params(
                 LOGGER.warning("ambiguous-macro-name", extra={"macro": mname, "function": fname})
             else:
                 fname = mname
-        result[fname] = params
+        aliases = param_aliases.get(fname, {})
+        renamed = {aliases.get(p, p): v for p, v in params.items()}
+        result[fname] = renamed
     return result
 
 
