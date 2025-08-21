@@ -72,9 +72,21 @@ class ParamEditorDialog(QtWidgets.QDialog):
             if w is None:
                 continue
             if isinstance(w, QtWidgets.QSpinBox):
-                w.setValue(int(val))
+                try:
+                    w.setValue(int(val))
+                except ValueError:
+                    # Some legacy macros store non-integer defaults for INT
+                    # parameters.  Coerce through float to avoid crashing the
+                    # editor when such values are encountered.
+                    try:
+                        w.setValue(int(float(val)))
+                    except ValueError:
+                        continue
             elif isinstance(w, QtWidgets.QDoubleSpinBox):
-                w.setValue(float(val))
+                try:
+                    w.setValue(float(val))
+                except ValueError:
+                    continue
             elif isinstance(w, QtWidgets.QCheckBox):
                 w.setChecked(str(val).lower() in {"1", "true", "yes"})
             elif isinstance(w, QtWidgets.QComboBox):
