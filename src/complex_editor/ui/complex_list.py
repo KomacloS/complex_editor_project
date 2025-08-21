@@ -73,25 +73,10 @@ class ComplexListPanel(QtWidgets.QWidget):
         )
         self.view.clicked.connect(self._on_clicked)
         layout.addWidget(self.view)
-        self._refresh_cb = None
 
     def load_rows(self, cursor, macro_map):
         rows = fetch_comp_desc_rows(cursor, 1000)
         self.model.load(rows, macro_map)
-
-    def set_refresh_callback(self, cb):
-        self._refresh_cb = cb
-
-    def refresh_and_select(self, complex_id: int) -> None:
-        """Refresh list and select the row with ``complex_id`` if present."""
-        if self._refresh_cb:
-            self._refresh_cb()
-        for row, data in enumerate(self.model.rows):
-            cid = getattr(data, "IDCompDesc", data[0])
-            if int(cid) == int(complex_id):
-                index = self.model.index(row, 0)
-                self.view.selectRow(index.row())
-                break
 
     def _on_clicked(self, index: QtCore.QModelIndex) -> None:
         if not index.isValid():
