@@ -35,17 +35,12 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
                 sc.get("function_name") or f"Function {sc.get('id_function', '')}"
             )
             pin_map: Dict[str, str] = {}
-            # ``PinS`` may appear either inside the ``pins`` mapping or as a
-            # top-level key.  Older buffer formats used ``PinS`` instead of the
-            # short ``S`` label.  Handle both to ensure macro parameters stored
-            # in the buffer are surfaced to the editor.
-            s_xml = sc.get("PinS") or None
+            s_xml = None
             for k, v in (sc.get("pins") or {}).items():
-                key = str(k)
-                if key in {"S", "PinS"}:
+                if k == "S":
                     s_xml = v
                     continue
-                pin_map[key] = str(v)
+                pin_map[str(k)] = str(v)
 
             all_macros: Dict[str, Dict[str, str]] = {}
             selected_macro = macro_name
