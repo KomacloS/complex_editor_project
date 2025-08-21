@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Legacy helpers for the deprecated workflow.
+
+The new :mod:`complex_editor.ui.complex_editor` persists complexes via the
+``MDB`` API directly.  This module is kept for backwards compatibility with
+older tools and tests but is otherwise unused by the new flow.
+"""
+
 from ..db import table_exists
 from ..domain import ComplexDevice
 from ..util.macro_xml_translator import params_to_xml
@@ -35,3 +42,12 @@ def insert_complex(conn, complex_dev: ComplexDevice) -> int:
     params = (next_id, complex_dev.id_function, *pins, pin_s)
     cursor.execute(query, params)
     return next_id
+
+
+def update_complex(conn, complex_dev: ComplexDevice) -> int:
+    """Placeholder update operation for an existing complex."""
+
+    # The real implementation would mirror :func:`insert_complex` but issue an
+    # ``UPDATE`` statement instead.  The simplified editor and unit tests only
+    # need this function to exist so that it can be patched/mocked.
+    return complex_dev.id or 0

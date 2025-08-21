@@ -7,21 +7,15 @@ from typing import Any, Dict, List, Optional
 from PyQt6 import QtWidgets
 
 from ..core.app_context import AppContext
-from ..domain import ComplexDevice, MacroInstance
-from ..db.mdb_api import MDB
+from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
+from ..db.mdb_api import MDB, SubComponent as DbSub, ComplexDevice as DbComplex
 from ..db import schema_introspect
 from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
-from ..util.macro_xml_translator import params_to_xml, _ensure_text
+from ..util.macro_xml_translator import params_to_xml, xml_to_params
 from ..param_spec import ALLOWED_PARAMS
-from .new_complex_wizard import NewComplexWizard
-from ..io.buffer_loader import (
-    load_complex_from_buffer_json,
-    to_wizard_prefill,
-)
-from ..io.db_adapter import to_wizard_prefill_from_db
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -34,6 +28,7 @@ class MainWindow(QtWidgets.QMainWindow):
         buffer_path: Optional[Path] = None,
     ) -> None:
         super().__init__(parent)
+        self.setWindowTitle("Complex View")
         self.ctx = AppContext()
         self.db: Optional[MDB] = None
         self._buffer_complexes: List[EditorComplex] | None = None
@@ -77,15 +72,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._buffer_complexes is not None:
             # buffer mode is read-only
             new_btn.setEnabled(False)
+            new_btn.setToolTip("Disabled in buffer mode")
             del_btn.setEnabled(False)
 
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.addWidget(new_btn)
         toolbar.addWidget(edit_btn)
         toolbar.addWidget(del_btn)
-        load_buf_btn = QtWidgets.QPushButton("Load Complex from Buffer…")
-        load_buf_btn.clicked.connect(self._load_complex_from_buffer)
-        toolbar.addWidget(load_buf_btn)
         toolbar.addStretch()
 
         left = QtWidgets.QVBoxLayout()
@@ -166,8 +159,8 @@ class MainWindow(QtWidgets.QMainWindow):
             name = self._func_name(sc.id_function)
             pin_map = {k: str(v) for k, v in (sc.pins or {}).items()}
             pin_s = pin_map.get("S") or ""
-            if pin_s:
-                pin_s = _ensure_text(pin_s)
+            if isinstance(pin_s, bytes):
+                pin_s = pin_s.decode("utf-16", errors="ignore")
             display_rows.append(
                 {
                     "Macro": name,
@@ -259,87 +252,117 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         cursor = self.db._conn.cursor()
         macro_map = schema_introspect.discover_macro_map(cursor) or {}
-        wiz = NewComplexWizard(macro_map)
-        if wiz.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            dev = ComplexDevice(
-                id_function=0,
-                pins=[str(i) for i in range(1, wiz.basics_page.pin_spin.value() + 1)],
-                macro=MacroInstance("", {}),
-            )
-            dev.subcomponents = wiz.sub_components
-            self.db.add_complex(dev)
+        editor = ComplexEditor(macro_map)
+        if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            dev = editor.build_device()
+            subs: List[DbSub] = []
+            for sc in dev.subcomponents:
+                fid = self._macro_id_from_name(sc.macro.name) or 0
+                pins = {k: v for k, v in zip(["A", "B", "C", "D"], sc.pins)}
+                xml = params_to_xml({sc.macro.name: sc.macro.params}, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
+                pins["S"] = xml
+                subs.append(DbSub(None, fid, pins=pins))
+            db_dev = DbComplex(None, dev.pn, dev.pin_count, subs)
+            # alt_pn is UI-only; DB schema lacks a column
+            self.db.add_complex(db_dev)
             self.db._conn.commit()
             self._refresh_list()
+
 
     def _on_edit(self) -> None:
         row = self.list.currentRow()
         if row < 0:
             return
+        if self._buffer_complexes is not None:
+            cx = self._buffer_complexes[row]
+            try:
+                macro_map = schema_introspect.discover_macro_map(None) or {}
+            except Exception:
+                macro_map = {}
+            if not macro_map:
+                names = set()
+                for em in cx.subcomponents:
+                    names.add(getattr(em, "selected_macro", em.name))
+                macro_map = {i + 1: MacroDef(i + 1, n, []) for i, n in enumerate(sorted(names))}
+            editor = ComplexEditor(macro_map)
+            dev = ComplexDevice(0, [], MacroInstance("", {}))
+            dev.id = cx.id
+            dev.pn = cx.name
+            dev.pin_count = len(cx.pins)
+            for em in cx.subcomponents:
+                mname = getattr(em, "selected_macro", em.name)
+                pins = [int(em.pins.get(k, 0) or 0) for k in ["A", "B", "C", "D"]]
+                params = dict(getattr(em, "macro_params", {}))
+                dev.subcomponents.append(SubComponent(MacroInstance(mname, params), pins))
+            editor.load_device(dev)
+            if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+                updated = editor.build_device()
+                raw = self._buffer_raw[row]
+                raw["name"] = updated.pn
+                if updated.alt_pn:
+                    raw["alt_pn"] = updated.alt_pn
+                raw["pins"] = [str(i) for i in range(1, updated.pin_count + 1)]
+                subs_raw = []
+                for sc in updated.subcomponents:
+                    xml = params_to_xml({sc.macro.name: sc.macro.params}, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
+                    subs_raw.append(
+                        {
+                            "function_name": sc.macro.name,
+                            "pins": {
+                                "A": sc.pins[0],
+                                "B": sc.pins[1],
+                                "C": sc.pins[2],
+                                "D": sc.pins[3],
+                                "S": xml,
+                            },
+                        }
+                    )
+                raw["subcomponents"] = subs_raw
+                save_buffer(self._buffer_path, self._buffer_raw)
+                cx.name = updated.pn
+                cx.pins = [str(i) for i in range(1, updated.pin_count + 1)]
+                cx.subcomponents = []
+                for sc in updated.subcomponents:
+                    em = EditorMacro(sc.macro.name, {"A": str(sc.pins[0]), "B": str(sc.pins[1]), "C": str(sc.pins[2]), "D": str(sc.pins[3])}, sc.macro.params)
+                    cx.subcomponents.append(em)
+                self._refresh_list()
+            return
+
         cid_item = self.list.item(row, 0)
         if cid_item is None:
             return
 
-        if self._buffer_complexes is not None:
-            cx = self._buffer_complexes[row]
-            dlg = ComplexEditor({})
-            dlg.load_editor_complex(cx)
-            if (
-                dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted
-                and self._buffer_raw is not None
-                and self._buffer_path is not None
-            ):
-                raw_cx = self._buffer_raw[row]
-                for raw_sc, sc in zip(raw_cx.get("subcomponents", []), cx.subcomponents):
-                    sc.all_macros[sc.selected_macro] = sc.macro_params
-                    xml = params_to_xml(sc.all_macros, encoding="utf-16", schema=ALLOWED_PARAMS)
-                    xml_str = xml.decode("utf-16")
-                    raw_sc.setdefault("pins", {})["S"] = xml_str
-                    sc.pin_s_raw = xml_str
-                save_buffer(self._buffer_path, self._buffer_raw)
-            return
-
+        cursor = self.db._conn.cursor()
+        macro_map = schema_introspect.discover_macro_map(cursor) or {}
         cid = int(cid_item.text())
-        assert self.db is not None
         raw = self.db.get_complex(cid)
-
-        # annotate sub-components with macro names for the adapter
-        self._ensure_func_map()
+        editor = ComplexEditor(macro_map)
+        dev = ComplexDevice(0, [], MacroInstance("", {}))
+        dev.id = cid
+        dev.pn = getattr(raw, "name", "")
+        dev.pin_count = getattr(raw, "total_pins", 0)
+        dev.subcomponents = []
         for sc in getattr(raw, "subcomponents", []) or []:
-            setattr(sc, "macro_name", self._func_name(sc.id_function))
-
-        prefill = to_wizard_prefill_from_db(
-            raw, self._macro_id_from_name, self._pin_normalizer
-        )
-        wiz = NewComplexWizard.from_existing(prefill, cid, parent=self)
-
-        if wiz.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            from ..db.mdb_api import SubComponent as DbSubComponent, ComplexDevice as DbComplex
-
-            pin_count = wiz.basics_page.pin_spin.value()
-            updated = DbComplex(cid, wiz.basics_page.pn_edit.text(), pin_count, [])
-            for sc in wiz.sub_components:
-                id_func = getattr(sc.macro, "id_function", None)
-                if id_func is None:
-                    id_func = self._macro_id_from_name(sc.macro.name) or 0
-                pin_map = {chr(ord('A') + i): p for i, p in enumerate(sc.pins)}
-                updated.subcomponents.append(
-                    DbSubComponent(
-                        None,
-                        int(id_func),
-                        "",
-                        None,
-                        None,
-                        None,
-                        None,
-                        pin_map,
-                    )
-                )
-            self.db.update_complex(cid, updated=updated)
+            name = self._func_name(sc.id_function)
+            pin_list = [sc.pins.get(k, 0) for k in ["A", "B", "C", "D"]]
+            params = xml_to_params(sc.pins.get("S", "")).get(name, {})
+            dev.subcomponents.append(SubComponent(MacroInstance(name, params), pin_list))
+        editor.load_device(dev)
+        if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            updated = editor.build_device()
+            subs: List[DbSub] = []
+            for sc in updated.subcomponents:
+                fid = self._macro_id_from_name(sc.macro.name) or 0
+                pins = {k: v for k, v in zip(["A", "B", "C", "D"], sc.pins)}
+                xml = params_to_xml({sc.macro.name: sc.macro.params}, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
+                pins["S"] = xml
+                subs.append(DbSub(None, fid, pins=pins))
+            db_dev = DbComplex(cid, updated.pn, updated.pin_count, subs)
+            # alt_pn is UI-only; DB schema lacks a column
+            self.db.update_complex(cid, updated=db_dev)
             self.db._conn.commit()
             self._refresh_list()
-            QtWidgets.QMessageBox.information(
-                self, "Updated", "Complex updated"
-            )
+            QtWidgets.QMessageBox.information(self, "Updated", "Complex updated")
 
     def _delete_selected(self) -> None:
         row = self.list.currentRow()
@@ -355,38 +378,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.db.delete_complex(cid, cascade=True)
             self.db._conn.commit()
             self._refresh_list()
-
-    def _load_complex_from_buffer(self) -> None:
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Open buffer.json", "", "JSON Files (*.json)"
-        )
-        if not path:
-            return
-        try:
-            buf = load_complex_from_buffer_json(path)
-            prefill = to_wizard_prefill(
-                buf, self._macro_id_from_name, self._pin_normalizer
-            )
-        except Exception as exc:  # pragma: no cover - GUI warning only
-            QtWidgets.QMessageBox.warning(self, "Buffer Error", str(exc))
-            return
-        wiz = NewComplexWizard.from_wizard_prefill(prefill, parent=self)
-        wiz.exec()
-        if wiz.result() == QtWidgets.QDialog.DialogCode.Accepted:
-            pin_count = wiz.basics_page.pin_spin.value()
-            dev = ComplexDevice(
-                id_function=0,
-                pins=[str(i) for i in range(1, pin_count + 1)],
-                macro=MacroInstance("", {}),
-            )
-            dev.subcomponents = wiz.sub_components
-            if self.db is not None:
-                self.db.add_complex(dev)
-                self.db._conn.commit()
-                self._refresh_list()
-                QtWidgets.QMessageBox.information(
-                    self, "Saved", "Complex saved to database"
-                )
 
 
 def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:

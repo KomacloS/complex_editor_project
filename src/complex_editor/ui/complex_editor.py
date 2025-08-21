@@ -1,375 +1,346 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+"""Simplified Complex Editor window used for creating and editing complexes."""
+
+from dataclasses import dataclass, field
+from typing import Dict, List
 
 from PyQt6 import QtCore, QtWidgets
 
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
-from ..util.macro_xml_translator import xml_to_params, params_to_xml
-from ..param_spec import ALLOWED_PARAMS
-from .pin_table import PinTable
-from .param_editor import MacroParamsDialog
+from .param_editor_dialog import ParamEditorDialog
+from .validators import validate_pins, validate_pin_table
 
+
+@dataclass
+class _Row:
+    macro_id: int | None = None
+    pins: List[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    params: Dict[str, str] = field(default_factory=dict)
+
+
+class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
+    """Table model holding sub-component rows."""
+
+    headers = ["#", "Macro", "Pin A", "Pin B", "Pin C", "Pin D", "Parameters", "Edit…"]
+
+    def __init__(self, macro_map: Dict[int, MacroDef]):
+        super().__init__()
+        self.rows: List[_Row] = []
+        self.macro_map = macro_map
+
+    # --------------------------------------------------------------- Qt API
+    def rowCount(self, parent=QtCore.QModelIndex()):  # pragma: no cover - trivial
+        return len(self.rows)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):  # pragma: no cover
+        return len(self.headers)
+
+    def headerData(self, section, orientation, role):  # pragma: no cover
+        if (
+            role == QtCore.Qt.ItemDataRole.DisplayRole
+            and orientation == QtCore.Qt.Orientation.Horizontal
+        ):
+            return self.headers[section]
+        return None
+
+    def data(self, index, role):  # pragma: no cover - simple display
+        if not index.isValid():
+            return None
+        row = self.rows[index.row()]
+        col = index.column()
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return index.row() + 1
+            if col == 1 and row.macro_id is not None:
+                macro = self.macro_map.get(row.macro_id)
+                return macro.name if macro else row.macro_id
+            if 2 <= col <= 5:
+                return row.pins[col - 2] or ""
+            if col == 6:
+                return "; ".join(f"{k}={v}" for k, v in row.params.items()) or "[not set]"
+            if col == 7:
+                return "Edit…"
+        return None
+
+    def flags(self, index):  # pragma: no cover - behaviour
+        if not index.isValid():
+            return QtCore.Qt.ItemFlag.NoItemFlags
+        if index.column() in {1, 2, 3, 4, 5}:
+            return (
+                QtCore.Qt.ItemFlag.ItemIsSelectable
+                | QtCore.Qt.ItemFlag.ItemIsEnabled
+                | QtCore.Qt.ItemFlag.ItemIsEditable
+            )
+        return QtCore.Qt.ItemFlag.ItemIsEnabled
+
+    def setData(self, index, value, role):  # pragma: no cover - simple edit
+        if role != QtCore.Qt.ItemDataRole.EditRole or not index.isValid():
+            return False
+        row = self.rows[index.row()]
+        col = index.column()
+        if col == 1:
+            row.macro_id = int(value)
+            row.params.clear()
+            # refresh summary column when macro changes
+            self.dataChanged.emit(self.index(index.row(), 6), self.index(index.row(), 6))
+        elif 2 <= col <= 5:
+            try:
+                row.pins[col - 2] = int(value)
+            except (TypeError, ValueError):
+                row.pins[col - 2] = 0
+        else:
+            return False
+        self.dataChanged.emit(index, index)
+        return True
+
+    # ---------------------------------------------------------- row ops
+    def add_row(self) -> int:
+        self.beginInsertRows(QtCore.QModelIndex(), len(self.rows), len(self.rows))
+        self.rows.append(_Row())
+        self.endInsertRows()
+        return len(self.rows) - 1
+
+    def remove_row(self, row: int) -> None:
+        if 0 <= row < len(self.rows):
+            self.beginRemoveRows(QtCore.QModelIndex(), row, row)
+            del self.rows[row]
+            self.endRemoveRows()
+
+    def duplicate_row(self, row: int) -> None:
+        if 0 <= row < len(self.rows):
+            clone = _Row(
+                macro_id=self.rows[row].macro_id,
+                pins=list(self.rows[row].pins),
+                params=dict(self.rows[row].params),
+            )
+            self.beginInsertRows(QtCore.QModelIndex(), row + 1, row + 1)
+            self.rows.insert(row + 1, clone)
+            self.endInsertRows()
+
+    def is_valid(self, max_pin: int) -> bool:
+        rows = [r.pins for r in self.rows if r.macro_id is not None]
+        ok, _ = validate_pin_table(rows, max_pin)
+        if not ok:
+            return False
+        return all(r.macro_id is not None for r in self.rows)
+
+    def to_subcomponents(self) -> List[SubComponent]:
+        result: List[SubComponent] = []
+        for r in self.rows:
+            if r.macro_id is None:
+                continue
+            macro = self.macro_map.get(r.macro_id)
+            name = macro.name if macro else str(r.macro_id)
+            inst = MacroInstance(name, dict(r.params))
+            result.append(SubComponent(inst, list(r.pins)))
+        return result
+
+
+class MacroComboDelegate(QtWidgets.QStyledItemDelegate):
+    """Combo-box delegate for selecting macros."""
+
+    def __init__(self, macro_map: Dict[int, MacroDef], parent=None) -> None:
+        super().__init__(parent)
+        self._map = macro_map
+
+    def createEditor(self, parent, option, index):  # pragma: no cover - UI
+        combo = QtWidgets.QComboBox(parent)
+        for mid, macro in sorted(self._map.items()):
+            combo.addItem(macro.name, mid)
+        return combo
+
+    def setEditorData(self, editor, index):  # pragma: no cover - UI
+        row = index.model().rows[index.row()]
+        if row.macro_id is not None:
+            i = editor.findData(row.macro_id)
+            if i >= 0:
+                editor.setCurrentIndex(i)
+
+    def setModelData(self, editor, model, index):  # pragma: no cover - UI
+        model.setData(index, editor.currentData(), QtCore.Qt.ItemDataRole.EditRole)
+
+
+class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
+    """Spin-box delegate enforcing pin range and uniqueness."""
+
+    def __init__(self, pin_spin: QtWidgets.QSpinBox, model: ComplexSubComponentsModel, parent=None) -> None:
+        super().__init__(parent)
+        self._pin_spin = pin_spin
+        self._model = model
+
+    def createEditor(self, parent, option, index):  # pragma: no cover - UI
+        spin = QtWidgets.QSpinBox(parent)
+        spin.setMinimum(1)
+        spin.setMaximum(self._pin_spin.value())
+        return spin
+
+    def setEditorData(self, editor, index):  # pragma: no cover - UI
+        val = self._model.rows[index.row()].pins[index.column() - 2]
+        if val:
+            editor.setValue(val)
+
+    def setModelData(self, editor, model, index):  # pragma: no cover - UI
+        value = int(editor.value())
+        row = index.row()
+        col = index.column() - 2
+        pins = list(self._model.rows[row].pins)
+        pins[col] = value
+        ok, _ = validate_pins(pins, self._pin_spin.value())
+        if not ok:
+            QtWidgets.QApplication.beep()
+            return
+        model.setData(index, value, QtCore.Qt.ItemDataRole.EditRole)
 
 class ComplexEditor(QtWidgets.QDialog):
-    """Dialog for editing/creating a complex device."""
+    """Main editor dialog for complexes."""
 
-    dirtyChanged = QtCore.pyqtSignal(bool)
-
-    def __init__(self, macro_map: dict[int, MacroDef] | None = None, parent=None):
+    def __init__(self, macro_map: Dict[int, MacroDef], parent=None) -> None:
         super().__init__(parent)
-        self.macro_map: dict[int, MacroDef] = macro_map or {}
-        self.dirty = False
+        self.setWindowTitle("Complex Editor")
+        self.macro_map = macro_map
+        self.device_id: int | None = None
 
         layout = QtWidgets.QVBoxLayout(self)
-        self.sub_table = QtWidgets.QTableWidget(0, 0)
-        layout.addWidget(self.sub_table)
-
-        self.sub_group = QtWidgets.QGroupBox("Sub-components")
-        self.sub_group.setCheckable(True)
-        self.sub_group.setChecked(False)
-        sg_layout = QtWidgets.QVBoxLayout(self.sub_group)
-        self.sub_list = QtWidgets.QListWidget()
-        sg_layout.addWidget(self.sub_list)
-        self.sub_group.toggled.connect(self.sub_list.setVisible)
-        self.sub_list.setVisible(False)
-        self.sub_list.currentRowChanged.connect(self._on_sub_selected)
-        layout.addWidget(self.sub_group)
-        self.sub_components: list[SubComponent] = []
-
         form = QtWidgets.QFormLayout()
-        self.pin_table = PinTable()
-        form.addRow("Pins", self.pin_table)
-        self.macro_combo = QtWidgets.QComboBox()
-        self._last_idx = -1
-        form.addRow("Macro", self.macro_combo)
+        self.pn_edit = QtWidgets.QLineEdit()
+        form.addRow("PN", self.pn_edit)
+        self.alt_pn_edit = QtWidgets.QLineEdit()
+        form.addRow("Alternative PN", self.alt_pn_edit)
+        self.pin_spin = QtWidgets.QSpinBox()
+        self.pin_spin.setMinimum(1)
+        self.pin_spin.setMaximum(1000)
+        form.addRow("Number of pins", self.pin_spin)
         layout.addLayout(form)
-        self.param_form = QtWidgets.QFormLayout()
-        layout.addLayout(self.param_form)
-        self.xml_preview = QtWidgets.QPlainTextEdit()
-        self.xml_preview.setReadOnly(True)
-        layout.addWidget(self.xml_preview)
+
+        self.model = ComplexSubComponentsModel(macro_map)
+        self.table = QtWidgets.QTableView()
+        self.table.setModel(self.model)
+        layout.addWidget(self.table)
+
+        # delegates for combo-box and pin selection
+        self._macro_delegate = MacroComboDelegate(macro_map, self.table)
+        self.table.setItemDelegateForColumn(1, self._macro_delegate)
+        pin_delegate = PinSpinDelegate(self.pin_spin, self.model, self.table)
+        for col in range(2, 6):
+            self.table.setItemDelegateForColumn(col, pin_delegate)
+        self.table.clicked.connect(self._table_clicked)
+
+        btn_bar = QtWidgets.QHBoxLayout()
+        add_btn = QtWidgets.QPushButton("Add")
+        rm_btn = QtWidgets.QPushButton("Remove")
+        dup_btn = QtWidgets.QPushButton("Duplicate")
+        add_btn.clicked.connect(self._add_row)
+        rm_btn.clicked.connect(self._remove_row)
+        dup_btn.clicked.connect(self._dup_row)
+        btn_bar.addWidget(add_btn)
+        btn_bar.addWidget(rm_btn)
+        btn_bar.addWidget(dup_btn)
+        btn_bar.addStretch()
+        layout.addLayout(btn_bar)
+
         self.save_btn = QtWidgets.QPushButton("Save")
-        self.save_btn.setStyleSheet("background:#28a745;color:white")
-        layout.addWidget(self.save_btn)
+        self.save_btn.setEnabled(False)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn.clicked.connect(self._on_accept)
+        cancel_btn.clicked.connect(self.reject)
+        btn_box = QtWidgets.QHBoxLayout()
+        btn_box.addStretch()
+        btn_box.addWidget(self.save_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addLayout(btn_box)
 
-        self.save_btn.clicked.connect(self.save_complex)
-        self.macro_combo.currentIndexChanged.connect(self._on_macro_change)
-        self.set_macro_map(self.macro_map)
-        self._editor_cx = None
+        self.pn_edit.textChanged.connect(self._update_state)
+        self.pin_spin.valueChanged.connect(self._update_state)
+        self.model.dataChanged.connect(self._update_state)
+        self.model.rowsInserted.connect(self._update_state)
+        self.model.rowsRemoved.connect(self._update_state)
 
-    # ------------------------------------------------------------------ utils
-    def set_macro_map(self, macro_map: dict[int, MacroDef]) -> None:
-        self.macro_map = macro_map
-        self.macro_combo.clear()
-        for id_func, macro in sorted(self.macro_map.items()):
-            self.macro_combo.addItem(macro.name, id_func)
+    # -------------------------------------------------------------- callbacks
+    def _add_row(self) -> None:
+        row = self.model.add_row()
+        self._open_param_editor(row)
 
-    def _clear_params(self) -> None:
-        while self.param_form.rowCount():
-            self.param_form.removeRow(0)
-        self.param_widgets: dict[str, QtWidgets.QWidget] = {}
+    def _remove_row(self) -> None:
+        row = self.table.currentIndex().row()
+        self.model.remove_row(row)
 
-    def set_sub_components(self, subs: list[SubComponent]) -> None:
-        self.sub_components = subs
-        self.sub_list.clear()
-        for sc in subs:
-            pins = ",".join(str(p) for p in sc.pins)
-            self.sub_list.addItem(f"{sc.macro.name} \N{RIGHTWARDS ARROW} {pins}")
-        self._on_sub_selected(self.sub_list.currentRow())
+    def _dup_row(self) -> None:
+        row = self.table.currentIndex().row()
+        self.model.duplicate_row(row)
 
-    def _on_sub_selected(self, row: int) -> None:
-        if 0 <= row < len(self.sub_components):
-            self.pin_table.highlight_pins(self.sub_components[row].pins)
-        else:
-            self.pin_table.highlight_pins([])
+    def _table_clicked(self, index: QtCore.QModelIndex) -> None:
+        if index.column() == 7:
+            self._open_param_editor(index.row())
 
-    def _on_macro_change(self) -> None:
-        if self.macro_combo.currentIndex() == self._last_idx:
+    def _open_param_editor(self, row: int) -> None:
+        r = self.model.rows[row]
+        if r.macro_id is None:
             return
-        self._last_idx = self.macro_combo.currentIndex()
-        data = self.macro_combo.currentData()
-        macro = self.macro_map.get(int(data)) if data is not None else None
-        self._build_param_widgets(macro)
-        self.on_dirty()
-
-    def _build_param_widgets(self, macro: MacroDef | None) -> None:
-        self._clear_params()
-        if not macro:
+        macro = self.macro_map.get(r.macro_id)
+        if macro is None:
             return
-        for param in macro.params:
-            label = QtWidgets.QLabel(param.name)
-            label.setStyleSheet("background:#C5F1FF")
-            if param.type == "INT":
-                widget = QtWidgets.QSpinBox()
-                if param.min is not None:
-                    widget.setMinimum(int(param.min))
-                if param.max is not None:
-                    widget.setMaximum(int(param.max))
-            elif param.type == "FLOAT":
-                widget = QtWidgets.QDoubleSpinBox()
-                if param.min is not None:
-                    widget.setMinimum(float(param.min))
-                if param.max is not None:
-                    widget.setMaximum(float(param.max))
-            elif param.type == "BOOL":
-                widget = QtWidgets.QCheckBox()
-            elif param.type == "ENUM":
-                widget = QtWidgets.QComboBox()
-                choices = (param.default or param.min or "").split(";")
-                if len(choices) > 1:
-                    widget.addItems(choices)
-            else:
-                widget = QtWidgets.QLineEdit()
-            tip = f"{param.name}   "
-            if param.min is not None or param.max is not None:
-                tip += f"[{param.min or ''}-{param.max or ''}] "
-            unit = next(
-                (
-                    u
-                    for u in ["Ohm", "F", "H", "V", "A", "Hz", "°C", "%"]
-                    if param.name.endswith(u)
-                ),
-                "",
-            )
-            tip = tip + unit if unit else tip.rstrip()
-            widget.setToolTip(tip.strip())
-            self.param_widgets[param.name] = widget
-            self.param_form.addRow(label, widget)
-            if isinstance(widget, QtWidgets.QSpinBox):
-                widget.valueChanged.connect(self.on_dirty)
-            elif isinstance(widget, QtWidgets.QDoubleSpinBox):
-                widget.valueChanged.connect(self.on_dirty)
-            elif isinstance(widget, QtWidgets.QCheckBox):
-                widget.stateChanged.connect(self.on_dirty)
-            elif isinstance(widget, QtWidgets.QComboBox):
-                widget.currentIndexChanged.connect(self.on_dirty)
-            else:
-                widget.textChanged.connect(self.on_dirty)
+        dlg = ParamEditorDialog(macro, r.params, self)
+        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            r.params = dlg.params()
+            idx = self.model.index(row, 6)
+            self.model.dataChanged.emit(idx, idx)
 
-    def _widget_value(self, widget: QtWidgets.QWidget) -> str:
-        if isinstance(widget, QtWidgets.QSpinBox):
-            return str(widget.value())
-        if isinstance(widget, QtWidgets.QDoubleSpinBox):
-            return str(widget.value())
-        if isinstance(widget, QtWidgets.QCheckBox):
-            return "1" if widget.isChecked() else "0"
-        if isinstance(widget, QtWidgets.QComboBox):
-            return widget.currentText()
-        if isinstance(widget, QtWidgets.QLineEdit):
-            return widget.text()
-        return ""
+    def _update_state(self) -> None:
+        max_pin = self.pin_spin.value()
+        # clamp any pins above the new limit
+        changed = False
+        for r in self.model.rows:
+            for i, p in enumerate(r.pins):
+                if p > max_pin:
+                    r.pins[i] = max_pin
+                    changed = True
+        if changed:
+            self.model.blockSignals(True)
+            self.model.dataChanged.emit(QtCore.QModelIndex(), QtCore.QModelIndex())
+            self.model.blockSignals(False)
+        valid = bool(self.pn_edit.text().strip()) and self.model.is_valid(max_pin)
+        self.save_btn.setEnabled(valid)
 
-    # ------------------------------------------------------------------ loading
-    def load_complex(self, row) -> None:
-        if row is None:
-            self.pin_table.set_pins([])
-            macro = None
-            if self.macro_combo.count():
-                self.macro_combo.setCurrentIndex(0)
-                data = self.macro_combo.currentData()
-                if data is not None:
-                    macro = self.macro_map.get(int(data))
-            self._build_param_widgets(macro)
-            self.xml_preview.clear()
-            self.on_dirty()
-            return
+    # ----------------------------------------------------------- public API
+    def load_device(self, device: ComplexDevice) -> None:
+        self.device_id = device.id
+        self.pn_edit.setText(device.pn)
+        self.alt_pn_edit.setText(device.alt_pn)
+        self.pin_spin.setValue(device.pin_count)
+        for sc in device.subcomponents:
+            row = self.model.add_row()
+            self.model.rows[row].macro_id = self._macro_id_by_name(sc.macro.name)
+            self.model.rows[row].pins = list(sc.pins) + [0, 0, 0, 0]
+            self.model.rows[row].pins = self.model.rows[row].pins[:4]
+            self.model.rows[row].params = dict(sc.macro.params)
+        self.model.dataChanged.emit(QtCore.QModelIndex(), QtCore.QModelIndex())
+        self._update_state()
 
-        pins = [
-            getattr(row, f"Pin{c}", row[i + 2]) if len(row) > i + 2 else None
-            for i, c in enumerate("ABCD")
-        ]
-        self.pin_table.set_pins([p for p in pins if p])
-        id_func = int(getattr(row, "IDFunction", row[1]))
-        index = self.macro_combo.findData(id_func)
-        if index >= 0:
-            self.macro_combo.setCurrentIndex(index)
-        macro = self.macro_map.get(id_func)
-        self._build_param_widgets(macro)
-        pin_s = getattr(row, "PinS", row[6] if len(row) > 6 else None)
-        macros = {}
-        pin_s_error = False
-        if pin_s:
-            try:
-                macros = xml_to_params(pin_s)
-            except Exception:
-                macros = {}
-                pin_s_error = True
-            else:
-                if not macros:
-                    pin_s_error = True
-        values: Dict[str, str] = {}
-        if macros:
-            if macro and macro.name in macros:
-                values = macros.get(macro.name, {})
-            else:
-                values = next(iter(macros.values()))
-        if macro:
-            for p in macro.params:
-                w = self.param_widgets.get(p.name)
-                if not w:
-                    continue
-                val = values.get(p.name, p.default)
-                if isinstance(w, QtWidgets.QSpinBox):
-                    if val is not None:
-                        w.setValue(int(val))
-                elif isinstance(w, QtWidgets.QDoubleSpinBox):
-                    if val is not None:
-                        w.setValue(float(val))
-                elif isinstance(w, QtWidgets.QCheckBox):
-                    w.setChecked(str(val).lower() in ("1", "true", "yes"))
-                elif isinstance(w, QtWidgets.QComboBox):
-                    if val is not None:
-                        idx = w.findText(str(val))
-                        if idx >= 0:
-                            w.setCurrentIndex(idx)
-                        elif w.count() == 0:
-                            w.addItem(str(val))
-                else:
-                    w.setText(str(val) if val else "")
-        self.dirty = False
-        self.dirtyChanged.emit(False)
-        if pin_s_error:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "PinS translation failed",
-                "The PinS XML for this sub-component could not be translated."
-                " Macro parameters may be missing.",
-            )
+    def build_device(self) -> ComplexDevice:
+        """Return a :class:`~complex_editor.domain.ComplexDevice` reflecting the UI.
 
-    # ------------------------------------------------------------------ dirty
-    def on_dirty(self) -> None:
-        if not self.dirty:
-            self.dirty = True
-            self.dirtyChanged.emit(True)
-
-    # ------------------------------------------------------------------- save
-    def save_complex(self) -> None:
-        self.accept()
-
-    # ------------------------------------------------------------------ helpers
-    def to_update_dict(self) -> dict[str, Any]:
-        pins = [p.strip() for p in self.pin_table.pins() if p.strip()]
-        if len(set(pins)) < 2:
-            raise ValueError("At least two unique pins required")
-        data = self.macro_combo.currentData()
-        if data is None:
-            raise ValueError("No macro selected")
-        id_func = int(data)
-        macro_name = self.macro_combo.currentText()
-        params = {n: self._widget_value(w) for n, w in self.param_widgets.items()}
-        xml = params_to_xml({macro_name: params}, schema=ALLOWED_PARAMS)
-        pad_vals = (pins + [None, None, None, None])[:4]
-        return {
-            "IDFunction": id_func,
-            "PinA": pad_vals[0],
-            "PinB": pad_vals[1],
-            "PinC": pad_vals[2],
-            "PinD": pad_vals[3],
-            "PinS": xml,
-        }
-
-    def load_from_model(self, cx: ComplexDevice) -> None:
-        pins = getattr(cx, "pins", None)
-        if not pins:
-            total = getattr(cx, "total_pins", 0) or 0
-            pins = [str(i) for i in range(1, total + 1)]
-        else:
-            pins = [str(p) for p in pins]
-        self.pin_table.set_pins(pins)
-        idx = self.macro_combo.findText(str(cx.macro.name))
-        if idx >= 0:
-            self.macro_combo.setCurrentIndex(idx)
-        macro = self.macro_map.get(cx.id_function)
-        self._build_param_widgets(macro)
-        for k, v in cx.macro.params.items():
-            w = self.param_widgets.get(k)
-            if isinstance(w, QtWidgets.QSpinBox):
-                w.setValue(int(v))
-            elif isinstance(w, QtWidgets.QDoubleSpinBox):
-                w.setValue(float(v))
-            elif isinstance(w, QtWidgets.QCheckBox):
-                w.setChecked(str(v).lower() in ("1", "true", "yes"))
-            elif isinstance(w, QtWidgets.QComboBox):
-                idx2 = w.findText(str(v))
-                if idx2 >= 0:
-                    w.setCurrentIndex(idx2)
-                elif w.count() == 0:
-                    w.addItem(str(v))
-            elif isinstance(w, QtWidgets.QLineEdit):
-                w.setText(str(v))
-        self.dirty = False
-        self.dirtyChanged.emit(False)
-
-    # ----------------------------------------------------------------- buffer
-    def load_editor_complex(self, model: "EditorComplex") -> None:
-        """Populate :attr:`sub_table` from an :class:`EditorComplex` model.
-
-        This method is used in buffer mode where sub-components already contain
-        macro and parameter information.  It intentionally keeps the existing
-        single-macro editor intact so tests targeting that behaviour continue to
-        work.
+        The ``alt_pn`` field is included for completeness but the current MDB
+        schema does not persist it.
         """
 
-        from .adapters import EditorComplex as _EC  # local import to avoid cycle
+        dev = ComplexDevice(0, [], MacroInstance("", {}))
+        dev.pn = self.pn_edit.text().strip()
+        dev.alt_pn = self.alt_pn_edit.text().strip()
+        dev.pin_count = int(self.pin_spin.value())
+        dev.id = self.device_id
+        dev.subcomponents = self.model.to_subcomponents()
+        return dev
 
-        assert isinstance(model, _EC)
-        self._editor_cx = model
-        subs = model.subcomponents
-        pin_cols = sorted({p for sc in subs for p in sc.pins.keys()})
-        headers = ["Function"] + pin_cols + ["Macro", "Params"]
-        self.sub_table.setColumnCount(len(headers))
-        self.sub_table.setHorizontalHeaderLabels(headers)
-        self.sub_table.setRowCount(len(subs))
-        pin_s_problem = False
-        for row, sc in enumerate(subs):
-            self.sub_table.setItem(row, 0, QtWidgets.QTableWidgetItem(sc.name))
-            for col, pin in enumerate(pin_cols, start=1):
-                self.sub_table.setItem(
-                    row, col, QtWidgets.QTableWidgetItem(sc.pins.get(pin, ""))
-                )
-            combo = QtWidgets.QComboBox()
-            for macro_name in sc.all_macros.keys():
-                combo.addItem(macro_name)
-            if combo.count() == 0:
-                combo.addItem(sc.selected_macro)
-            idx = combo.findText(sc.selected_macro)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-            combo.currentTextChanged.connect(
-                lambda name, sc=sc: self._switch_macro(sc, name)
-            )
-            self.sub_table.setCellWidget(row, len(pin_cols) + 1, combo)
+    # -------------------------------------------------------------- accept logic
+    def _on_accept(self) -> None:
+        if not self.model.is_valid(self.pin_spin.value()) or not self.pn_edit.text().strip():
+            QtWidgets.QApplication.beep()
+            return
+        self.accept()
 
-            btn = QtWidgets.QPushButton("Edit…")
-            btn.clicked.connect(lambda _=False, sc=sc: self._edit_params(sc))
-            self.sub_table.setCellWidget(row, len(pin_cols) + 2, btn)
-            if getattr(sc, "pin_s_error", False):
-                pin_s_problem = True
-
-        if pin_s_problem:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "PinS translation failed",
-                "Some sub-components had unreadable PinS XML. Parameters were not pre-loaded. You can still edit them manually.",
-            )
-
-    # ----------------------------------------------------------------- helpers
-    def _switch_macro(self, sc: "EditorMacro", name: str) -> None:
-        sc.selected_macro = name
-        sc.macro_params = sc.all_macros.get(name, {})
-        sc.params = sc.macro_params
-
-    def _edit_params(self, sc: "EditorMacro") -> None:
-        if getattr(sc, "pin_s_error", False):
-            QtWidgets.QMessageBox.warning(
-                self,
-                "PinS translation failed",
-                "This sub-component had unreadable PinS XML. Parameters were not pre-loaded. You can still edit them manually.",
-            )
-        dlg = MacroParamsDialog(sc.macro_params, self)
-        if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            updated = dlg.params()
-            sc.macro_params = updated
-            sc.params = updated
-            sc.all_macros[sc.selected_macro] = updated
+    def _macro_id_by_name(self, name: str) -> int | None:
+        for mid, m in self.macro_map.items():
+            if m.name == name:
+                return mid
+        return None

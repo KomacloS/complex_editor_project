@@ -203,11 +203,13 @@ class MDB:
         cx.name = new_name
         return self.create_complex(cx)
 
-    def add_complex(self, complex_dev: ComplexDevice) -> int:
-        """Public helper using the legacy service to insert a complex."""
-        from ..services.export_service import insert_complex
+    def add_complex(self, cx: ComplexDevice) -> int:
+        """Insert *cx* and return its new ID.
 
-        return insert_complex(self._conn, complex_dev)
+        This is an alias for :meth:`create_complex` maintained for backwards
+        compatibility with the old API.
+        """
+        return self.create_complex(cx)
 
     # ── modifiers --------------------------------------------------
     def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
