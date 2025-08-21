@@ -6,48 +6,30 @@ from ..db import fetch_comp_desc_rows
 
 
 class ComplexListModel(QtCore.QAbstractTableModel):
-    """Simple table model for both DB and buffer rows."""
+    HEADERS = ["ID", "Macro", "PinA", "PinB", "PinC", "PinD", "PinS"]
 
-    HEADERS_DB = ["ID", "Macro", "PinA", "PinB", "PinC", "PinD", "PinS"]
-    HEADERS_BUFFER = ["ID", "Name", "#Subs"]
-
-    def __init__(self, rows=None, headers=None, macro_map=None):
+    def __init__(self, rows=None, macro_map=None):
         super().__init__()
         self.rows = list(rows or [])
-        self.headers = headers or list(self.HEADERS_DB)
         self.macro_map = macro_map or {}
 
-    def load(self, rows, macro_map=None, headers=None):
+    def load(self, rows, macro_map):
         self.beginResetModel()
         self.rows = list(rows)
-        if headers is not None:
-            self.headers = list(headers)
-        if macro_map is not None:
-            self.macro_map = macro_map
+        self.macro_map = macro_map
         self.endResetModel()
 
-    def rowCount(self, parent=None):  # type: ignore[override]
+    def rowCount(self, parent=None):
         return len(self.rows)
 
-    def columnCount(self, parent=None):  # type: ignore[override]
-        return len(self.headers)
+    def columnCount(self, parent=None):
+        return len(self.HEADERS)
 
-    def data(self, index, role):  # type: ignore[override]
+    def data(self, index, role):
         if not index.isValid():
             return None
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             row = self.rows[index.row()]
-            # DB rows come either as tuples or row objects with the legacy
-            # column attributes.  Buffer rows are ``EditorComplex`` instances.
-            if hasattr(row, "subcomponents") and hasattr(row, "name"):
-                # buffer model
-                values = [
-                    getattr(row, "id", 0),
-                    getattr(row, "name", ""),
-                    len(getattr(row, "subcomponents", []) or []),
-                ]
-                return str(values[index.column()])
-
             id_comp = getattr(row, "IDCompDesc", row[0])
             id_func = getattr(row, "IDFunction", row[1])
             macro = self.macro_map.get(int(id_func))
@@ -61,18 +43,17 @@ class ComplexListModel(QtCore.QAbstractTableModel):
             return str(values[index.column()])
         return None
 
-    def headerData(self, section, orientation, role):  # type: ignore[override]
+    def headerData(self, section, orientation, role):
         if (
             role == QtCore.Qt.ItemDataRole.DisplayRole
             and orientation == QtCore.Qt.Orientation.Horizontal
         ):
-            return self.headers[section]
+            return self.HEADERS[section]
         return None
 
 
 class ComplexListPanel(QtWidgets.QWidget):
     complexSelected = QtCore.pyqtSignal(object)
-    editRequested = QtCore.pyqtSignal(object)
     newComplexRequested = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
@@ -91,18 +72,12 @@ class ComplexListPanel(QtWidgets.QWidget):
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
         self.view.clicked.connect(self._on_clicked)
-        self.view.doubleClicked.connect(self._on_double_clicked)
         layout.addWidget(self.view)
         self._refresh_cb = None
 
     def load_rows(self, cursor, macro_map):
         rows = fetch_comp_desc_rows(cursor, 1000)
-        self.model.load(rows, macro_map, headers=self.model.HEADERS_DB)
-
-    def load_buffer_models(self, editor_complexes, macro_map):
-        self.model.load(
-            editor_complexes, macro_map, headers=self.model.HEADERS_BUFFER
-        )
+        self.model.load(rows, macro_map)
 
     def set_refresh_callback(self, cb):
         self._refresh_cb = cb
@@ -112,10 +87,7 @@ class ComplexListPanel(QtWidgets.QWidget):
         if self._refresh_cb:
             self._refresh_cb()
         for row, data in enumerate(self.model.rows):
-            if hasattr(data, "id"):
-                cid = getattr(data, "id")
-            else:
-                cid = getattr(data, "IDCompDesc", data[0])
+            cid = getattr(data, "IDCompDesc", data[0])
             if int(cid) == int(complex_id):
                 index = self.model.index(row, 0)
                 self.view.selectRow(index.row())
@@ -126,9 +98,3 @@ class ComplexListPanel(QtWidgets.QWidget):
             return
         row = self.model.rows[index.row()]
         self.complexSelected.emit(row)
-
-    def _on_double_clicked(self, index: QtCore.QModelIndex) -> None:
-        if not index.isValid():
-            return
-        row = self.model.rows[index.row()]
-        self.editRequested.emit(row)
