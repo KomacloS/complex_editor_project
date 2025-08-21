@@ -26,8 +26,20 @@ class ParamEditorDialog(QtWidgets.QDialog):
             w: QtWidgets.QWidget
             if p.type == "INT":
                 w = QtWidgets.QSpinBox()
-                w.setMinimum(int(p.min or 0))
-                w.setMaximum(int(p.max or 1_000_000))
+                # QSpinBox only supports 32-bit signed integers.  Some macros
+                # specify values outside this range which would otherwise raise
+                # an ``OverflowError`` when passed to ``setMinimum``/``setMaximum``.
+                # Clamp to the valid range to keep the dialog usable even with
+                # overly large macro definitions.
+                min_val = int(p.min or 0)
+                max_val = int(p.max or 1_000_000)
+                INT_MIN, INT_MAX = -2**31, 2**31 - 1
+                min_val = max(min_val, INT_MIN)
+                max_val = min(max_val, INT_MAX)
+                if min_val > max_val:
+                    min_val = max_val
+                w.setMinimum(min_val)
+                w.setMaximum(max_val)
             elif p.type == "FLOAT":
                 w = QtWidgets.QDoubleSpinBox()
                 w.setMinimum(float(p.min or 0.0))
