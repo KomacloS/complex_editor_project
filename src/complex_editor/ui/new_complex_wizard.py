@@ -4,6 +4,7 @@ import logging
 import traceback
 from typing import Dict, List, Optional, cast
 
+# TODO: This wizard is deprecated in favor of the unified editor.
 from PyQt6 import QtWidgets, QtCore
 
 from .widgets.step_indicator import StepIndicator
