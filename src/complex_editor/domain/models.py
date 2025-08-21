@@ -36,6 +36,11 @@ class ComplexDevice:
     id_function: int
     pins: List[str]
     macro: MacroInstance
+    pn: str = ""
+    alt_pn: str = ""
+    pin_count: int = 0
+    subcomponents: List[SubComponent] = field(default_factory=list)
+    id: int | None = None
 
 
 @dataclass

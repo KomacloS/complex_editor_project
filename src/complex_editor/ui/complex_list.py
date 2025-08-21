@@ -55,6 +55,7 @@ class ComplexListModel(QtCore.QAbstractTableModel):
 class ComplexListPanel(QtWidgets.QWidget):
     complexSelected = QtCore.pyqtSignal(object)
     newComplexRequested = QtCore.pyqtSignal()
+    editRequested = QtCore.pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -72,6 +73,7 @@ class ComplexListPanel(QtWidgets.QWidget):
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
         )
         self.view.clicked.connect(self._on_clicked)
+        self.view.doubleClicked.connect(self._on_edit)
         layout.addWidget(self.view)
 
     def load_rows(self, cursor, macro_map):
@@ -83,3 +85,9 @@ class ComplexListPanel(QtWidgets.QWidget):
             return
         row = self.model.rows[index.row()]
         self.complexSelected.emit(row)
+
+    def _on_edit(self, index: QtCore.QModelIndex) -> None:
+        if not index.isValid():
+            return
+        row = self.model.rows[index.row()]
+        self.editRequested.emit(row)
