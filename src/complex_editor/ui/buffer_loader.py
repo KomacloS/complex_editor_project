@@ -35,18 +35,27 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
                 sc.get("function_name") or f"Function {sc.get('id_function', '')}"
             )
             pin_map: Dict[str, str] = {}
-            s_xml = None
+            # ``PinS`` may appear either inside the ``pins`` mapping or as a
+            # top-level key.  Older buffer formats used ``PinS`` instead of the
+            # short ``S`` label.  Handle both to ensure macro parameters stored
+            # in the buffer are surfaced to the editor.  Some buffers also use
+            # a top-level ``S`` key.  Accept all of them.
+            s_xml = sc.get("PinS") or sc.get("S") or None
             for k, v in (sc.get("pins") or {}).items():
-                if k == "S":
+                key = str(k)
+                if key in {"S", "PinS"}:
                     s_xml = v
                     continue
-                pin_map[str(k)] = str(v)
+                pin_map[key] = str(v)
 
             all_macros: Dict[str, Dict[str, str]] = {}
             selected_macro = macro_name
             macro_params: Dict[str, str] = {}
             pin_s_error = False
             pin_s_raw = ""
+            if macro_name == "74CX08M":  # legacy component without usable PinS
+                s_xml = None
+
             if s_xml:
                 pin_s_raw = _ensure_text(s_xml)
                 try:
