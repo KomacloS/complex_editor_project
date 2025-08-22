@@ -55,6 +55,16 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 w = QtWidgets.QLineEdit()
             layout.addRow(p.name, w)
             self._widgets[p.name] = w
+
+        # Fallback: no schema but values exist -> render simple line edits
+        if not macro.params and values:
+            for pname, pval in values.items():
+                if pname in self._widgets:
+                    continue
+                w = QtWidgets.QLineEdit()
+                w.setText(str(pval))
+                layout.addRow(pname, w)
+                self._widgets[pname] = w
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel
