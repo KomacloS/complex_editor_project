@@ -81,6 +81,17 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar.addWidget(del_btn)
         toolbar.addStretch()
 
+        # search widgets
+        toolbar.addWidget(QtWidgets.QLabel("Search:"))
+        self.search_column = QtWidgets.QComboBox()
+        self.search_column.addItems(["ID", "Name", "#Subs"])
+        toolbar.addWidget(self.search_column)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search term")
+        toolbar.addWidget(self.search_edit)
+        self.search_column.currentIndexChanged.connect(self._apply_filter)
+        self.search_edit.textChanged.connect(self._apply_filter)
+
         left = QtWidgets.QVBoxLayout()
         left.addLayout(toolbar)
         left.addWidget(self.list)
@@ -147,6 +158,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cid)))
             self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(name)))
             self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(nsubs)))
+
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """Filter the list based on the selected column and search text."""
+        text = self.search_edit.text().lower()
+        column = self.search_column.currentIndex()
+        for row in range(self.list.rowCount()):
+            item = self.list.item(row, column)
+            if item is None:
+                self.list.setRowHidden(row, False)
+                continue
+            show = text in item.text().lower()
+            self.list.setRowHidden(row, not show)
 
     def _refresh_subcomponents_db(self, cid: int) -> None:
         """Fill the right table with a friendly view of subcomponents (DB mode)."""
