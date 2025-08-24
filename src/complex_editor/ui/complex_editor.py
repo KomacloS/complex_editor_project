@@ -216,6 +216,9 @@ class ComplexEditor(QtWidgets.QDialog):
         self.model = ComplexSubComponentsModel(macro_map)
         self.table = QtWidgets.QTableView()
         self.table.setModel(self.model)
+        self.table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
         layout.addWidget(self.table)
 
         # delegates for combo-box and pin selection
@@ -249,6 +252,9 @@ class ComplexEditor(QtWidgets.QDialog):
         btn_box.addWidget(self.save_btn)
         btn_box.addWidget(cancel_btn)
         layout.addLayout(btn_box)
+
+        # ensure the dialog is wide enough to show all table columns
+        self.resize(1000, 600)
 
         self.pn_edit.textChanged.connect(self._update_state)
         self.pin_spin.valueChanged.connect(self._update_state)
