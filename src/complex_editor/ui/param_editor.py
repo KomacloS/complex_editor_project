@@ -9,7 +9,7 @@ from PyQt6 import QtWidgets, QtCore
 class MacroParamsDialog(QtWidgets.QDialog):
     """Dialog allowing users to edit a mapping of ``{name: value}`` pairs."""
 
-    def __init__(self, params: Mapping[str, str] | None = None, parent=None) -> None:
+    def __init__(self, params: Mapping[str, float] | None = None, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Macro Parameters")
         layout = QtWidgets.QVBoxLayout(self)
@@ -42,27 +42,31 @@ class MacroParamsDialog(QtWidgets.QDialog):
             self.set_params(dict(params))
 
     # ------------------------------------------------------------------ helpers
-    def set_params(self, params: Dict[str, str]) -> None:
+    def set_params(self, params: Dict[str, float]) -> None:
         self.table.setRowCount(0)
         for key, val in params.items():
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QtWidgets.QTableWidgetItem(str(key)))
-            self.table.setCellWidget(r, 1, self._spinbox(str(val)))
+            self.table.setCellWidget(r, 1, self._spinbox(val))
 
-    def params(self) -> Dict[str, str]:
-        result: Dict[str, str] = {}
+    def params(self) -> Dict[str, float]:
+        result: Dict[str, float] = {}
         for r in range(self.table.rowCount()):
             k_item = self.table.item(r, 0)
             key = k_item.text().strip() if k_item else ""
-            val = ""
+            val: float | None = None
             widget = self.table.cellWidget(r, 1)
             if isinstance(widget, QtWidgets.QDoubleSpinBox):
-                val = str(widget.value())
+                val = widget.value()
             else:
                 v_item = self.table.item(r, 1)
-                val = v_item.text() if v_item else ""
-            if key:
+                if v_item is not None:
+                    try:
+                        val = float(v_item.text())
+                    except ValueError:
+                        val = None
+            if key and val is not None:
                 result[key] = val
         return result
 
@@ -79,7 +83,7 @@ class MacroParamsDialog(QtWidgets.QDialog):
             self.table.removeRow(row)
 
     # --------------------------------------------------------------- internals
-    def _spinbox(self, val: str | None = None) -> QtWidgets.QDoubleSpinBox:
+    def _spinbox(self, val: float | None = None) -> QtWidgets.QDoubleSpinBox:
         box = QtWidgets.QDoubleSpinBox()
         box.setRange(-1e9, 1e9)
         box.setDecimals(6)
