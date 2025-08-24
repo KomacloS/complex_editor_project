@@ -48,7 +48,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # cache of {IDFunction -> Name}
         self._func_map: Dict[int, str] = {}
 
-        # left list of complexes
+        # left list of complexes with per-column search filters
         self.list = QtWidgets.QTableWidget(0, 3)
         self.list.setHorizontalHeaderLabels(["ID", "Name", "#Subs"])
         self.list.setSelectionBehavior(
@@ -59,6 +59,17 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.list.itemSelectionChanged.connect(self._on_selected)
         self.list.doubleClicked.connect(self._on_edit)
+
+        self._filters: List[QtWidgets.QLineEdit] = []
+        filter_bar = QtWidgets.QHBoxLayout()
+        for i in range(3):
+            edit = QtWidgets.QLineEdit()
+            header = self.list.horizontalHeaderItem(i).text()
+            edit.setPlaceholderText(header)
+            edit.textChanged.connect(self._apply_filters)
+            self._filters.append(edit)
+            filter_bar.addWidget(edit)
+        filter_bar.addStretch()
 
         # right table with sub components (summary view)
         self.sub_table = QtWidgets.QTableWidget(0, 0)
@@ -84,6 +95,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         left = QtWidgets.QVBoxLayout()
         left.addLayout(toolbar)
+        left.addLayout(filter_bar)
         left.addWidget(self.list)
 
         container = QtWidgets.QWidget()
@@ -133,6 +145,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cx.id)))
                 self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(cx.name)))
                 self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(len(cx.subcomponents))))
+            self._apply_filters()
             return
 
         # DB mode
@@ -148,6 +161,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cid)))
             self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(name)))
             self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(nsubs)))
+        self._apply_filters()
 
     def _refresh_subcomponents_db(self, cid: int) -> None:
         """Fill the right table with a friendly view of subcomponents (DB mode)."""
@@ -230,6 +244,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.sub_table.setItem(r, c, QtWidgets.QTableWidgetItem(row.get(key, "")))
 
         self.sub_table.resizeColumnsToContents()
+
+    def _apply_filters(self) -> None:
+        """Hide rows that do not match all active column filters."""
+        for r in range(self.list.rowCount()):
+            visible = True
+            for c, edit in enumerate(self._filters):
+                text = edit.text().lower().strip()
+                if not text:
+                    continue
+                item = self.list.item(r, c)
+                cell = item.text().lower() if item else ""
+                if text not in cell:
+                    visible = False
+                    break
+            self.list.setRowHidden(r, not visible)
 
     def _on_selected(self) -> None:
         row = self.list.currentRow()
@@ -344,6 +373,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     em = EditorMacro(sc.macro.name, {"A": str(sc.pins[0]), "B": str(sc.pins[1]), "C": str(sc.pins[2]), "D": str(sc.pins[3])}, sc.macro.params)
                     cx.subcomponents.append(em)
                 self._refresh_list()
+                self.list.selectRow(row)
+                self._on_selected()
             return
 
         cid_item = self.list.item(row, 0)
@@ -397,6 +428,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.db.update_complex(cid, updated=db_dev)
             self.db._conn.commit()
             self._refresh_list()
+            self.list.selectRow(row)
+            self._on_selected()
             QtWidgets.QMessageBox.information(self, "Updated", "Complex updated")
 
     def _delete_selected(self) -> None:
