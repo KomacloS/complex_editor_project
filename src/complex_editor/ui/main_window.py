@@ -14,7 +14,8 @@ from .complex_editor import ComplexEditor
 from .adapters import EditorComplex, EditorMacro
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
-from ..util.macro_xml_translator import params_to_xml, xml_to_params
+from ..util.macro_xml_translator import params_to_xml, xml_to_params_tolerant
+from ..util.rules_loader import get_learned_rules
 from ..param_spec import ALLOWED_PARAMS
 
 
@@ -301,9 +302,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 else:
                     pin_s_text = str(pin_s_raw or "")
 
+                _rules = get_learned_rules()
                 xml_map = {}
                 try:
-                    xml_map = xml_to_params(pin_s_text) if pin_s_text else {}
+                    xml_map = xml_to_params_tolerant(pin_s_text, rules=_rules) if pin_s_text else {}
                 except Exception:
                     xml_map = {}
 
@@ -370,9 +372,10 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 pin_s_text = str(pin_s_raw or "")
 
+            _rules = get_learned_rules()
             xml_map = {}
             try:
-                xml_map = xml_to_params(pin_s_text) if pin_s_text else {}
+                xml_map = xml_to_params_tolerant(pin_s_text, rules=_rules) if pin_s_text else {}
             except Exception:
                 xml_map = {}
 

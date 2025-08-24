@@ -101,6 +101,9 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 w.setChecked(str(val).lower() in {"1", "true", "yes"})
             elif isinstance(w, QtWidgets.QComboBox):
                 idx = w.findText(str(val))
+                if idx < 0:
+                    w.addItem(str(val))
+                    idx = w.findText(str(val))
                 if idx >= 0:
                     w.setCurrentIndex(idx)
             else:

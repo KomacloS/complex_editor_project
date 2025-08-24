@@ -5,7 +5,8 @@ from typing import List, Dict, Any
 import json
 
 from .adapters import EditorComplex, EditorMacro
-from ..util.macro_xml_translator import xml_to_params, _ensure_text
+from ..util.macro_xml_translator import xml_to_params_tolerant, _ensure_text
+from ..util.rules_loader import get_learned_rules
 
 
 def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
@@ -30,9 +31,15 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
         pins = [str(x) for x in (cx.get("pins") or [])]
 
         sub_macros: List[EditorMacro] = []
+        _rules = get_learned_rules()
         for sc in cx.get("subcomponents") or []:
-            macro_name = str(
+            macro_name_raw = str(
                 sc.get("function_name") or f"Function {sc.get('id_function', '')}"
+            )
+            macro_name = (
+                _rules.macro_aliases.get(macro_name_raw, macro_name_raw)
+                if _rules
+                else macro_name_raw
             )
             pin_map: Dict[str, str] = {}
             # ``PinS`` may appear either inside the ``pins`` mapping or as a
@@ -59,7 +66,7 @@ def load_editor_complexes_from_buffer(path: str | Path) -> List[EditorComplex]:
             if s_xml:
                 pin_s_raw = _ensure_text(s_xml)
                 try:
-                    all_macros = xml_to_params(s_xml)
+                    all_macros = xml_to_params_tolerant(s_xml, rules=_rules)
                 except Exception:
                     all_macros = {}
                     pin_s_error = True

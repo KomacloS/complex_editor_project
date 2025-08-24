@@ -11,7 +11,8 @@ read-only and side-effect free.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, TYPE_CHECKING
 
-from ..util.macro_xml_translator import xml_to_params, _ensure_text
+from ..util.macro_xml_translator import xml_to_params_tolerant, _ensure_text
+from ..util.rules_loader import get_learned_rules
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from ..db.mdb_api import MDB, ComplexDevice, SubComponent
@@ -88,8 +89,9 @@ def to_editor_model(db: "MDB", cx_db: "ComplexDevice") -> EditorComplex:
         s_xml = (sc.pins or {}).get("S") if getattr(sc, "pins", None) else None
         if s_xml:
             pin_s_raw = _ensure_text(s_xml)
+            _rules = get_learned_rules()
             try:
-                all_macros = xml_to_params(s_xml)
+                all_macros = xml_to_params_tolerant(s_xml, rules=_rules)
             except Exception:
                 all_macros = {}
                 pin_s_error = True

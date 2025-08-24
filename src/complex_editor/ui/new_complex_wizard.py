@@ -18,7 +18,8 @@ from ..domain import (
 from ..param_spec import ALLOWED_PARAMS, resolve_macro_name
 from ..db import discover_macro_map
 from ..io.buffer_loader import WizardPrefill
-from ..util.macro_xml_translator import xml_to_params, params_to_xml
+from ..util.macro_xml_translator import xml_to_params_tolerant, params_to_xml
+from ..util.rules_loader import get_learned_rules
 
 
 def _norm(s: str) -> str:
@@ -948,9 +949,10 @@ class NewComplexWizard(QtWidgets.QDialog):
                 setattr(subc, "value", val_field)
             macros: dict[str, dict[str, str]] = {}
             pin_s_error = False
+            _rules = get_learned_rules()
             if s_xml:
                 try:
-                    macros = xml_to_params(s_xml)
+                    macros = xml_to_params_tolerant(s_xml, rules=_rules)
                 except Exception:
                     macros = {}
                     pin_s_error = True
@@ -1036,9 +1038,10 @@ class NewComplexWizard(QtWidgets.QDialog):
                 setattr(subc, "value", val_field)
             macros: dict[str, dict[str, str]] = {}
             pin_s_error = False
+            _rules = get_learned_rules()
             if s_xml:
                 try:
-                    macros = xml_to_params(s_xml)
+                    macros = xml_to_params_tolerant(s_xml, rules=_rules)
                 except Exception:
                     macros = {}
                     pin_s_error = True

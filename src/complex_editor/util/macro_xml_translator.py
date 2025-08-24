@@ -14,6 +14,9 @@ from typing import Any, Dict, Mapping, Optional
 import xml.etree.ElementTree as ET
 import yaml
 
+# new import for tolerant translation
+from ..learn.spec import LearnedRules
+
 
 def _ensure_text(data: bytes | str | memoryview | bytearray) -> str:
     """Return *data* as a string.
@@ -72,6 +75,59 @@ def xml_to_params(xml: bytes | str) -> Dict[str, Dict[str, str]]:
             params[pname] = pval
         result[mname] = params
     return result
+
+
+def xml_to_params_tolerant(
+    xml_bytes_or_str: bytes | str,
+    macro_map=None,
+    rules: LearnedRules | None = None,
+) -> Dict[str, Dict[str, str]]:
+    """
+    Parse *xml_bytes_or_str* like :func:`xml_to_params` but apply *rules* to
+    normalize macro and parameter names and coerce values.
+
+    ``rules`` may be :class:`~complex_editor.learn.spec.LearnedRules` as loaded
+    by :mod:`complex_editor.util.rules_loader`.  When provided, macro names and
+    parameter names present in the XML are mapped through the learned aliases
+    and simple value coercions are applied:
+
+    * Macro aliases are resolved via ``rules.macro_aliases``.
+    * Parameter aliases are resolved per macro via
+      ``rules.per_macro[macro].param_aliases``.
+    * Decimal commas are converted to dots when ``accept_decimal_comma`` is
+      enabled.
+    * SI suffixes (``k``, ``M`` …) are stripped when ``accept_si_suffixes`` is
+      enabled.  Only a single trailing suffix is stripped; proper range
+      validation is left to UI widgets.
+
+    The function returns a mapping of canonical macro names to canonical
+    parameter names with coerced string values.
+    """
+
+    parsed = xml_to_params(xml_bytes_or_str) or {}
+    if not rules:
+        return parsed
+
+    out: Dict[str, Dict[str, str]] = {}
+    for raw_macro, params in parsed.items():
+        macro = rules.macro_aliases.get(raw_macro, raw_macro)
+        lparam = rules.per_macro.get(macro)
+        canon_params: Dict[str, str] = {}
+        for raw_p, val in (params or {}).items():
+            pname = raw_p
+            if lparam:
+                pname = lparam.param_aliases.get(raw_p, raw_p)
+            sval = str(val)
+            if rules.accept_decimal_comma and "," in sval and "." not in sval:
+                sval = sval.replace(",", ".")
+            if rules.accept_si_suffixes:
+                for suf in ("k", "K", "M", "G", "m", "u", "µ", "n", "p"):
+                    if sval.endswith(suf):
+                        sval = sval[:-1]
+                        break
+            canon_params[pname] = sval
+        out.setdefault(macro, {}).update(canon_params)
+    return out
 
 
 def params_to_xml(
