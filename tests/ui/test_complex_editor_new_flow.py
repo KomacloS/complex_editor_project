@@ -32,4 +32,4 @@ def test_complex_editor_new_flow(qtbot, monkeypatch):
     editor._on_accept()
     dev = editor.build_device()
     assert dev.pn == "CX1"
-    assert dev.subcomponents and dev.subcomponents[0].pins[:2] == [1, 2]
+    assert dev.subcomponents and dev.subcomponents[0].pins[:2] == (1, 2)

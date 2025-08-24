@@ -340,7 +340,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 params = xml_map.get(mname) or (next(iter(xml_map.values())) if xml_map else {})
 
-                dev.subcomponents.append(SubComponent(MacroInstance(mname, params), pins))
+                dev.subcomponents.append(SubComponent(MacroInstance(mname, params), tuple(pins)))
             editor.load_device(dev)
             if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 updated = editor.build_device()
@@ -412,7 +412,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             params = xml_map.get(name) or (next(iter(xml_map.values())) if xml_map else {})
 
-            dev.subcomponents.append(SubComponent(MacroInstance(name, params), pin_list))
+            dev.subcomponents.append(SubComponent(MacroInstance(name, params), tuple(pin_list)))
         editor.load_device(dev)
         if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             updated = editor.build_device()

@@ -170,7 +170,7 @@ class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
             macro = self.macro_map.get(r.macro_id)
             name = macro.name if macro else str(r.macro_id)
             inst = MacroInstance(name, dict(r.params))
-            result.append(SubComponent(inst, list(r.pins)))
+            result.append(SubComponent(inst, tuple(r.pins)))
         return result
 
 

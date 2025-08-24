@@ -56,6 +56,6 @@ def test_wizard_flow(qtbot):
     wizard.review_page.save_btn.click()
 
     assert len(wizard.sub_components) == 2
-    assert wizard.sub_components[0].pins == [1, 2]
-    assert wizard.sub_components[1].pins == [3, 4]
+    assert wizard.sub_components[0].pins == (1, 2)
+    assert wizard.sub_components[1].pins == (3, 4)
     assert wizard.sub_components[0].macro.params == wizard.sub_components[1].macro.params

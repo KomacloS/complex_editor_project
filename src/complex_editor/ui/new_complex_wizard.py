@@ -943,7 +943,7 @@ class NewComplexWizard(QtWidgets.QDialog):
             if sc.get("id_function") is not None:
                 mi.id_function = sc.get("id_function")
             s_xml = sc.get("pins_s") or sc.get("S")
-            subc = SubComponent(mi, pins)
+            subc = SubComponent(mi, tuple(pins))
             val_field = sc.get("value")
             if val_field not in (None, ""):
                 setattr(subc, "value", val_field)
@@ -1032,7 +1032,7 @@ class NewComplexWizard(QtWidgets.QDialog):
             if sc.get("id_function") is not None:
                 mi.id_function = sc.get("id_function")
             s_xml = sc.get("pins_s") or sc.get("S")
-            subc = SubComponent(mi, pins)
+            subc = SubComponent(mi, tuple(pins))
             val_field = sc.get("value")
             if val_field not in (None, ""):
                 setattr(subc, "value", val_field)
@@ -1100,7 +1100,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         return wiz
     # ------------------------------------------------------------------ actions
     def _add_sub(self) -> None:
-        sc = SubComponent(MacroInstance("", {}), [])
+        sc = SubComponent(MacroInstance("", {}), ())
         self.sub_components.append(sc)
         self.list_page.list.addItem("<new>")
         self.current_index = len(self.sub_components) - 1
@@ -1112,7 +1112,7 @@ class NewComplexWizard(QtWidgets.QDialog):
             return
         orig = self.sub_components[row]
         new_sc = SubComponent(
-            MacroInstance(orig.macro.name, orig.macro.params.copy()), orig.pins.copy()
+            MacroInstance(orig.macro.name, orig.macro.params.copy()), tuple(orig.pins)
         )
         self.sub_components.append(new_sc)
         self.list_page.list.addItem("<dup>")
@@ -1184,7 +1184,7 @@ class NewComplexWizard(QtWidgets.QDialog):
         pins = self.macro_page.checked_pins()
         sc = self.sub_components[self.current_index]
         sc.macro.name = macro.name
-        sc.pins = pins
+        sc.pins = tuple(pins)
         macros = getattr(sc, "_pins_s_macros", getattr(sc, "all_macros", {}))
         if isinstance(macros, dict):
             sc.macro.params = dict(macros.get(sc.macro.name, {}))

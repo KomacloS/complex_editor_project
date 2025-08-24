@@ -46,8 +46,11 @@ class ComplexDevice:
 @dataclass
 class SubComponent:
     """One macro instance mapped to specific pins within a complex."""
-
     macro: MacroInstance
-    pins: list[int] = field(default_factory=list)
+    pins: tuple[int, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        # ensure an immutable tuple is always stored internally
+        self.pins = tuple(self.pins)
 
 
