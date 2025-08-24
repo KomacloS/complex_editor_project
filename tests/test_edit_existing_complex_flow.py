@@ -70,7 +70,7 @@ class DummyWizard:
             mi = MacroInstance(sc.get("macro_name", ""), {})
             if sc.get("id_function") is not None:
                 mi.id_function = sc.get("id_function")
-            self.sub_components.append(SubComponent(mi, list(sc.get("pins") or [])))
+            self.sub_components.append(SubComponent(mi, tuple(sc.get("pins") or [])))
 
     @classmethod
     def from_existing(cls, prefill, complex_id, parent=None):
@@ -79,7 +79,9 @@ class DummyWizard:
     def exec(self):
         # simulate user changing first pin
         if self.sub_components and self.sub_components[0].pins:
-            self.sub_components[0].pins[0] = 5
+            pins = list(self.sub_components[0].pins)
+            pins[0] = 5
+            self.sub_components[0].pins = tuple(pins)
         return QtWidgets.QDialog.DialogCode.Accepted
 
 
