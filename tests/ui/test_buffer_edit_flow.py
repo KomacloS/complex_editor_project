@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from PyQt6 import QtWidgets, QtCore
 from complex_editor.ui.main_window import MainWindow, AppContext
 from complex_editor.ui.complex_editor import ComplexEditor
+from complex_editor.util.macro_xml_translator import params_to_xml
 import complex_editor.db.schema_introspect as schema_introspect
 
 
@@ -43,6 +44,20 @@ def test_buffer_edit_updates_json(tmp_path, qtbot, monkeypatch):
 
     win.list.setCurrentCell(0, 0)
 
+    xml_bytes = params_to_xml({"GATE": {"P": "1"}}, encoding="utf-16")
+    em = win._buffer_complexes[0].subcomponents[0]
+    em.pin_s_raw = xml_bytes
+    em.macro_params = {}
+
+    captured = {}
+    orig_load = ComplexEditor.load_device
+
+    def _capture(self, dev):
+        captured["dev"] = dev
+        return orig_load(self, dev)
+
+    monkeypatch.setattr(ComplexEditor, "load_device", _capture)
+
     def fake_exec(self):
         self.alt_pn_edit.setText("ALT2")
         self._update_state()
@@ -57,3 +72,6 @@ def test_buffer_edit_updates_json(tmp_path, qtbot, monkeypatch):
     xml = raw[0]["subcomponents"][0]["pins"]["S"]
     assert "<Macro Name=\"GATE\"" in xml
     assert raw[0]["alt_pn"] == "ALT2"
+
+    dev = captured["dev"]
+    assert dev.subcomponents[0].macro.params.get("P") == "1"

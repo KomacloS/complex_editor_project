@@ -292,7 +292,23 @@ class MainWindow(QtWidgets.QMainWindow):
             for em in cx.subcomponents:
                 mname = getattr(em, "selected_macro", em.name)
                 pins = [int(em.pins.get(k, 0) or 0) for k in ["A", "B", "C", "D"]]
-                params = dict(getattr(em, "macro_params", {}))
+                pin_s_raw = getattr(em, "pin_s_raw", "") or em.pins.get("S", "")
+                if isinstance(pin_s_raw, bytes):
+                    try:
+                        pin_s_text = pin_s_raw.decode("utf-16", errors="ignore")
+                    except Exception:
+                        pin_s_text = ""
+                else:
+                    pin_s_text = str(pin_s_raw or "")
+
+                xml_map = {}
+                try:
+                    xml_map = xml_to_params(pin_s_text) if pin_s_text else {}
+                except Exception:
+                    xml_map = {}
+
+                params = xml_map.get(mname) or (next(iter(xml_map.values())) if xml_map else {})
+
                 dev.subcomponents.append(SubComponent(MacroInstance(mname, params), pins))
             editor.load_device(dev)
             if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
@@ -345,7 +361,23 @@ class MainWindow(QtWidgets.QMainWindow):
         for sc in getattr(raw, "subcomponents", []) or []:
             name = self._func_name(sc.id_function)
             pin_list = [sc.pins.get(k, 0) for k in ["A", "B", "C", "D"]]
-            params = xml_to_params(sc.pins.get("S", "")).get(name, {})
+            pin_s_raw = (sc.pins or {}).get("S", "")
+            if isinstance(pin_s_raw, bytes):
+                try:
+                    pin_s_text = pin_s_raw.decode("utf-16", errors="ignore")
+                except Exception:
+                    pin_s_text = ""
+            else:
+                pin_s_text = str(pin_s_raw or "")
+
+            xml_map = {}
+            try:
+                xml_map = xml_to_params(pin_s_text) if pin_s_text else {}
+            except Exception:
+                xml_map = {}
+
+            params = xml_map.get(name) or (next(iter(xml_map.values())) if xml_map else {})
+
             dev.subcomponents.append(SubComponent(MacroInstance(name, params), pin_list))
         editor.load_device(dev)
         if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
