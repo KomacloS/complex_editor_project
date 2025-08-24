@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Dialog used to edit macro parameters."""
+
+from __future__ import annotations
 
 from typing import Dict
 from PyQt6 import QtWidgets
 
-from ..domain import MacroDef, MacroParam
+from ..domain import MacroDef
 
 
 class ParamEditorDialog(QtWidgets.QDialog):
@@ -22,6 +22,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
         self._macro = macro
         layout = QtWidgets.QGridLayout(self)
         self._widgets: dict[str, QtWidgets.QWidget] = {}
+        self._defaults: dict[str, str | None] = {p.name: p.default for p in macro.params}
 
         params = list(macro.params)
         row_count = 0
@@ -71,6 +72,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 layout.addWidget(label, row, col * 2)
                 layout.addWidget(w, row, col * 2 + 1)
                 self._widgets[p.name] = w
+                self._connect_update(p.name, w)
             row_count = max(len(left), len(right))
 
         # Fallback: no schema but values exist -> render simple line edits
@@ -93,6 +95,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 layout.addWidget(label, row, col * 2)
                 layout.addWidget(w, row, col * 2 + 1)
                 self._widgets[pname] = w
+                self._connect_update(pname, w)
             row_count = max(len(left), len(right))
 
         buttons = QtWidgets.QDialogButtonBox(
@@ -104,6 +107,8 @@ class ParamEditorDialog(QtWidgets.QDialog):
         layout.addWidget(buttons, row_count, 0, 1, 4)
         if values:
             self.set_values(values)
+        for name in self._widgets:
+            self._update_style(name)
 
     # ------------------------------------------------------------------
     def set_values(self, values: Dict[str, str]) -> None:
@@ -138,6 +143,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
                     w.setCurrentIndex(idx)
             else:
                 w.setText(str(val))
+            self._update_style(name)
 
     def params(self) -> Dict[str, str]:
         result: Dict[str, str] = {}
@@ -153,3 +159,39 @@ class ParamEditorDialog(QtWidgets.QDialog):
             else:
                 result[name] = w.text()
         return result
+
+    # --------------------------------------------------------------- helpers
+    def _connect_update(self, name: str, w: QtWidgets.QWidget) -> None:
+        if isinstance(w, QtWidgets.QSpinBox):
+            w.valueChanged.connect(lambda _v, n=name: self._update_style(n))
+        elif isinstance(w, QtWidgets.QDoubleSpinBox):
+            w.valueChanged.connect(lambda _v, n=name: self._update_style(n))
+        elif isinstance(w, QtWidgets.QCheckBox):
+            w.stateChanged.connect(lambda _v, n=name: self._update_style(n))
+        elif isinstance(w, QtWidgets.QComboBox):
+            w.currentTextChanged.connect(lambda _v, n=name: self._update_style(n))
+        else:
+            w.textChanged.connect(lambda _v, n=name: self._update_style(n))
+
+    def _value_as_str(self, w: QtWidgets.QWidget) -> str:
+        if isinstance(w, QtWidgets.QSpinBox):
+            return str(w.value())
+        if isinstance(w, QtWidgets.QDoubleSpinBox):
+            return str(w.value())
+        if isinstance(w, QtWidgets.QCheckBox):
+            return "1" if w.isChecked() else "0"
+        if isinstance(w, QtWidgets.QComboBox):
+            return w.currentText()
+        return w.text()
+
+    def _update_style(self, name: str) -> None:
+        w = self._widgets.get(name)
+        if not w:
+            return
+        default = self._defaults.get(name)
+        if default is None:
+            default = ""
+        if self._value_as_str(w) != str(default):
+            w.setStyleSheet("background-color: lightblue;")
+        else:
+            w.setStyleSheet("")

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Simplified Complex Editor window used for creating and editing complexes."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, List
@@ -66,13 +66,15 @@ class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
     def flags(self, index):  # pragma: no cover - behaviour
         if not index.isValid():
             return QtCore.Qt.ItemFlag.NoItemFlags
+        flags = (
+            QtCore.Qt.ItemFlag.ItemIsSelectable
+            | QtCore.Qt.ItemFlag.ItemIsEnabled
+            | QtCore.Qt.ItemFlag.ItemIsDragEnabled
+            | QtCore.Qt.ItemFlag.ItemIsDropEnabled
+        )
         if index.column() in {1, 2, 3, 4, 5}:
-            return (
-                QtCore.Qt.ItemFlag.ItemIsSelectable
-                | QtCore.Qt.ItemFlag.ItemIsEnabled
-                | QtCore.Qt.ItemFlag.ItemIsEditable
-            )
-        return QtCore.Qt.ItemFlag.ItemIsEnabled
+            flags |= QtCore.Qt.ItemFlag.ItemIsEditable
+        return flags
 
     def setData(self, index, value, role):  # pragma: no cover - simple edit
         if role != QtCore.Qt.ItemDataRole.EditRole or not index.isValid():
@@ -117,6 +119,41 @@ class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
             self.beginInsertRows(QtCore.QModelIndex(), row + 1, row + 1)
             self.rows.insert(row + 1, clone)
             self.endInsertRows()
+
+    # Qt drag/drop support -------------------------------------------------
+    def mimeTypes(self):  # pragma: no cover - trivial
+        return ["application/x-row"]
+
+    def mimeData(self, indexes):  # pragma: no cover - UI
+        mime = QtCore.QMimeData()
+        if indexes:
+            mime.setData("application/x-row", str(indexes[0].row()).encode())
+        return mime
+
+    def supportedDropActions(self):  # pragma: no cover - trivial
+        return QtCore.Qt.DropAction.MoveAction
+
+    def dropMimeData(self, data, action, row, column, parent):  # pragma: no cover - UI
+        if action != QtCore.Qt.DropAction.MoveAction:
+            return False
+        if not data.hasFormat("application/x-row"):
+            return False
+        src = int(bytes(data.data("application/x-row")).decode())
+        if row == -1:
+            row = parent.row()
+        if row == -1:
+            row = self.rowCount()
+        if src < row:
+            row -= 1
+        if src == row:
+            return False
+        self.beginMoveRows(QtCore.QModelIndex(), src, src, QtCore.QModelIndex(), row)
+        self.rows.insert(row, self.rows.pop(src))
+        self.endMoveRows()
+        self.dataChanged.emit(
+            self.index(0, 0), self.index(self.rowCount() - 1, self.columnCount() - 1)
+        )
+        return True
 
     def is_valid(self, max_pin: int) -> bool:
         rows = [r.pins for r in self.rows if r.macro_id is not None]
@@ -173,6 +210,7 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
         spin = QtWidgets.QSpinBox(parent)
         spin.setMinimum(1)
         spin.setMaximum(self._pin_spin.value())
+        spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         return spin
 
     def setEditorData(self, editor, index):  # pragma: no cover - UI
@@ -216,6 +254,13 @@ class ComplexEditor(QtWidgets.QDialog):
         self.model = ComplexSubComponentsModel(macro_map)
         self.table = QtWidgets.QTableView()
         self.table.setModel(self.model)
+        self.table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.table.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.table.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
         self.table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeMode.ResizeToContents
         )
