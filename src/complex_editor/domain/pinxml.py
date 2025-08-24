@@ -1,12 +1,13 @@
-"""
-Serialise / de-serialise <R><Macros><Macro …><Param …/></Macro></Macros></R>
-blocks used in detCompDesc.PinS (UTF-16 XML).
-"""
+
+"""Serialise / de-serialise <R><Macros><Macro …><Param …/></Macro></Macros></R>
+blocks used in detCompDesc.PinS (UTF-16 XML)."""
 
 from __future__ import annotations
-import xml.etree.ElementTree as ET
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
+
+from ..util.macro_xml_translator import params_to_xml, xml_to_params
 
 
 @dataclass(slots=True, frozen=True)
@@ -16,45 +17,36 @@ class MacroInstance:
 
 
 class PinXML:
-    _XMLNS = {
-        "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
-        "xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
-    }
+    """Helpers to serialise/deserialise PinS XML blocks."""
 
     # ---------- public API ----------
 
     @staticmethod
-    def serialize(macros: List[MacroInstance], *, encoding: str = "utf-16le") -> bytes:
-        root = ET.Element("R", PinXML._XMLNS)
-        macros_el = ET.SubElement(root, "Macros")
+    def serialize(macros: List[MacroInstance], *, encoding: str = "utf-16") -> bytes:
+        """Return PinS XML for *macros* excluding default parameters."""
 
-        for inst in macros:
-            macro_el = ET.SubElement(macros_el, "Macro", {"Name": inst.name})
-            for pname, pval in inst.params.items():
-                ET.SubElement(macro_el, "Param", {"Value": str(pval), "Name": pname})
-
-        xml = ET.tostring(root, encoding=encoding, xml_declaration=True)
-        return xml.replace(b"utf-16le", b"utf-16", 1)
+        mapping: Dict[str, Dict[str, Any]] = {m.name: dict(m.params) for m in macros}
+        return params_to_xml(mapping, encoding=encoding)
 
     @staticmethod
     def deserialize(xml: bytes | str) -> List[MacroInstance]:
-        tree = ET.fromstring(xml)
+        """Parse PinS XML into :class:`MacroInstance` objects."""
+
         result: List[MacroInstance] = []
-        for m_el in tree.find("Macros") or []:
-            name = m_el.attrib["Name"]
-            params = {}
-            for p in m_el:
-                val = p.attrib.get("Value")
-                if val is not None:
+        for name, params in xml_to_params(xml).items():
+            converted: Dict[str, Any] = {}
+            for pname, pval in params.items():
+                if pval is None:
+                    converted[pname] = None
+                    continue
+                try:
+                    converted[pname] = int(pval)
+                except (TypeError, ValueError):
                     try:
-                        val = int(val)
-                    except ValueError:
-                        try:
-                            val = float(val)
-                        except ValueError:
-                            pass
-                params[p.attrib["Name"]] = val
-            result.append(MacroInstance(name, params))
+                        converted[pname] = float(pval)
+                    except (TypeError, ValueError):
+                        converted[pname] = pval
+            result.append(MacroInstance(name, converted))
         return result
 
 
