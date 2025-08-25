@@ -55,10 +55,12 @@ class ParamEditorDialog(QtWidgets.QDialog):
                         min_val = max_val
                     w.setMinimum(min_val)
                     w.setMaximum(max_val)
+                    w.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
                 elif p.type == "FLOAT":
                     w = QtWidgets.QDoubleSpinBox()
                     w.setMinimum(float(p.min or 0.0))
                     w.setMaximum(float(p.max or 1e9))
+                    w.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
                 elif p.type == "BOOL":
                     w = QtWidgets.QCheckBox()
                 elif p.type == "ENUM":

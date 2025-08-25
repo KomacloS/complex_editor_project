@@ -258,6 +258,8 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
         spin = QtWidgets.QSpinBox(parent)
         spin.setMinimum(1)
         spin.setMaximum(self._pin_spin.value())
+        # Hide arrows so numbers are fully visible
+        spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         # Important: let the view own commit/close; don't emit commitData/closeEditor yourself
         spin.setKeyboardTracking(False)  # only commit on Enter/focus-out
         # Keep max in sync with "Number of pins"
