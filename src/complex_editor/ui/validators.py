@@ -22,13 +22,16 @@ def validate_pin_table(
     rows: Sequence[Sequence[int]],
     max_pin: int,
     *,
-    enforce_unique_across_rows: bool = False,  # <— NEW: default allows reuse
+    enforce_unique_across_rows: bool = False,
 ) -> Tuple[bool, str]:
     """
     Validate a full table of pin assignments.
 
     - Always validates range and in-row duplicates.
-    - Optionally enforces cross-row uniqueness when `enforce_unique_across_rows=True`.
+    - When ``enforce_unique_across_rows`` is ``True``, a physical pad may only
+      be used once across all rows.
+    - When ``False`` (default), pins may be reused across rows (needed by
+      :class:`~complex_editor.ui.complex_editor.ComplexEditor`).
     """
     used = set()
     for r in rows:

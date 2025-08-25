@@ -137,87 +137,97 @@ class MainWindow(QtWidgets.QMainWindow):
             result[key] = str(v)
         return result
 
-    def _persist_editor_device(self, updated_dev):
-        """Persist ComplexEditor result to buffer.json (if buffer mode) or MDB."""
+    def _persist_editor_device(self, updated_ui_dev: ComplexDevice, comp_id: int | None):
+        """Persist ComplexEditor result to buffer or MDB, enforcing type safety."""
 
-        # Build DB subcomponents and PinS
-        def _to_db_subs(dev):
-            subs = []
-            for sc in dev.subcomponents:
-                fid = self._macro_id_from_name(sc.macro.name) or 0
-                pins = {k: v for k, v in zip(["A", "B", "C", "D"], sc.pins)}
-                xml = params_to_xml(
-                    {sc.macro.name: sc.macro.params},
-                    encoding="utf-16",
-                    schema=ALLOWED_PARAMS,
-                ).decode("utf-16")
-                pins["S"] = xml
-                subs.append(DbSub(None, fid, pins=pins))
-            return subs
+        subs: List[DbSub] = []
+        for sc in updated_ui_dev.subcomponents:
+            fid = self._macro_id_from_name(sc.macro.name) or 0
+            pins: Dict[str, int | str] = {}
+            for label, val in zip(["A", "B", "C", "D"], sc.pins):
+                try:
+                    num = int(val)
+                except (TypeError, ValueError):
+                    num = 0
+                if num > 0:
+                    pins[label] = num
+            xml = params_to_xml(
+                {sc.macro.name: sc.macro.params},
+                encoding="utf-16",
+                schema=ALLOWED_PARAMS,
+            )
+            xml_str = (
+                xml.decode("utf-16")
+                if isinstance(xml, (bytes, bytearray))
+                else str(xml)
+            )
+            pins["S"] = xml_str
+            subs.append(DbSub(None, int(fid), pins=pins))
 
-        # Buffer mode: write raw JSON
+        db_dev = DbComplex(comp_id, updated_ui_dev.pn, int(updated_ui_dev.pin_count), subs)
+
         if (
             self._buffer_complexes is not None
             and self._buffer_raw is not None
             and self._buffer_path is not None
         ):
             row = self.list.currentRow()
+            if row < 0 or row >= len(self._buffer_raw):
+                row = len(self._buffer_raw)
+                self._buffer_raw.append({})
+                self._buffer_complexes.append(
+                    EditorComplex(comp_id or 0, "", [], [])
+                )
             raw = self._buffer_raw[row]
-            raw["name"] = updated_dev.pn
-            if updated_dev.alt_pn:
-                raw["alt_pn"] = updated_dev.alt_pn
-            raw["pins"] = [str(i) for i in range(1, updated_dev.pin_count + 1)]
-            subs_raw = []
-            for sc in updated_dev.subcomponents:
-                xml = params_to_xml(
-                    {sc.macro.name: sc.macro.params},
-                    encoding="utf-16",
-                    schema=ALLOWED_PARAMS,
-                ).decode("utf-16")
-                subs_raw.append(
+            raw["name"] = updated_ui_dev.pn
+            if updated_ui_dev.alt_pn:
+                raw["alt_pn"] = updated_ui_dev.alt_pn
+            raw["pins"] = [str(i) for i in range(1, updated_ui_dev.pin_count + 1)]
+            raw["subcomponents"] = []
+            for s, sc in zip(subs, updated_ui_dev.subcomponents):
+                a = str(sc.pins[0]) if len(sc.pins) > 0 else ""
+                b = str(sc.pins[1]) if len(sc.pins) > 1 else ""
+                c = str(sc.pins[2]) if len(sc.pins) > 2 else ""
+                d = str(sc.pins[3]) if len(sc.pins) > 3 else ""
+                raw["subcomponents"].append(
                     {
                         "function_name": sc.macro.name,
                         "pins": {
-                            "A": sc.pins[0],
-                            "B": sc.pins[1],
-                            "C": sc.pins[2],
-                            "D": sc.pins[3],
-                            "S": xml,
+                            "A": a,
+                            "B": b,
+                            "C": c,
+                            "D": d,
+                            "S": s.pins.get("S"),
                         },
                     }
                 )
-            raw["subcomponents"] = subs_raw
             save_buffer(self._buffer_path, self._buffer_raw)
 
-            if 0 <= row < len(self._buffer_complexes):
-                cx = self._buffer_complexes[row]
-                cx.name = updated_dev.pn
-                cx.pins = [str(i) for i in range(1, updated_dev.pin_count + 1)]
-                cx.subcomponents = [
-                    EditorMacro(
-                        sc.macro.name,
-                        {
-                            "A": str(sc.pins[0]),
-                            "B": str(sc.pins[1]),
-                            "C": str(sc.pins[2]),
-                            "D": str(sc.pins[3]),
-                        },
-                        sc.macro.params,
-                    )
-                    for sc in updated_dev.subcomponents
-                ]
-            return
-
-        # MDB mode: create/update Complex in DB
-        if self.db is not None:
-            cid = updated_dev.id
-            subs = _to_db_subs(updated_dev)
-            db_dev = DbComplex(cid, updated_dev.pn, updated_dev.pin_count, subs)
-            if cid is None:
+            cx = self._buffer_complexes[row]
+            cx.name = updated_ui_dev.pn
+            cx.pins = [str(i) for i in range(1, updated_ui_dev.pin_count + 1)]
+            cx.subcomponents = [
+                EditorMacro(
+                    sc.macro.name,
+                    {
+                        "A": str(sc.pins[0]),
+                        "B": str(sc.pins[1]),
+                        "C": str(sc.pins[2]),
+                        "D": str(sc.pins[3]),
+                    },
+                    sc.macro.params,
+                )
+                for sc in updated_ui_dev.subcomponents
+            ]
+        else:
+            assert self.db is not None
+            if comp_id is None:
                 self.db.add_complex(db_dev)
             else:
-                self.db.update_complex(cid, updated=db_dev)
+                self.db.update_complex(comp_id, updated=db_dev)
             self.db._conn.commit()
+
+        self._refresh_list()
 
     def _refresh_list(self) -> None:
         if self._buffer_complexes is not None:
@@ -367,8 +377,7 @@ class MainWindow(QtWidgets.QMainWindow):
         editor = ComplexEditor(macro_map)
         if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             updated = editor.build_device()
-            self._persist_editor_device(updated)
-            self._refresh_list()
+            self._persist_editor_device(updated, comp_id=None)
 
 
     def _on_edit(self) -> None:
@@ -416,8 +425,7 @@ class MainWindow(QtWidgets.QMainWindow):
             editor.load_device(dev)
             if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 updated = editor.build_device()
-                self._persist_editor_device(updated)
-                self._refresh_list()
+                self._persist_editor_device(updated, comp_id=cx.id)
                 self.list.selectRow(row)
                 self._on_selected()
             return
@@ -461,8 +469,7 @@ class MainWindow(QtWidgets.QMainWindow):
         editor.load_device(dev)
         if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             updated = editor.build_device()
-            self._persist_editor_device(updated)
-            self._refresh_list()
+            self._persist_editor_device(updated, comp_id=cid)
             self.list.selectRow(row)
             self._on_selected()
             QtWidgets.QMessageBox.information(self, "Updated", "Complex updated")
