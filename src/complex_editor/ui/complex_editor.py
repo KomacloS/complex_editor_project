@@ -220,12 +220,8 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
 
     def setModelData(self, editor, model, index):  # pragma: no cover - UI
         value = int(editor.value())
-        row = index.row()
-        col = index.column() - 2
-        pins = list(self._model.rows[row].pins)
-        pins[col] = value
-        ok, _ = validate_pins(pins, self._pin_spin.value())
-        if not ok:
+        # only enforce basic range checks during inline edits
+        if value < 1 or value > self._pin_spin.value():
             QtWidgets.QApplication.beep()
             return
         model.setData(index, value, QtCore.Qt.ItemDataRole.EditRole)
