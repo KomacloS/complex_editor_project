@@ -401,8 +401,12 @@ class ComplexEditor(QtWidgets.QDialog):
         self.model.remove_row(row)
 
     def _dup_row(self) -> None:
+        # Ensure any in-progress edits are committed before duplicating
+        self._force_commit_table_editor()
         row = self.table.currentIndex().row()
         self.model.duplicate_row(row)
+        # Revalidate so the Save button reflects the new state
+        self._update_state()
 
     def _table_clicked(self, index: QtCore.QModelIndex) -> None:
         if index.column() == 7:
