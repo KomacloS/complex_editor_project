@@ -9,7 +9,7 @@ from PyQt6 import QtCore, QtWidgets
 
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
 from .param_editor_dialog import ParamEditorDialog
-from .validators import validate_pins, validate_pin_table
+from .validators import validate_pin_table, validate_pins
 
 
 @dataclass
@@ -179,33 +179,17 @@ class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
 
 
 class MacroComboDelegate(QtWidgets.QStyledItemDelegate):
-    """Combo-box delegate for selecting macros."""
+    """Combo-box delegate for selecting macros (no pin logic)."""
 
     def __init__(self, macro_map: Dict[int, MacroDef], parent=None) -> None:
         super().__init__(parent)
         self._map = macro_map
 
     def createEditor(self, parent, option, index):  # pragma: no cover - UI
-        spin = QtWidgets.QSpinBox(parent)
-        spin.setMinimum(1)
-        spin.setMaximum(self._pin_spin.value())
-        spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
-
-        # Ensure text is committed on Enter / focus out
-        spin.editingFinished.connect(lambda: self.commitData.emit(spin))
-        spin.editingFinished.connect(lambda: self.closeEditor.emit(spin))
-
-        # Keep the editor's max in sync if "Number of pins" changes while editing
-        try:
-            self._pin_spin.valueChanged.connect(spin.setMaximum)
-        except Exception:
-            # if already connected in repeated calls, ignore
-            pass
-
-        # Optional: prevents half-typed values from changing the spinbox mid-typing
-        spin.setKeyboardTracking(False)
-        return spin
-
+        combo = QtWidgets.QComboBox(parent)
+        for mid, macro in sorted(self._map.items()):
+            combo.addItem(macro.name, mid)
+        return combo
 
     def setEditorData(self, editor, index):  # pragma: no cover - UI
         row = index.model().rows[index.row()]
@@ -215,37 +199,7 @@ class MacroComboDelegate(QtWidgets.QStyledItemDelegate):
                 editor.setCurrentIndex(i)
 
     def setModelData(self, editor, model, index):  # pragma: no cover - UI
-        # Ensure typed text is parsed
-        try:
-            editor.interpretText()
-        except Exception:
-            pass
-
-        new_val = int(editor.value())
-        row = index.row()
-        col = index.column() - 2  # A=0, B=1, C=2, D=3 within the row model
-        max_pin = self._pin_spin.value()
-
-        # Range check only; we will handle duplicates by swapping
-        if new_val < 1 or new_val > max_pin:
-            QtWidgets.QApplication.beep()
-            return
-
-        pins = self._model.rows[row].pins
-        old_val = pins[col]
-
-        if new_val == old_val:
-            # Nothing to do
-            return
-
-        # If the new pin already exists in this row, SWAP instead of rejecting
-        if new_val in pins:
-            other_col = pins.index(new_val)  # 0..3 in row space
-            # Put the old value where the duplicate lived
-            model.setData(model.index(row, other_col + 2), old_val, QtCore.Qt.ItemDataRole.EditRole)
-
-        # Now set the edited cell to the new value
-        model.setData(index, new_val, QtCore.Qt.ItemDataRole.EditRole)
+        model.setData(index, editor.currentData(), QtCore.Qt.ItemDataRole.EditRole)
 
 
 
@@ -262,18 +216,13 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
         spin = QtWidgets.QSpinBox(parent)
         spin.setMinimum(1)
         spin.setMaximum(self._pin_spin.value())
-        # Hide arrows so numbers are fully visible
         spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
-        # Important: let the view own commit/close; don't emit commitData/closeEditor yourself
-        spin.setKeyboardTracking(False)  # only commit on Enter/focus-out
-        # Keep max in sync with "Number of pins"
+        spin.setKeyboardTracking(False)
         try:
             self._pin_spin.valueChanged.connect(spin.setMaximum)
         except Exception:
             pass
         return spin
-
-
 
     def setEditorData(self, editor, index):  # pragma: no cover - UI
         val = self._model.rows[index.row()].pins[index.column() - 2]
@@ -281,7 +230,6 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
             editor.setValue(val)
 
     def setModelData(self, editor, model, index):  # pragma: no cover - UI
-        # Make sure typed text is parsed
         try:
             editor.interpretText()
         except Exception:
@@ -289,26 +237,13 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
 
         new_val = int(editor.value())
         row = index.row()
-        col = index.column() - 2  # columns 2..5 map to pins A..D
-        max_pin = self._pin_spin.value()
-
-        # Range check only; duplicates are handled by swapping
-        if new_val < 1 or new_val > max_pin:
+        col = index.column() - 2
+        pins = list(self._model.rows[row].pins)
+        pins[col] = new_val
+        ok, _ = validate_pins(pins, self._pin_spin.value())
+        if not ok:
             QtWidgets.QApplication.beep()
             return
-
-        pins = self._model.rows[row].pins
-        old_val = pins[col]
-        if new_val == old_val:
-            return
-
-        # If new value exists elsewhere in the same row -> swap
-        if new_val in pins:
-            other_col = pins.index(new_val)
-            # move old value into the other slot
-            model.setData(model.index(row, other_col + 2), old_val, QtCore.Qt.ItemDataRole.EditRole)
-
-        # Set edited cell
         model.setData(index, new_val, QtCore.Qt.ItemDataRole.EditRole)
 
 
@@ -354,12 +289,12 @@ class ComplexEditor(QtWidgets.QDialog):
         )
         layout.addWidget(self.table)
 
-        # delegates for combo-box and pin selection
+        # delegates for combo-box and pin selection (keep references to avoid GC)
         self._macro_delegate = MacroComboDelegate(macro_map, self.table)
         self.table.setItemDelegateForColumn(1, self._macro_delegate)
-        pin_delegate = PinSpinDelegate(self.pin_spin, self.model, self.table)
+        self._pin_delegate = PinSpinDelegate(self.pin_spin, self.model, self.table)
         for col in range(2, 6):
-            self.table.setItemDelegateForColumn(col, pin_delegate)
+            self.table.setItemDelegateForColumn(col, self._pin_delegate)
         self.table.clicked.connect(self._table_clicked)
 
         btn_bar = QtWidgets.QHBoxLayout()
@@ -403,6 +338,7 @@ class ComplexEditor(QtWidgets.QDialog):
     def _remove_row(self) -> None:
         row = self.table.currentIndex().row()
         self.model.remove_row(row)
+        self._update_state()
 
     def _dup_row(self) -> None:
         # Ensure any in-progress edits are committed before duplicating
