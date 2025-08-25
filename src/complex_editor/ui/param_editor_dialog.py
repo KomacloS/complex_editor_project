@@ -22,7 +22,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
         self._macro = macro
         layout = QtWidgets.QGridLayout(self)
         self._widgets: dict[str, QtWidgets.QWidget] = {}
-        self._defaults: dict[str, str | None] = {p.name: p.default for p in macro.params}
+        self._present_keys = set(values.keys()) if values else set()
 
         params = list(macro.params)
         row_count = 0
@@ -72,7 +72,16 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 layout.addWidget(label, row, col * 2)
                 layout.addWidget(w, row, col * 2 + 1)
                 self._widgets[p.name] = w
-                self._connect_update(p.name, w)
+                if isinstance(w, QtWidgets.QSpinBox):
+                    w.valueChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
+                elif isinstance(w, QtWidgets.QDoubleSpinBox):
+                    w.valueChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
+                elif isinstance(w, QtWidgets.QCheckBox):
+                    w.stateChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
+                elif isinstance(w, QtWidgets.QComboBox):
+                    w.currentTextChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
+                else:
+                    w.textChanged.connect(lambda _="", n=p.name, d=p.default: self._on_param_changed(n, d))
             row_count = max(len(left), len(right))
 
         # Fallback: no schema but values exist -> render simple line edits
@@ -95,7 +104,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 layout.addWidget(label, row, col * 2)
                 layout.addWidget(w, row, col * 2 + 1)
                 self._widgets[pname] = w
-                self._connect_update(pname, w)
+                w.textChanged.connect(lambda _="", n=pname: self._on_param_changed(n))
             row_count = max(len(left), len(right))
 
         buttons = QtWidgets.QDialogButtonBox(
@@ -107,8 +116,8 @@ class ParamEditorDialog(QtWidgets.QDialog):
         layout.addWidget(buttons, row_count, 0, 1, 4)
         if values:
             self.set_values(values)
-        for name in self._widgets:
-            self._update_style(name)
+        for name in self._present_keys:
+            self._set_changed_style(name, True)
 
     # ------------------------------------------------------------------
     def set_values(self, values: Dict[str, str]) -> None:
@@ -143,37 +152,15 @@ class ParamEditorDialog(QtWidgets.QDialog):
                     w.setCurrentIndex(idx)
             else:
                 w.setText(str(val))
-            self._update_style(name)
 
     def params(self) -> Dict[str, str]:
         result: Dict[str, str] = {}
         for name, w in self._widgets.items():
-            if isinstance(w, QtWidgets.QSpinBox):
-                result[name] = str(w.value())
-            elif isinstance(w, QtWidgets.QDoubleSpinBox):
-                result[name] = str(w.value())
-            elif isinstance(w, QtWidgets.QCheckBox):
-                result[name] = "1" if w.isChecked() else "0"
-            elif isinstance(w, QtWidgets.QComboBox):
-                result[name] = w.currentText()
-            else:
-                result[name] = w.text()
+            result[name] = self._string_value(w)
         return result
 
     # --------------------------------------------------------------- helpers
-    def _connect_update(self, name: str, w: QtWidgets.QWidget) -> None:
-        if isinstance(w, QtWidgets.QSpinBox):
-            w.valueChanged.connect(lambda _v, n=name: self._update_style(n))
-        elif isinstance(w, QtWidgets.QDoubleSpinBox):
-            w.valueChanged.connect(lambda _v, n=name: self._update_style(n))
-        elif isinstance(w, QtWidgets.QCheckBox):
-            w.stateChanged.connect(lambda _v, n=name: self._update_style(n))
-        elif isinstance(w, QtWidgets.QComboBox):
-            w.currentTextChanged.connect(lambda _v, n=name: self._update_style(n))
-        else:
-            w.textChanged.connect(lambda _v, n=name: self._update_style(n))
-
-    def _value_as_str(self, w: QtWidgets.QWidget) -> str:
+    def _string_value(self, w: QtWidgets.QWidget) -> str:
         if isinstance(w, QtWidgets.QSpinBox):
             return str(w.value())
         if isinstance(w, QtWidgets.QDoubleSpinBox):
@@ -184,14 +171,14 @@ class ParamEditorDialog(QtWidgets.QDialog):
             return w.currentText()
         return w.text()
 
-    def _update_style(self, name: str) -> None:
+    def _set_changed_style(self, name: str, on: bool) -> None:
         w = self._widgets.get(name)
         if not w:
             return
-        default = self._defaults.get(name)
-        if default is None:
-            default = ""
-        if self._value_as_str(w) != str(default):
-            w.setStyleSheet("background-color: lightblue;")
-        else:
-            w.setStyleSheet("")
+        w.setStyleSheet("background:#C5F1FF" if on else "")
+
+    def _on_param_changed(self, name: str, default: str | None = None) -> None:
+        w = self._widgets[name]
+        val = self._string_value(w)
+        changed = (name in self._present_keys) or (default not in (None, "", val) and val != (default or ""))
+        self._set_changed_style(name, changed)
