@@ -157,7 +157,11 @@ class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
 
     def is_valid(self, max_pin: int) -> bool:
         rows = [r.pins for r in self.rows if r.macro_id is not None]
-        ok, _ = validate_pin_table(rows, max_pin)
+        ok, _ = validate_pin_table(
+            rows,
+            max_pin,
+            enforce_unique_across_rows=False,  # allow same pad in multiple subs
+        )
         if not ok:
             return False
         return all(r.macro_id is not None for r in self.rows)
