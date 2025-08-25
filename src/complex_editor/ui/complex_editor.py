@@ -260,6 +260,12 @@ class ComplexEditor(QtWidgets.QDialog):
         self.table.setSelectionMode(
             QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
         )
+        self.table.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditTrigger.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
+            | QtWidgets.QAbstractItemView.EditTrigger.AnyKeyPressed
+        )
         self.table.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
         self.table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeMode.ResizeToContents
@@ -353,6 +359,14 @@ class ComplexEditor(QtWidgets.QDialog):
         valid = bool(self.pn_edit.text().strip()) and self.model.is_valid(max_pin)
         self.save_btn.setEnabled(valid)
 
+    def _force_commit_table_editor(self) -> None:
+        ed = self.table.focusWidget()
+        if isinstance(ed, QtWidgets.QLineEdit) and isinstance(ed.parent(), (QtWidgets.QSpinBox, QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox)):
+            ed = ed.parent()
+        if isinstance(ed, (QtWidgets.QSpinBox, QtWidgets.QComboBox, QtWidgets.QLineEdit)):
+            self.table.commitData(ed)
+            self.table.closeEditor(ed, QtWidgets.QAbstractItemDelegate.EndEditHint.NoHint)
+
     # ----------------------------------------------------------- public API
     def load_device(self, device: ComplexDevice) -> None:
         self.device_id = device.id
@@ -375,6 +389,7 @@ class ComplexEditor(QtWidgets.QDialog):
         schema does not persist it.
         """
 
+        self._force_commit_table_editor()
         dev = ComplexDevice(0, [], MacroInstance("", {}))
         dev.pn = self.pn_edit.text().strip()
         dev.alt_pn = self.alt_pn_edit.text().strip()
@@ -385,6 +400,7 @@ class ComplexEditor(QtWidgets.QDialog):
 
     # -------------------------------------------------------------- accept logic
     def _on_accept(self) -> None:
+        self._force_commit_table_editor()
         if not self.model.is_valid(self.pin_spin.value()) or not self.pn_edit.text().strip():
             QtWidgets.QApplication.beep()
             return
