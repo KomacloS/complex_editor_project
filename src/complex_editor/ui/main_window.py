@@ -137,6 +137,88 @@ class MainWindow(QtWidgets.QMainWindow):
             result[key] = str(v)
         return result
 
+    def _persist_editor_device(self, updated_dev):
+        """Persist ComplexEditor result to buffer.json (if buffer mode) or MDB."""
+
+        # Build DB subcomponents and PinS
+        def _to_db_subs(dev):
+            subs = []
+            for sc in dev.subcomponents:
+                fid = self._macro_id_from_name(sc.macro.name) or 0
+                pins = {k: v for k, v in zip(["A", "B", "C", "D"], sc.pins)}
+                xml = params_to_xml(
+                    {sc.macro.name: sc.macro.params},
+                    encoding="utf-16",
+                    schema=ALLOWED_PARAMS,
+                ).decode("utf-16")
+                pins["S"] = xml
+                subs.append(DbSub(None, fid, pins=pins))
+            return subs
+
+        # Buffer mode: write raw JSON
+        if (
+            self._buffer_complexes is not None
+            and self._buffer_raw is not None
+            and self._buffer_path is not None
+        ):
+            row = self.list.currentRow()
+            raw = self._buffer_raw[row]
+            raw["name"] = updated_dev.pn
+            if updated_dev.alt_pn:
+                raw["alt_pn"] = updated_dev.alt_pn
+            raw["pins"] = [str(i) for i in range(1, updated_dev.pin_count + 1)]
+            subs_raw = []
+            for sc in updated_dev.subcomponents:
+                xml = params_to_xml(
+                    {sc.macro.name: sc.macro.params},
+                    encoding="utf-16",
+                    schema=ALLOWED_PARAMS,
+                ).decode("utf-16")
+                subs_raw.append(
+                    {
+                        "function_name": sc.macro.name,
+                        "pins": {
+                            "A": sc.pins[0],
+                            "B": sc.pins[1],
+                            "C": sc.pins[2],
+                            "D": sc.pins[3],
+                            "S": xml,
+                        },
+                    }
+                )
+            raw["subcomponents"] = subs_raw
+            save_buffer(self._buffer_path, self._buffer_raw)
+
+            if 0 <= row < len(self._buffer_complexes):
+                cx = self._buffer_complexes[row]
+                cx.name = updated_dev.pn
+                cx.pins = [str(i) for i in range(1, updated_dev.pin_count + 1)]
+                cx.subcomponents = [
+                    EditorMacro(
+                        sc.macro.name,
+                        {
+                            "A": str(sc.pins[0]),
+                            "B": str(sc.pins[1]),
+                            "C": str(sc.pins[2]),
+                            "D": str(sc.pins[3]),
+                        },
+                        sc.macro.params,
+                    )
+                    for sc in updated_dev.subcomponents
+                ]
+            return
+
+        # MDB mode: create/update Complex in DB
+        if self.db is not None:
+            cid = updated_dev.id
+            subs = _to_db_subs(updated_dev)
+            db_dev = DbComplex(cid, updated_dev.pn, updated_dev.pin_count, subs)
+            if cid is None:
+                self.db.add_complex(db_dev)
+            else:
+                self.db.update_complex(cid, updated=db_dev)
+            self.db._conn.commit()
+
     def _refresh_list(self) -> None:
         if self._buffer_complexes is not None:
             rows = self._buffer_complexes
@@ -284,18 +366,8 @@ class MainWindow(QtWidgets.QMainWindow):
         macro_map = schema_introspect.discover_macro_map(cursor) or {}
         editor = ComplexEditor(macro_map)
         if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            dev = editor.build_device()
-            subs: List[DbSub] = []
-            for sc in dev.subcomponents:
-                fid = self._macro_id_from_name(sc.macro.name) or 0
-                pins = {k: v for k, v in zip(["A", "B", "C", "D"], sc.pins)}
-                xml = params_to_xml({sc.macro.name: sc.macro.params}, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
-                pins["S"] = xml
-                subs.append(DbSub(None, fid, pins=pins))
-            db_dev = DbComplex(None, dev.pn, dev.pin_count, subs)
-            # alt_pn is UI-only; DB schema lacks a column
-            self.db.add_complex(db_dev)
-            self.db._conn.commit()
+            updated = editor.build_device()
+            self._persist_editor_device(updated)
             self._refresh_list()
 
 
@@ -344,34 +416,7 @@ class MainWindow(QtWidgets.QMainWindow):
             editor.load_device(dev)
             if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
                 updated = editor.build_device()
-                raw = self._buffer_raw[row]
-                raw["name"] = updated.pn
-                if updated.alt_pn:
-                    raw["alt_pn"] = updated.alt_pn
-                raw["pins"] = [str(i) for i in range(1, updated.pin_count + 1)]
-                subs_raw = []
-                for sc in updated.subcomponents:
-                    xml = params_to_xml({sc.macro.name: sc.macro.params}, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
-                    subs_raw.append(
-                        {
-                            "function_name": sc.macro.name,
-                            "pins": {
-                                "A": sc.pins[0],
-                                "B": sc.pins[1],
-                                "C": sc.pins[2],
-                                "D": sc.pins[3],
-                                "S": xml,
-                            },
-                        }
-                    )
-                raw["subcomponents"] = subs_raw
-                save_buffer(self._buffer_path, self._buffer_raw)
-                cx.name = updated.pn
-                cx.pins = [str(i) for i in range(1, updated.pin_count + 1)]
-                cx.subcomponents = []
-                for sc in updated.subcomponents:
-                    em = EditorMacro(sc.macro.name, {"A": str(sc.pins[0]), "B": str(sc.pins[1]), "C": str(sc.pins[2]), "D": str(sc.pins[3])}, sc.macro.params)
-                    cx.subcomponents.append(em)
+                self._persist_editor_device(updated)
                 self._refresh_list()
                 self.list.selectRow(row)
                 self._on_selected()
@@ -416,17 +461,7 @@ class MainWindow(QtWidgets.QMainWindow):
         editor.load_device(dev)
         if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             updated = editor.build_device()
-            subs: List[DbSub] = []
-            for sc in updated.subcomponents:
-                fid = self._macro_id_from_name(sc.macro.name) or 0
-                pins = {k: v for k, v in zip(["A", "B", "C", "D"], sc.pins)}
-                xml = params_to_xml({sc.macro.name: sc.macro.params}, encoding="utf-16", schema=ALLOWED_PARAMS).decode("utf-16")
-                pins["S"] = xml
-                subs.append(DbSub(None, fid, pins=pins))
-            db_dev = DbComplex(cid, updated.pn, updated.pin_count, subs)
-            # alt_pn is UI-only; DB schema lacks a column
-            self.db.update_complex(cid, updated=db_dev)
-            self.db._conn.commit()
+            self._persist_editor_device(updated)
             self._refresh_list()
             self.list.selectRow(row)
             self._on_selected()

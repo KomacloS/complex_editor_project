@@ -258,6 +258,8 @@ class PinSpinDelegate(QtWidgets.QStyledItemDelegate):
         spin = QtWidgets.QSpinBox(parent)
         spin.setMinimum(1)
         spin.setMaximum(self._pin_spin.value())
+        # Hide arrows so numbers are fully visible
+        spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
         # Important: let the view own commit/close; don't emit commitData/closeEditor yourself
         spin.setKeyboardTracking(False)  # only commit on Enter/focus-out
         # Keep max in sync with "Number of pins"
@@ -399,8 +401,12 @@ class ComplexEditor(QtWidgets.QDialog):
         self.model.remove_row(row)
 
     def _dup_row(self) -> None:
+        # Ensure any in-progress edits are committed before duplicating
+        self._force_commit_table_editor()
         row = self.table.currentIndex().row()
         self.model.duplicate_row(row)
+        # Revalidate so the Save button reflects the new state
+        self._update_state()
 
     def _table_clicked(self, index: QtCore.QModelIndex) -> None:
         if index.column() == 7:
