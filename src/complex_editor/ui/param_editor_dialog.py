@@ -23,6 +23,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
         layout = QtWidgets.QGridLayout(self)
         self._widgets: dict[str, QtWidgets.QWidget] = {}
         self._present_keys = set(values.keys()) if values else set()
+        self._changed_keys = set(self._present_keys)
 
         params = list(macro.params)
         row_count = 0
@@ -155,9 +156,19 @@ class ParamEditorDialog(QtWidgets.QDialog):
             else:
                 w.setText(str(val))
 
-    def params(self) -> Dict[str, str]:
+    def params(self, *, only_changed: bool = True) -> Dict[str, str]:
+        """Return a mapping of parameter names to values.
+
+        Parameters that differ from their defaults (or were explicitly
+        provided in ``values``) are considered *changed*.  Only these
+        parameters are returned by default.  Pass ``only_changed=False``
+        to retrieve all values regardless of modification state.
+        """
+
         result: Dict[str, str] = {}
         for name, w in self._widgets.items():
+            if only_changed and name not in self._changed_keys:
+                continue
             result[name] = self._string_value(w)
         return result
 
@@ -184,3 +195,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
         val = self._string_value(w)
         changed = (name in self._present_keys) or (default not in (None, "", val) and val != (default or ""))
         self._set_changed_style(name, changed)
+        if changed:
+            self._changed_keys.add(name)
+        else:
+            self._changed_keys.discard(name)
