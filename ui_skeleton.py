@@ -41,5 +41,11 @@ if __name__ == "__main__":
     elif args.buffer is not None:
         run_gui(mdb_file=None, buffer_path=args.buffer)
     else:
-        mdb_file = Path.home() / "Documents" / "ComplexBuilder" / "main_db.mdb"
+        # Use the repo-local MAIN_DB.mdb (relative to this file)
+        repo_root = Path(__file__).resolve().parent
+        mdb_file = repo_root / "src" / "complex_editor" / "assets" / "MAIN_DB.mdb"
+        # Sanity print so you can see exactly what is opened:
+        print(f"[complex_editor] MAIN_DB path: {mdb_file.resolve()}")
+        if not mdb_file.exists():
+            print(f"[complex_editor] WARNING: DB not found at {mdb_file.resolve()}")
         run_gui(mdb_file)

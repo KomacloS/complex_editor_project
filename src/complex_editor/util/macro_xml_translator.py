@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 import xml.etree.ElementTree as ET
 import yaml
+import html
+from decimal import Decimal, localcontext, InvalidOperation
 
 # new import for tolerant translation
 from ..learn.spec import LearnedRules
@@ -21,40 +23,25 @@ from ..learn.spec import LearnedRules
 def _ensure_text(data: bytes | str | memoryview | bytearray) -> str:
     """Return *data* as a string.
 
-    ``data`` may be a :class:`str`, :class:`bytes`, :class:`bytearray`,
-    :class:`memoryview` or any object implementing the buffer protocol.  The
-    bytes are decoded using a best-effort strategy trying ``utf-16``, ``utf-8``
-    and finally ``latin-1`` so that malformed inputs never raise an exception.
+    Tries utf-16, utf-16-le, utf-8, latin-1. Never raises on malformed input.
     """
-
     if isinstance(data, str):
         return data
-
-    # ``data`` might be a memoryview/bytearray or any object implementing the
-    # buffer protocol.  ``bytes()`` handles these transparently and returns a
-    # ``bytes`` instance which we can decode using a best-effort strategy.
     if not isinstance(data, (bytes, bytearray)):
         try:
             data = bytes(data)
         except TypeError:
             return str(data)
-
     for enc in ("utf-16", "utf-16-le", "utf-8", "latin-1"):
         try:
             return data.decode(enc)
         except UnicodeDecodeError:
             continue
-    # ``latin-1`` will always decode but include replacement as last resort.
     return data.decode("latin-1", errors="replace")
 
 
 def xml_to_params(xml: bytes | str) -> Dict[str, Dict[str, str]]:
-    """Parse the ``PinS`` XML blob into a nested mapping.
-
-    The returned mapping has the shape ``{MacroName: {ParamName: Value}}``.
-    If *xml* is empty or malformed an empty dictionary is returned.
-    """
-
+    """Parse the ``PinS`` XML blob into a nested mapping {Macro:{Param:Value}}."""
     text = _ensure_text(xml).strip()
     if not text:
         return {}
@@ -83,27 +70,9 @@ def xml_to_params_tolerant(
     rules: LearnedRules | None = None,
 ) -> Dict[str, Dict[str, str]]:
     """
-    Parse *xml_bytes_or_str* like :func:`xml_to_params` but apply *rules* to
-    normalize macro and parameter names and coerce values.
-
-    ``rules`` may be :class:`~complex_editor.learn.spec.LearnedRules` as loaded
-    by :mod:`complex_editor.util.rules_loader`.  When provided, macro names and
-    parameter names present in the XML are mapped through the learned aliases
-    and simple value coercions are applied:
-
-    * Macro aliases are resolved via ``rules.macro_aliases``.
-    * Parameter aliases are resolved per macro via
-      ``rules.per_macro[macro].param_aliases``.
-    * Decimal commas are converted to dots when ``accept_decimal_comma`` is
-      enabled.
-    * SI suffixes (``k``, ``M`` …) are stripped when ``accept_si_suffixes`` is
-      enabled.  Only a single trailing suffix is stripped; proper range
-      validation is left to UI widgets.
-
-    The function returns a mapping of canonical macro names to canonical
-    parameter names with coerced string values.
+    Parse like :func:`xml_to_params` but apply *rules* to normalize aliases and
+    coerce values (decimal comma, simple SI suffix stripping).
     """
-
     parsed = xml_to_params(xml_bytes_or_str) or {}
     if not rules:
         return parsed
@@ -130,53 +99,141 @@ def xml_to_params_tolerant(
     return out
 
 
+# ------------------------- XML serialization -----------------------------
+
+def _xml_esc(s: Any) -> str:
+    """Escape a value for XML attribute usage with quotes."""
+    return html.escape(str(s), quote=True)
+
+
+def _fmt_number(v: Any) -> str:
+    """
+    Deterministic number formatting:
+      • bool → '1' / '0'
+      • int → '123'
+      • float/Decimal → no scientific notation; trim trailing zeros;
+        integral floats become integers ('1.0' → '1')
+      • numeric-looking strings ('1.0', '2.500', '0,10') are parsed via Decimal
+        (comma accepted) and formatted as above
+      • other values → str(v)
+    """
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        with localcontext() as ctx:
+            ctx.prec = 28
+            d = Decimal(repr(v)).normalize()
+        if d == d.to_integral():
+            return str(d.quantize(Decimal(1)))
+        s = format(d, "f")
+        return s.rstrip("0").rstrip(".")
+    if isinstance(v, Decimal):
+        d = v.normalize()
+        if d == d.to_integral():
+            return str(d.quantize(Decimal(1)))
+        s = format(d, "f")
+        return s.rstrip("0").rstrip(".")
+    if isinstance(v, str):
+        s = v.strip()
+        if "," in s and "." not in s:
+            s = s.replace(",", ".")
+        try:
+            with localcontext() as ctx:
+                ctx.prec = 28
+                d = Decimal(s).normalize()
+            if d == d.to_integral():
+                return str(d.quantize(Decimal(1)))
+            out = format(d, "f").rstrip("0").rstrip(".")
+            return out if out else "0"
+        except InvalidOperation:
+            return v
+    return str(v)
+
+
 def params_to_xml(
     macros: Mapping[str, Mapping[str, Any]],
     *,
     encoding: str = "utf-16",
     schema: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    pretty: bool = False,  # default minified (single line) to match target
 ) -> bytes:
-    """Serialize *macros* into the ``PinS`` XML format.
-
-    ``macros`` is expected to be a mapping of ``{MacroName: {ParamName: Value}}``.
-    The output always contains an XML declaration and is encoded using
-    ``encoding`` (``utf-16`` by default for compatibility with legacy tools).
-
-    The optional ``schema`` parameter may provide default values for parameters.
-    If provided (or if the built-in defaults are loaded), parameters matching
-    their default values are omitted from the resulting XML.  The ``GATE`` macro
-    is also validated so that ``Check_[A-D]`` parameters either match the length
-    of their corresponding ``PathPin_[A-D]`` values or are left empty.
     """
+    Serialize *macros* into the exact ``PinS`` XML format expected by VIVA.
 
+    Key guarantees:
+      • XML declaration: <?xml version="1.0" encoding="utf-16"?>
+      • Root namespaces on <R>: xmlns:xsd / xmlns:xsi
+      • <Param> attribute order is Value then Name
+      • Numbers normalized; integral floats become integers (e.g., '1.0' → '1')
+      • Defaults (from schema) omitted
+      • Returns *bytes* in requested *encoding*
+
+    Set pretty=True to get multi-line, indented XML for debugging; default is
+    the single-line format you provided as the target.
+    """
     defaults = _extract_defaults(schema) if schema is not None else _load_defaults()
 
-    root = ET.Element("R")
-    macros_el = ET.SubElement(root, "Macros")
+    # Validate GATE macro up front
+    if "GATE" in macros:
+        _validate_gate(macros["GATE"])
+
+    # Build as tokens to control whitespace and attribute order precisely
+    toks: list[str] = []
+    toks.append('<?xml version="1.0" encoding="utf-16"?>')
+    toks.append('<R xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">')
+    toks.append('<Macros>')
+
+    def _is_gate_path_or_check(m: str, p: str) -> bool:
+        ml = (m or "").strip().upper()
+        pl = (p or "").strip().lower()
+        if ml != "GATE":
+            return False
+        if pl.startswith("pathpin_") or pl.startswith("check_"):
+            return True
+        # common aliases sometimes used by tools
+        return pl in {"pathpins", "checksum"}
+
     for mname, params in macros.items():
-        if mname == "GATE":
-            _validate_gate(params)
-        m_el = ET.SubElement(macros_el, "Macro", {"Name": str(mname)})
-        dvals = defaults.get(mname, {})
+        toks.append(f'<Macro Name="{_xml_esc(mname)}">')
+        dvals = defaults.get(mname, {}) if defaults else {}
         for pname, value in (params or {}).items():
             if pname in dvals and _is_default(value, dvals[pname]):
                 continue
-            ET.SubElement(
-                m_el,
-                "Param",
-                {"Name": str(pname), "Value": "" if value is None else str(value)},
-            )
-    return ET.tostring(root, encoding=encoding, xml_declaration=True)
+            # Preserve strings for GATE PathPin_*/Check_* parameters (leading zeros matter)
+            if _is_gate_path_or_check(mname, pname):
+                vtxt = str(value)
+            else:
+                vtxt = _fmt_number(value)
+            # Attribute order: Value then Name
+            toks.append(f'<Param Value="{_xml_esc(vtxt)}" Name="{_xml_esc(pname)}" />')
+        toks.append('</Macro>')
+
+    toks.append('</Macros>')
+    toks.append('</R>')
+
+    if pretty:
+        # Expand the same tokens with newlines/indentation
+        # Minimal pretty printer (no dependency on minidom)
+        out: list[str] = []
+        indent = 0
+        for t in toks:
+            if t.startswith("</"):
+                indent = max(indent - 2, 0)
+            out.append(" " * indent + t)
+            if t.startswith("<") and not t.startswith("</") and not t.endswith("/>") and not t.startswith('<?xml'):
+                indent += 2
+        xml_text = "\n".join(out)
+    else:
+        # Minified: single line with single spaces between tokens
+        xml_text = " ".join(toks)
+
+    return xml_text.encode(encoding, errors="strict")
 
 
 def load_schema(path: str | Path) -> Mapping[str, Any]:
-    """Load a YAML schema file if one is provided.
-
-    The schema is optional and is primarily intended for future validation of
-    parameter values.  This function simply returns the loaded mapping and will
-    raise ``OSError``/``yaml.YAMLError`` if the file cannot be read.
-    """
-
+    """Load a YAML schema file if one is provided."""
     p = Path(path)
     with p.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
@@ -184,7 +241,6 @@ def load_schema(path: str | Path) -> Mapping[str, Any]:
 
 # ---------------------------------------------------------------------------
 # helper utilities
-
 
 def _is_default(val: Any, default: Any) -> bool:
     if val in (None, ""):

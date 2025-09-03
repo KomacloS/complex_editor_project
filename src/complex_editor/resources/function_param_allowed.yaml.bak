@@ -14,7 +14,7 @@ CAPACITOR:
     role: output
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: -1.0
@@ -73,12 +73,12 @@ CAPACITOR:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResSer:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -113,7 +113,7 @@ CAPACITOR:
     - Force Skip
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -128,12 +128,12 @@ CAPACITOR:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -158,7 +158,7 @@ COMPARATOR:
     max: 10.0
     default: -10.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: -1.0
@@ -184,7 +184,7 @@ COMPARATOR:
     type: PIN
     default: 0.0
   MeasValue:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -219,7 +219,7 @@ COMPARATOR:
     - 1meg-GND
     default: NONE
   PwVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -303,7 +303,7 @@ DIGITAL:
     type: PIN
     default: -99999999999.0
   Value:
-    type: FLOAT
+    type: INT
     min: -99999999999.0
     max: 99999999999.0
     default: -99999999999.0
@@ -322,7 +322,7 @@ DIODE:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -382,7 +382,7 @@ DIODE:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -416,7 +416,7 @@ DIODE:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -431,7 +431,7 @@ DIODE:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -451,7 +451,7 @@ FUSE:
     max: 0.5
     default: -1.0
   FuseCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -485,7 +485,7 @@ FUSE:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -500,7 +500,7 @@ FUSE:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -606,7 +606,7 @@ GATE:
     type: PIN
     default: 0.0
   MeasValue:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -658,7 +658,7 @@ GATE:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -702,7 +702,7 @@ INDUCTANCE:
     role: output
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: -1.0
@@ -745,12 +745,12 @@ INDUCTANCE:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResSer:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -790,12 +790,12 @@ INDUCTANCE:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -805,7 +805,7 @@ INDUCTANCE:
     default: Auto
 JUMPER:
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -837,23 +837,23 @@ JUMPER:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10000000.0
     default: -1.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
 JUMPER_CLOSE:
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -879,23 +879,23 @@ JUMPER_CLOSE:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10000000.0
     default: -1.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
 JUMPER_OPEN:
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -921,17 +921,17 @@ JUMPER_OPEN:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10000000.0
     default: -1.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -950,7 +950,7 @@ LED:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -1003,7 +1003,7 @@ LED:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -1032,7 +1032,7 @@ LED:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -1047,7 +1047,7 @@ LED:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -1067,7 +1067,7 @@ MOSFET:
     max: 0.5
     default: -1.0
   Base_GateVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1082,7 +1082,7 @@ MOSFET:
     max: 1.0
     default: 0.0
   Coll_DrainChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -1092,7 +1092,7 @@ MOSFET:
     max: 0.5
     default: -1.0
   Coll_DrainVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1195,32 +1195,32 @@ MOSFET:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1243,12 +1243,12 @@ MOSFET:
     default: Auto
 MOS_N:
   CapPar_D:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   CapPar_G:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -1268,7 +1268,7 @@ MOS_N:
     max: 99999999999.0
     default: -99999999999.0
   DrainChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -1281,7 +1281,7 @@ MOS_N:
     type: PIN
     default: -99999999999.0
   DrainVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1299,7 +1299,7 @@ MOS_N:
     type: PIN
     default: -99999999999.0
   GateVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1335,12 +1335,12 @@ MOS_N:
     max: 1000000.0
     default: -1.0
   ResPar_D:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResPar_G:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -1370,42 +1370,42 @@ MOS_N:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   Volt_D:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   Volt_G:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -1415,12 +1415,12 @@ MOS_N:
     default: Auto
 MOS_P:
   CapPar_D:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   CapPar_G:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -1440,7 +1440,7 @@ MOS_P:
     max: 99999999999.0
     default: -99999999999.0
   DrainChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -1453,7 +1453,7 @@ MOS_P:
     type: PIN
     default: -99999999999.0
   DrainVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1471,7 +1471,7 @@ MOS_P:
     type: PIN
     default: -99999999999.0
   GateVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -1507,12 +1507,12 @@ MOS_P:
     max: 1000000.0
     default: -1.0
   ResPar_D:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResPar_G:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -1542,42 +1542,42 @@ MOS_P:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   Volt_D:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   Volt_G:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -1595,7 +1595,7 @@ NOTMOUNTED:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -1649,7 +1649,7 @@ NOTMOUNTED:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -1664,12 +1664,12 @@ NOTMOUNTED:
     max: 0.06
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000000.0
     default: -1.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 500.0
     default: -1.0
@@ -1689,7 +1689,7 @@ OPAMP:
     max: 10.0
     default: -10.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: -1.0
@@ -1733,7 +1733,7 @@ OPAMP:
     type: PIN
     default: 0.0
   MeasValue:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -1769,7 +1769,7 @@ OPAMP:
     choices: *id005
     default: NONE
   PwVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -1863,7 +1863,7 @@ OPTOISOLATOR:
     role: output
     default: -99999999999.0
   InVolt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -1891,7 +1891,7 @@ OPTOISOLATOR:
     role: output
     default: -99999999999.0
   OutVolt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -1905,23 +1905,23 @@ OPTOISOLATOR:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
 OSCILLATOR:
   GateTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -1952,7 +1952,7 @@ OSCILLATOR:
     max: 0.5
     default: -1.0
   PwrVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -1979,18 +1979,18 @@ OSCILLATOR:
     max: 100.0
     default: 0.0
   TriggerLevel:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
 RELAIS:
   CoilChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2014,12 +2014,12 @@ RELAIS:
     type: PIN
     default: -99999999999.0
   CoilTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   CoilVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -2059,12 +2059,12 @@ RELAIS:
     type: PIN
     default: -99999999999.0
   ContactTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ContactVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -2089,12 +2089,12 @@ RELAIS:
     max: 1000000.0
     default: -1.0
   RelaySwitchingTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ResMeasTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2152,7 +2152,7 @@ RESCOIL:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -2162,7 +2162,7 @@ RESCOIL:
     max: 1.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: -1.0
@@ -2249,7 +2249,7 @@ RESCOIL:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2264,12 +2264,12 @@ RESCOIL:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -2292,7 +2292,7 @@ RESISTOR:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -2302,7 +2302,7 @@ RESISTOR:
     max: 1.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: -1.0
@@ -2384,7 +2384,7 @@ RESISTOR:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2399,12 +2399,12 @@ RESISTOR:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1000000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -2414,7 +2414,7 @@ RESISTOR:
     default: Auto
 TRANSFORMER:
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 300000.0
     default: -1.0
@@ -2448,7 +2448,7 @@ TRANSFORMER:
     role: output
     default: -99999999999.0
   PrimaryVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -2506,7 +2506,7 @@ TRANSISTOR_BJT:
     max: 0.5
     default: -1.0
   Base_GateVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2519,7 +2519,7 @@ TRANSISTOR_BJT:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -2539,7 +2539,7 @@ TRANSISTOR_BJT:
     max: 99999999999.0
     default: -99999999999.0
   Coll_DrainChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2549,7 +2549,7 @@ TRANSISTOR_BJT:
     max: 0.5
     default: -1.0
   Coll_DrainVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2644,7 +2644,7 @@ TRANSISTOR_BJT:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -2706,7 +2706,7 @@ TRANSISTOR_BJT:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2721,32 +2721,32 @@ TRANSISTOR_BJT:
     max: 100.0
     default: 0.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2781,7 +2781,7 @@ TRANSISTOR_BCR:
     max: 0.5
     default: -1.0
   Base_GateVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2796,7 +2796,7 @@ TRANSISTOR_BCR:
     max: 1.0
     default: 0.0
   Coll_DrainChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -2806,7 +2806,7 @@ TRANSISTOR_BCR:
     max: 0.5
     default: -1.0
   Coll_DrainVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2909,32 +2909,32 @@ TRANSISTOR_BCR:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2969,7 +2969,7 @@ TRANSISTOR_N:
     max: 0.5
     default: -1.0
   BaseVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -2982,17 +2982,17 @@ TRANSISTOR_N:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   CapPar_B:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   CapPar_C:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -3002,7 +3002,7 @@ TRANSISTOR_N:
     max: 99999999999.0
     default: -99999999999.0
   CollChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -3017,7 +3017,7 @@ TRANSISTOR_N:
     max: 0.5
     default: -1.0
   CollectorVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -3097,17 +3097,17 @@ TRANSISTOR_N:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResPar_B:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResPar_C:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -3149,7 +3149,7 @@ TRANSISTOR_N:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -3164,42 +3164,42 @@ TRANSISTOR_N:
     max: 100.0
     default: 0.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   Volt_B:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   Volt_C:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -3229,7 +3229,7 @@ TRANSISTOR_P:
     max: 0.5
     default: -1.0
   BaseVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -3242,17 +3242,17 @@ TRANSISTOR_P:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   CapPar_B:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
   CapPar_C:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -3262,7 +3262,7 @@ TRANSISTOR_P:
     max: 99999999999.0
     default: -99999999999.0
   CollChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -3277,7 +3277,7 @@ TRANSISTOR_P:
     max: 0.5
     default: -1.0
   CollectorVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
@@ -3357,17 +3357,17 @@ TRANSISTOR_P:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResPar_B:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   ResPar_C:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -3409,7 +3409,7 @@ TRANSISTOR_P:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -3424,42 +3424,42 @@ TRANSISTOR_P:
     max: 100.0
     default: 0.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: -1.0
   Volt_B:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
   Volt_C:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: -1.0
@@ -3477,7 +3477,7 @@ VOLTAGE_REGULATOR:
     type: PIN
     default: 0.0
   EnVolt:
-    type: FLOAT
+    type: INT
     min: -10.0
     max: 10.0
     default: -10.0
@@ -3490,7 +3490,7 @@ VOLTAGE_REGULATOR:
     type: PIN
     default: -99999999999.0
   InVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -3518,7 +3518,7 @@ VOLTAGE_REGULATOR:
     choices: *id002
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: -1.0
@@ -3533,7 +3533,7 @@ VOLTAGE_REGULATOR:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: -100.0
@@ -3552,7 +3552,7 @@ ZENER:
     role: output
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -3612,7 +3612,7 @@ ZENER:
     role: output
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -3646,7 +3646,7 @@ ZENER:
     - Test Result
     default: Default
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 5.0
     default: -1.0
@@ -3661,7 +3661,7 @@ ZENER:
     max: 100.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1000.0
     default: -1.0
@@ -3676,7 +3676,7 @@ ZENER:
     default: 2 Wire
 ISOLATION:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000000.0
     default: 0.0
@@ -3731,17 +3731,17 @@ ISOLATION:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 500.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -3767,7 +3767,7 @@ ISOLATION:
     default: 0.0
 CONTINUITY:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000.0
     default: 0.0
@@ -3807,17 +3807,17 @@ CONTINUITY:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -3835,12 +3835,12 @@ TRANSISTOR:
     - MOS P
     - Auto
   ValueOFF:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   ValueON:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -3913,7 +3913,7 @@ TRANSISTOR:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -3958,7 +3958,7 @@ TRANSISTOR:
     max: 1.0
     default: 0.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -4005,17 +4005,17 @@ TRANSISTOR:
     - Direct
     - Invert
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -4046,42 +4046,42 @@ TRANSISTOR:
     type: PIN
     default: -99999999999.0
   Coll_DrainChargeTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   TurnOnTimeout:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Base_GateVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: 0.0
   Base_GateCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   Coll_DrainVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: 0.0
   Coll_DrainCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ValueOn:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: 0.0
   ValueOff:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: 0.0
@@ -4105,17 +4105,17 @@ CAPACITIVEREAD:
     - Parasite
     - NoMeasure
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 99999999999.0
     default: 0.0
   TolP:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
   TolN:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -4173,7 +4173,7 @@ SOLDERING:
     max: 650.0
     default: 0.0
   PostTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 300.0
     default: 0.0
@@ -4228,7 +4228,7 @@ CLUSTER:
     - VL_DYNAMIC
     - PYTHON
   Value:
-    type: FLOAT
+    type: INT
     min: -99999999999.0
     max: 99999999999.0
     default: -99999999999.0
@@ -4237,7 +4237,7 @@ CLUSTER:
     default: -99999999999.0
 OPENFIX:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -4311,23 +4311,23 @@ OPENFIX:
     max: 1000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
 DISCHARGE:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -4338,12 +4338,12 @@ DISCHARGE:
     type: PIN
     default: -99999999999.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 60.0
     default: 0.0
@@ -4432,7 +4432,7 @@ FAN:
     max: 1000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -4530,7 +4530,7 @@ CONTACT:
     max: 99999999999.0
     default: -99999999999.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000.0
     default: 0.0
@@ -4546,12 +4546,12 @@ CONTACT:
     - Force Fail
     - Force Skip
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: 0.0
@@ -4580,7 +4580,7 @@ CLUSTERDIA:
     - VL_DYNAMIC
     - PYTHON
   Value:
-    type: FLOAT
+    type: INT
     min: -99999999999.0
     max: 99999999999.0
     default: -99999999999.0
@@ -4605,7 +4605,7 @@ CLUSTERDIA:
     - 'YES'
 SCR:
   Value:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -4669,33 +4669,33 @@ SCR:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   InCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   InVolt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   OutCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   OutVolt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
 TRIAC:
   Value:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -4759,33 +4759,33 @@ TRIAC:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   InCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   InVolt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   OutCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   OutVolt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
 VOLTAGEREGULATOR:
   Value:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -4849,28 +4849,28 @@ VOLTAGEREGULATOR:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   InCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   InVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
   EnVolt:
-    type: FLOAT
+    type: INT
     min: -10.0
     max: 10.0
     default: 0.0
 JSCAN:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -4897,7 +4897,7 @@ JSCAN:
     type: PIN
     default: -99999999999.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
@@ -4985,7 +4985,7 @@ JSCAN:
     default: 0.0
 POWERON:
   FinalDelay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 99999999999.0
     default: 0.0
@@ -5044,17 +5044,17 @@ POWERON:
     - PW8
     - PWEXT
   Voltage:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 500.0
     default: 0.0
   Current:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 99999999999.0
     default: 0.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 10.0
     default: 0.0
@@ -5076,17 +5076,17 @@ POWERON:
     - 'ON'
     - 'OFF'
   Value:
-    type: FLOAT
+    type: INT
     min: -500.0
     max: 500.0
     default: 0.0
   TolP:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
   TolN:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -5102,7 +5102,7 @@ POWERON:
     default: 0.0
 POWEROFF:
   FinalDelay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 99999999999.0
     default: 0.0
@@ -5224,7 +5224,7 @@ OTPN:
     max: 1000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -5306,7 +5306,7 @@ OTPN:
     - DirectJunction
     - InvertJunction
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -5330,7 +5330,7 @@ OTPN:
     type: PIN
     default: -99999999999.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
@@ -5451,7 +5451,7 @@ OTPND:
     max: 1000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -5533,7 +5533,7 @@ OTPND:
     - DirectJunction
     - InvertJunction
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -5580,22 +5580,22 @@ OTPND:
     - Direct
     - Invert
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -5636,7 +5636,7 @@ SHORT:
     max: 99999999999.0
     default: -99999999999.0
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000.0
     default: 0.0
@@ -5652,12 +5652,12 @@ SHORT:
     - Force Fail
     - Force Skip
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 10.0
     default: 0.0
@@ -5668,7 +5668,7 @@ SHORT:
     default: 0.0
 TRIMMER:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1000000000.0
     default: 0.0
@@ -5763,17 +5763,17 @@ TRIMMER:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -5793,7 +5793,7 @@ TRIMMER:
     max: 1.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -5829,7 +5829,7 @@ TRIMMER:
     default: 0.0
 AUTIC:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
@@ -5912,22 +5912,22 @@ AUTIC:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -6017,7 +6017,7 @@ DGT_PRG:
     max: 1000000.0
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -6043,7 +6043,7 @@ MOVEPROBE:
     - 'YES'
 BOARD_PRESENCE:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000.0
     default: 0.0
@@ -6083,23 +6083,23 @@ BOARD_PRESENCE:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
 OPENTIC:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -6173,17 +6173,17 @@ OPENTIC:
     max: 1000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -6222,17 +6222,17 @@ OPENTIC:
     - Direct
     - Invert
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ResPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
   CapPar:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -6252,7 +6252,7 @@ CLUSTER_POWER:
     - VL_DYNAMIC
     - PYTHON
   Value:
-    type: FLOAT
+    type: INT
     min: -99999999999.0
     max: 99999999999.0
     default: -99999999999.0
@@ -6261,7 +6261,7 @@ CLUSTER_POWER:
     default: -99999999999.0
 KELVIN:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000.0
     default: 0.0
@@ -6352,12 +6352,12 @@ KELVIN:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
@@ -6368,7 +6368,7 @@ KELVIN:
     default: 0.0
 BARREL:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000000.0
     default: 0.0
@@ -6459,12 +6459,12 @@ BARREL:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
@@ -6475,7 +6475,7 @@ BARREL:
     default: 0.0
 THERMAL:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1000.0
     default: 0.0
@@ -6527,7 +6527,7 @@ THERMAL:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1000.0
     default: 0.0
@@ -6607,32 +6607,32 @@ REL_CL_OFF:
     - 'ON'
     - 'OFF'
   CoilVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   CoilCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   CoilTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   ContactVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   ContactCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ContactTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -6706,32 +6706,32 @@ REL_OP_OFF:
     - 'ON'
     - 'OFF'
   CoilVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   CoilCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   CoilTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   ContactVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   ContactCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ContactTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -6805,32 +6805,32 @@ REL_CL_ON:
     - 'ON'
     - 'OFF'
   CoilVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   CoilCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   CoilTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   ContactVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   ContactCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ContactTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -6904,32 +6904,32 @@ REL_OP_ON:
     - 'ON'
     - 'OFF'
   CoilVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   CoilCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   CoilTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   ContactVoltage:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   ContactCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   ContactTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -7106,12 +7106,12 @@ GATE_NOPW:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
@@ -7147,7 +7147,7 @@ GATE_NOPW:
     type: PIN
     default: -99999999999.0
   MeasValue:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -7204,12 +7204,12 @@ COMPARATOR_NOPW:
     max: 1000000.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
   InCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
@@ -7271,7 +7271,7 @@ COMPARATOR_NOPW:
     - Input Pos.
     - Input Neg.
   PwVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -7282,7 +7282,7 @@ COMPARATOR_NOPW:
     type: PIN
     default: -99999999999.0
   MeasValue:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -7623,7 +7623,7 @@ LEDCHECK_CONF:
     - 'YES'
 ISOLATION_LOW:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1000000000000.0
     default: 0.0
@@ -7635,12 +7635,12 @@ ISOLATION_LOW:
     default: -99999999999.0
 VOLTAGEDIVIDER:
   InVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
   OutVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -7693,18 +7693,18 @@ VOLTAGEDIVIDER:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
   InCurrent:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
 DISCOIL:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -7715,12 +7715,12 @@ DISCOIL:
     type: PIN
     default: -99999999999.0
   Current:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 0.5
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 60.0
     default: 0.0
@@ -7767,17 +7767,17 @@ VI_ADAPTER:
     - 'NO'
     - 'YES'
   Value:
-    type: FLOAT
+    type: INT
     min: -999999999.0
     max: 999999999.0
     default: 0.0
   TolP:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
   TolN:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -7806,7 +7806,7 @@ CLUSTER_IGNR_PW:
     - VL_DYNAMIC
     - PYTHON
   Value:
-    type: FLOAT
+    type: INT
     min: -99999999999.0
     max: 99999999999.0
     default: -99999999999.0
@@ -7815,7 +7815,7 @@ CLUSTER_IGNR_PW:
     default: -99999999999.0
 OPENFIX_CONN:
   Value:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100.0
     default: 0.0
@@ -7889,17 +7889,17 @@ OPENFIX_CONN:
     max: 1000000.0
     default: 0.0
   Volt:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100.0
     default: 0.0
   Frequency:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 100000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -7984,7 +7984,7 @@ CHECK_STUCK_UNK:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8036,7 +8036,7 @@ CHECK_STUCK_UNK:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8146,7 +8146,7 @@ CHECK_STUCK_GND:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8198,7 +8198,7 @@ CHECK_STUCK_GND:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8308,7 +8308,7 @@ CHECK_STUCK_VCC:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8360,7 +8360,7 @@ CHECK_STUCK_VCC:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8470,7 +8470,7 @@ CHECK_STUCK_NC:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8522,7 +8522,7 @@ CHECK_STUCK_NC:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8632,7 +8632,7 @@ CHECK_STUCK_MIX:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8684,7 +8684,7 @@ CHECK_STUCK_MIX:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8794,7 +8794,7 @@ CHECK_STUCK_DIG:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8846,7 +8846,7 @@ CHECK_STUCK_DIG:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -8956,7 +8956,7 @@ CHECK_STUCK_ANA:
     max: 0.5
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -9008,7 +9008,7 @@ CHECK_STUCK_ANA:
     type: PIN
     default: -99999999999.0
   Delay:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -9048,7 +9048,7 @@ LED_SENSOR:
     type: PIN
     default: -99999999999.0
   Time:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 10.0
     default: 0.0
@@ -9132,7 +9132,7 @@ LED_SENSOR:
     - Software
 ALI:
   Value:
-    type: FLOAT
+    type: INT
     min: -0.06
     max: 0.06
     default: 0.0
@@ -9182,7 +9182,7 @@ ALI:
     max: 1000000.0
     default: 0.0
   Time:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 1.0
     default: 0.0
@@ -9200,7 +9200,7 @@ NVL_REMOVE:
     default: ''
 ISOLATION_HIGH:
   Value:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1000000000000.0
     default: 0.0
@@ -9211,7 +9211,7 @@ ISOLATION_HIGH:
     type: PIN
     default: -99999999999.0
   Time:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 60.0
     default: 0.0
@@ -9285,7 +9285,7 @@ PYTHON_ADAPTER:
     default: ''
 POWER_CHECK:
   Value:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -9335,7 +9335,7 @@ POWER_CHECK:
     max: 1000000.0
     default: 0.0
   StrobeTime:
-    type: FLOAT
+    type: INT
     min: -1.0
     max: 1.0
     default: 0.0
@@ -9352,7 +9352,7 @@ OBP:
     type: STRING
     default: ''
   Time:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 60.0
     default: 0.0
@@ -9413,12 +9413,12 @@ LEAKAGE_NET:
     max: 0.5
     default: 0.0
   ValueCurrent:
-    type: FLOAT
+    type: INT
     min: -0.5
     max: 0.5
     default: 0.0
   ValueVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -9428,12 +9428,12 @@ LEAKAGE_NET:
     max: 100.0
     default: 0.0
   MeasTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000000.0
     default: 0.0
   PreTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000000.0
     default: 0.0
@@ -9460,12 +9460,12 @@ LEAKTEST:
     max: 0.5
     default: 0.0
   ValueCurrent:
-    type: FLOAT
+    type: INT
     min: -0.5
     max: 0.5
     default: 0.0
   ValueVolt:
-    type: FLOAT
+    type: INT
     min: -100.0
     max: 100.0
     default: 0.0
@@ -9475,12 +9475,12 @@ LEAKTEST:
     max: 100.0
     default: 0.0
   MeasTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000000.0
     default: 0.0
   PreTime:
-    type: FLOAT
+    type: INT
     min: 0.0
     max: 100000000000.0
     default: 0.0

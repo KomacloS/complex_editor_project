@@ -38,6 +38,8 @@ class ComplexDevice:
     macro: MacroInstance
     pn: str = ""
     alt_pn: str = ""
+    # NEW: multiple alternative PNs carried in-memory for UI; optional
+    aliases: List[str] = field(default_factory=list)
     pin_count: int = 0
     subcomponents: List[SubComponent] = field(default_factory=list)
     id: int | None = None

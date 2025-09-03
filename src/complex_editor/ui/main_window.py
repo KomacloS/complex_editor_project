@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from ..core.app_context import AppContext
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
@@ -137,123 +137,222 @@ class MainWindow(QtWidgets.QMainWindow):
             result[key] = str(v)
         return result
 
-    def _persist_editor_device(self, updated_ui_dev: ComplexDevice, comp_id: int | None):
-        """Persist ComplexEditor result to buffer or MDB, enforcing type safety."""
+    def _persist_editor_device(self, updated_ui_dev, comp_id) -> None:
+        """
+        Persist ComplexDevice to MAIN_DB.mdb via mdb_api with strict typing.
 
-        subs: List[DbSub] = []
-        for sc in updated_ui_dev.subcomponents:
-            fid = self._macro_id_from_name(sc.macro.name) or 0
-            pins: Dict[str, int | str] = {}
-            for label, val in zip(["A", "B", "C", "D"], sc.pins):
-                try:
-                    num = int(val)
-                except (TypeError, ValueError):
-                    num = 0
-                if num > 0:
-                    pins[label] = num
-            xml = params_to_xml(
-                {sc.macro.name: sc.macro.params},
-                encoding="utf-16",
-                schema=ALLOWED_PARAMS,
-            )
-            xml_str = (
-                xml.decode("utf-16")
-                if isinstance(xml, (bytes, bytearray))
-                else str(xml)
-            )
-            pins["S"] = xml_str
-            subs.append(DbSub(None, int(fid), pins=pins))
+        Fixes 22018 by ensuring detCompDesc numeric fields (Value, IDUnit, TolP, TolN, ForceBits)
+        are always numbers, pins A..H are ints (0 for NC), and PinS is a TEXT string.
+        """
 
-        db_dev = DbComplex(comp_id, updated_ui_dev.pn, int(updated_ui_dev.pin_count), subs)
+        # ---------- helpers ----------
+        def _as_int(v, default=0):
+            try:
+                if v is None or v == "":
+                    return int(default)
+                if isinstance(v, bool):
+                    return int(bool(v))
+                return int(v)
+            except Exception:
+                return int(default)
 
-        if (
-            self._buffer_complexes is not None
-            and self._buffer_raw is not None
-            and self._buffer_path is not None
-        ):
-            row = self.list.currentRow()
-            if row < 0 or row >= len(self._buffer_raw):
-                row = len(self._buffer_raw)
-                self._buffer_raw.append({})
-                self._buffer_complexes.append(
-                    EditorComplex(comp_id or 0, "", [], [])
+        def _as_int_or_none(v):
+            if v is None or v == "":
+                return None
+            return _as_int(v)
+
+        def _pin_from_list(lst, idx):
+            try:
+                return _as_int(lst[idx], 0)
+            except Exception:
+                return 0
+
+        def _params_xml_text(macro_name: str, params: dict | None) -> str:
+            # Prefer the project serializer, fall back to minimal XML
+            try:
+                from ..util.macro_xml_translator import params_to_xml  # type: ignore
+                xml = params_to_xml({macro_name: (params or {})}, encoding="utf-16")
+                return xml.decode("utf-16") if isinstance(xml, (bytes, bytearray)) else str(xml)
+            except Exception:
+                pass
+            header = '<?xml version="1.0" encoding="utf-16"?>'
+            if not params:
+                return (
+                    f"{header}\n"
+                    '<R xmlns:xsd="http://www.w3.org/2001/XMLSchema" '
+                    'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n'
+                    "  <Macros/>\n"
+                    "</R>"
                 )
-            raw = self._buffer_raw[row]
-            raw["name"] = updated_ui_dev.pn
-            if updated_ui_dev.alt_pn:
-                raw["alt_pn"] = updated_ui_dev.alt_pn
-            raw["pins"] = [str(i) for i in range(1, updated_ui_dev.pin_count + 1)]
-            raw["subcomponents"] = []
-            for s, sc in zip(subs, updated_ui_dev.subcomponents):
-                a = str(sc.pins[0]) if len(sc.pins) > 0 else ""
-                b = str(sc.pins[1]) if len(sc.pins) > 1 else ""
-                c = str(sc.pins[2]) if len(sc.pins) > 2 else ""
-                d = str(sc.pins[3]) if len(sc.pins) > 3 else ""
-                raw["subcomponents"].append(
-                    {
-                        "function_name": sc.macro.name,
-                        "pins": {
-                            "A": a,
-                            "B": b,
-                            "C": c,
-                            "D": d,
-                            "S": s.pins.get("S"),
-                        },
-                    }
-                )
-            save_buffer(self._buffer_path, self._buffer_raw)
-
-            cx = self._buffer_complexes[row]
-            cx.name = updated_ui_dev.pn
-            cx.pins = [str(i) for i in range(1, updated_ui_dev.pin_count + 1)]
-            cx.subcomponents = [
-                EditorMacro(
-                    sc.macro.name,
-                    {
-                        "A": str(sc.pins[0]),
-                        "B": str(sc.pins[1]),
-                        "C": str(sc.pins[2]),
-                        "D": str(sc.pins[3]),
-                    },
-                    sc.macro.params,
-                )
-                for sc in updated_ui_dev.subcomponents
+            import html
+            esc = lambda x: html.escape(str(x), quote=True)
+            lines = [
+                header,
+                '<R xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">',
+                "  <Macros>",
+                f'    <Macro Name="{esc(macro_name)}">',
             ]
+            for k, v in (params or {}).items():
+                lines.append(f'      <Param Value="{esc(v)}" Name="{esc(k)}" />')
+            lines += ["    </Macro>", "  </Macros>", "</R>"]
+            return "\n".join(lines)
+
+        # ---------- build DB-side dataclasses ----------
+        from ..db.mdb_api import SubComponent as DbSub, ComplexDevice as DbComplex  # type: ignore
+
+        comp_id_i = _as_int_or_none(comp_id)
+
+        subs = []
+        for sc in updated_ui_dev.subcomponents:
+            fid = self._macro_id_from_name(sc.macro.name)
+            if fid is None:
+                raise ValueError(f"Unknown macro/function '{sc.macro.name}' (no IDFunction).")
+            fid_i = _as_int(fid)
+
+            pins_list = getattr(sc, "pins", []) or []
+            pin_vals = {
+                "A": _pin_from_list(pins_list, 0),
+                "B": _pin_from_list(pins_list, 1),
+                "C": _pin_from_list(pins_list, 2),
+                "D": _pin_from_list(pins_list, 3),
+                "E": _pin_from_list(pins_list, 4),
+                "F": _pin_from_list(pins_list, 5),
+                "G": _pin_from_list(pins_list, 6),
+                "H": _pin_from_list(pins_list, 7),
+            }
+            pin_s_text = _params_xml_text(sc.macro.name, getattr(sc.macro, "params", {}))
+
+            # >>> Critical: normalize numeric fields <<<
+            # Match detCompDesc.csv typical defaults seen in your MDB:
+            # Value: 0.0 (DOUBLE), IDUnit: 1 (LONG), TolP: 0.0, TolN: 0.0, ForceBits: 0
+            value_num     = float(getattr(sc.macro, "value", 0.0) or 0.0)
+            id_unit_num   = _as_int(getattr(sc.macro, "id_unit", 1), 1)
+            tol_p_num     = float(getattr(sc.macro, "tol_p", 0.0) or 0.0)
+            tol_n_num     = float(getattr(sc.macro, "tol_n", 0.0) or 0.0)
+            force_bits_num= _as_int(getattr(sc.macro, "force_bits", 0), 0)
+
+            # Build SubComponent compatible with mdb_api.SubComponent._flatten()
+            try:
+                sub = DbSub(
+                    id_sub_component=None,
+                    id_function=fid_i,
+                    value=value_num,
+                    id_unit=id_unit_num,
+                    tol_p=tol_p_num,
+                    tol_n=tol_n_num,
+                    force_bits=force_bits_num,
+                    pins={**pin_vals, "S": pin_s_text or ""},   # TEXT PinS
+                )
+            except TypeError:
+                # Fallback for explicit-field dataclass variants
+                sub = DbSub(
+                    id_sub_component=None,
+                    id_function=fid_i,
+                    value=value_num,
+                    id_unit=id_unit_num,
+                    tol_p=tol_p_num,
+                    tol_n=tol_n_num,
+                    force_bits=force_bits_num,
+                    pin_a=pin_vals["A"], pin_b=pin_vals["B"],
+                    pin_c=pin_vals["C"], pin_d=pin_vals["D"],
+                    pin_e=pin_vals["E"], pin_f=pin_vals["F"],
+                    pin_g=pin_vals["G"], pin_h=pin_vals["H"],
+                    pin_s=pin_s_text or "",
+                )
+
+            subs.append(sub)
+
+        db_dev = DbComplex(
+            id_comp_desc=comp_id_i,
+            name=str(updated_ui_dev.pn).strip(),
+            total_pins=_as_int(getattr(updated_ui_dev, "pin_count", 0)),
+            subcomponents=subs,
+            aliases=getattr(updated_ui_dev, "aliases", []) or [],
+        )
+
+        # ---------- persist ----------
+        assert self.db is not None
+        if comp_id_i is None:
+            self.db.add_complex(db_dev)                        # INSERT
         else:
-            assert self.db is not None
-            if comp_id is None:
-                self.db.add_complex(db_dev)
-            else:
-                self.db.update_complex(comp_id, updated=db_dev)
+            self.db.update_complex(comp_id_i, updated=db_dev)  # UPDATE
+
+        try:
             self.db._conn.commit()
+        except Exception:
+            pass
 
         self._refresh_list()
 
     def _refresh_list(self) -> None:
-        if self._buffer_complexes is not None:
-            rows = self._buffer_complexes
-            self.list.setRowCount(len(rows))
-            for r, cx in enumerate(rows):
-                self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cx.id)))
-                self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(cx.name)))
-                self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(len(cx.subcomponents))))
-            self._apply_filters()
-            return
+        """
+        Reload the complexes table from the MDB and preserve current sort & selection.
+        Sorting works by clicking the "ID" or "Name" header.
+        """
+        t = self.list  # QTableWidget
 
-        # DB mode
-        assert self.db is not None  # for type checkers
-        rows_db = self.db.list_complexes()
-        self.list.setRowCount(len(rows_db))
-        for r, row in enumerate(rows_db):
-            # tolerate either (id, name, subcount) or (id, name, func, subcount)
-            if len(row) == 3:
-                cid, name, nsubs = row
-            else:
-                cid, name, _func, nsubs = row
-            self.list.setItem(r, 0, QtWidgets.QTableWidgetItem(str(cid)))
-            self.list.setItem(r, 1, QtWidgets.QTableWidgetItem(str(name)))
-            self.list.setItem(r, 2, QtWidgets.QTableWidgetItem(str(nsubs)))
-        self._apply_filters()
+        # Remember selection (by ID) and current sort state
+        sel_id = None
+        if t.currentRow() >= 0:
+            try:
+                sel_id = t.item(t.currentRow(), 0).data(QtCore.Qt.ItemDataRole.DisplayRole)
+                sel_id = int(sel_id) if sel_id is not None else None
+            except Exception:
+                sel_id = None
+
+        hh = t.horizontalHeader()
+        sort_col = hh.sortIndicatorSection() if hh else 0
+        sort_ord = hh.sortIndicatorOrder() if hh else QtCore.Qt.SortOrder.AscendingOrder
+
+        # Fetch rows: [(CompID, Name, SubCount), ...]
+        rows = self.db.list_complexes()
+
+        # Refill table with numeric-aware items
+        t.setSortingEnabled(False)
+        t.setRowCount(len(rows))
+
+        for r, (comp_id, name, subcnt) in enumerate(rows):
+            # ID column (numeric sort)
+            id_item = QtWidgets.QTableWidgetItem()
+            id_item.setData(QtCore.Qt.ItemDataRole.DisplayRole, int(comp_id))
+            id_item.setTextAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            id_item.setFlags(id_item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+
+            # Name column (text sort)
+            name_item = QtWidgets.QTableWidgetItem(str(name or ""))
+            name_item.setFlags(name_item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+
+            # Subs column (numeric)
+            subs_item = QtWidgets.QTableWidgetItem()
+            subs_item.setData(QtCore.Qt.ItemDataRole.DisplayRole, int(subcnt or 0))
+            subs_item.setTextAlignment(
+                QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter
+            )
+            subs_item.setFlags(subs_item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEditable)
+
+            t.setItem(r, 0, id_item)
+            t.setItem(r, 1, name_item)
+            t.setItem(r, 2, subs_item)
+
+        # Re-apply sort and selection
+        t.setSortingEnabled(True)
+        t.sortItems(max(0, sort_col), sort_ord)
+
+        # Restore previous selection by ID (if still present)
+        if sel_id is not None:
+            for r in range(t.rowCount()):
+                try:
+                    rid = t.item(r, 0).data(QtCore.Qt.ItemDataRole.DisplayRole)
+                    if int(rid) == int(sel_id):
+                        t.setCurrentCell(r, 0)
+                        break
+                except Exception:
+                    continue
+        elif t.rowCount() > 0:
+            t.setCurrentCell(0, 0)
+
 
     def _refresh_subcomponents_db(self, cid: int) -> None:
         """Fill the right table with a friendly view of subcomponents (DB mode)."""
@@ -442,6 +541,11 @@ class MainWindow(QtWidgets.QMainWindow):
         dev = ComplexDevice(0, [], MacroInstance("", {}))
         dev.id = cid
         dev.pn = getattr(raw, "name", "")
+        # carry DB aliases into the editor
+        try:
+            dev.aliases = list(getattr(raw, "aliases", []) or [])
+        except Exception:
+            dev.aliases = []
         dev.pin_count = getattr(raw, "total_pins", 0)
         dev.subcomponents = []
         for sc in getattr(raw, "subcomponents", []) or []:
@@ -489,10 +593,47 @@ class MainWindow(QtWidgets.QMainWindow):
             self.db._conn.commit()
             self._refresh_list()
 
+    def _setup_sortable_list(self) -> None:
+        """
+        One-time table setup: enable header-click sorting for ID/Name.
+        Assumes self.list is a QTableWidget.
+        """
+        t = self.list  # QTableWidget
+        t.setColumnCount(3)
+        t.setHorizontalHeaderLabels(["ID", "Name", "Subs"])
+        t.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        t.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        t.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        t.verticalHeader().setVisible(False)
+
+        hh = t.horizontalHeader()
+        hh.setSectionsClickable(True)
+        hh.setSortIndicatorShown(True)
+        hh.setStretchLastSection(True)
+
+        # Enable sorting and default to ID ascending
+        t.setSortingEnabled(True)
+        t.sortItems(0, QtCore.Qt.SortOrder.AscendingOrder)
+
+
+
 
 def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:
+    from pathlib import Path
+    from PyQt6 import QtWidgets
+    import sys
+    # If None ever gets passed, fall back to the repo-local asset
+    if mdb_file is None:
+        mdb_file = Path(__file__).resolve().parents[1] / "assets" / "MAIN_DB.mdb"
+    print(f"[complex_editor] MAIN_DB path: {mdb_file.resolve()}")
     app = QtWidgets.QApplication(sys.argv)
     win = MainWindow(mdb_path=mdb_file, buffer_path=buffer_path)
+    try:
+        win.setWindowTitle(f"Complex Editor — {mdb_file.resolve()}")
+    except Exception:
+        pass
     win.resize(1100, 600)
     win.show()
     sys.exit(app.exec())
+
+

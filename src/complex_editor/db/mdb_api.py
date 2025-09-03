@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple, Union
 
 import pyodbc
+import re
 
 # ─── schema constants ────────────────────────────────────────────────
 DRIVER    = r"{Microsoft Access Driver (*.mdb, *.accdb)}"
@@ -33,6 +34,21 @@ NAME_COL  = "Name"
 
 # pinnable columns order preference
 PIN_COLUMNS = [f"Pin{c}" for c in "ABCDEFGH"] + ["PinS"]
+
+# alias table
+ALIAS_T   = "tabCompAlias"
+# heuristic for foreign key discovery within alias table
+FK_REGEX  = re.compile(r"id.*comp", re.I)
+
+
+def _clean(val):
+    if isinstance(val, bytes):
+        for enc in ("utf-16-le", "utf-16-be", "utf-8", "cp1252", "latin-1"):
+            try:
+                return val.decode(enc)
+            except UnicodeDecodeError:
+                continue
+    return val
 
 
 # ─── simple domain objects ───────────────────────────────────────────
@@ -68,6 +84,8 @@ class ComplexDevice:
     name: str
     total_pins: int
     subcomponents: List[SubComponent]
+    # list of alternative PNs (can be empty)
+    aliases: List[str] | None = None
 
 
 # ─── main API class ──────────────────────────────────────────────────
@@ -100,6 +118,92 @@ class MDB:
     # ── utility ----------------------------------------------------
     def _cur(self):
         return self._conn.cursor()
+
+    # ------------------------------------------------------------ utils
+    def _alias_schema(self, cur):
+        """
+        Return (fk_col, alias_col, pk_col or None) for tabCompAlias.
+        Heuristics:
+          • FK  : exact 'IDCompDesc' if present, else first matching FK_REGEX
+          • ALIAS: first column matching ('Alias','AltPN','Alternative','PN','PartNumber','Name') that is not FK/PK
+          • PK  : first column that looks like an auto id: startswith 'ID' and contains 'Alias'/'Alt'
+        Raises if table not found or ambiguous.
+        """
+        try:
+            cur.execute(f"SELECT TOP 1 * FROM {ALIAS_T}")
+        except Exception as e:
+            raise RuntimeError(f"Alias table '{ALIAS_T}' not found: {e}")
+
+        cols = [d[0] for d in cur.description]
+
+        # FK column
+        fk_col = PK_MASTER if PK_MASTER in cols else None
+        if not fk_col:
+            fks = [c for c in cols if FK_REGEX.match(c or "")]
+            fk_col = fks[0] if fks else None
+        if not fk_col:
+            raise RuntimeError(f"Could not find FK column to {MASTER_T} in {ALIAS_T}")
+
+        # PK (optional)
+        pk_candidates = [
+            c for c in cols if str(c).lower().startswith("id") and ("alias" in str(c).lower() or "alt" in str(c).lower())
+        ]
+        pk_col = pk_candidates[0] if pk_candidates else None
+
+        # Alias text column
+        preferred = [
+            "Alias",
+            "AliasPN",
+            "AltPN",
+            "AlternativePN",
+            "AltPart",
+            "PN",
+            "PartNumber",
+            "AltName",
+            "Name",
+        ]
+        alias_col = None
+        for name in preferred:
+            if name in cols and name not in (fk_col, pk_col):
+                alias_col = name
+                break
+        if not alias_col:
+            rest = [c for c in cols if c not in (fk_col, pk_col)]
+            alias_col = rest[0] if rest else None
+        if not alias_col:
+            raise RuntimeError(f"Could not identify alias text column in {ALIAS_T}")
+
+        return fk_col, alias_col, pk_col
+
+    # ------------------------------------------------------- alias API
+    def get_aliases(self, comp_id: int) -> List[str]:
+        """Return all alternative PNs (aliases) for a complex."""
+        cur = self._cur()
+        fk_col, alias_col, _ = self._alias_schema(cur)
+        cur.execute(
+            f"SELECT [{alias_col}] FROM {ALIAS_T} WHERE [{fk_col}]=? ORDER BY [{alias_col}]",
+            comp_id,
+        )
+        return [_clean(r[0]).strip() for r in cur.fetchall() if (r and r[0] not in (None, ""))]
+
+    def set_aliases(self, comp_id: int, aliases: List[str]):
+        """
+        Replace aliases for the complex with the provided list.
+        Aliases are trimmed; blanks/duplicates are ignored.
+        """
+        aliases = [a.strip() for a in (aliases or []) if a and a.strip()]
+        aliases = sorted(dict.fromkeys(aliases))  # unique, stable order
+
+        cur = self._cur()
+        fk_col, alias_col, _ = self._alias_schema(cur)
+        cur.execute(f"DELETE FROM {ALIAS_T} WHERE [{fk_col}]=?", comp_id)
+        if aliases:
+            cols_sql = f"[{fk_col}],[{alias_col}]"
+            qm_sql = "?,?"
+            for a in aliases:
+                cur.execute(
+                    f"INSERT INTO {ALIAS_T} ({cols_sql}) VALUES ({qm_sql})", comp_id, _clean(a)
+                )
 
     # ── lookup helpers --------------------------------------------
     def list_complexes(self) -> list[tuple[int, str, int]]:
@@ -152,7 +256,7 @@ class MDB:
         if not row:
             raise KeyError(f"Complex ID {comp_id} not found")
         master_cols = [d[0] for d in cur.description]
-        m = dict(zip(master_cols, row))
+        m = {k: _clean(v) for k, v in dict(zip(master_cols, row)).items()}
 
         cur.execute(
             f"SELECT * FROM {DETAIL_T} WHERE {PK_MASTER}=? ORDER BY {PK_DETAIL}",
@@ -161,7 +265,7 @@ class MDB:
         det_cols = [d[0] for d in cur.description]
         subs = []
         for r in cur.fetchall():
-            d = dict(zip(det_cols, r))
+            d = {k: _clean(v) for k, v in dict(zip(det_cols, r)).items()}
             pins = {
                 c[3:]: d[c]
                 for c in PIN_COLUMNS
@@ -179,11 +283,24 @@ class MDB:
                     pins or None,
                 )
             )
-        return ComplexDevice(m[PK_MASTER], m[NAME_COL], m.get("TotalPinNumber", 0), subs)
+        # aliases (alternative PNs)
+        try:
+            aliases = self.get_aliases(comp_id)
+        except RuntimeError:
+            aliases = []
+
+        return ComplexDevice(m[PK_MASTER], m[NAME_COL], m.get("TotalPinNumber", 0), subs, aliases)
 
     # ── creators ---------------------------------------------------
     def create_complex(self, cx: ComplexDevice) -> int:
         cur = self._cur()
+
+        # Optional but safe: nudge master PK to MAX+1 (prevents odd jumps)
+        try:
+            self._reseed_to_max_plus_one(cur, MASTER_T, PK_MASTER)
+        except Exception:
+            pass
+
         cur.execute(
             f"INSERT INTO {MASTER_T} (Name, TotalPinNumber) VALUES (?,?)",
             cx.name,
@@ -192,9 +309,21 @@ class MDB:
         cur.execute("SELECT @@IDENTITY")
         new_id = int(cur.fetchone()[0])
 
-        for sub in cx.subcomponents:
-            self._insert_sub(cur, new_id, sub)
+        if cx.subcomponents:
+            # Optional: nudge detail PK too before the batch insert
+            try:
+                self._reseed_to_max_plus_one(cur, DETAIL_T, PK_DETAIL)
+            except Exception:
+                pass
+            for sub in cx.subcomponents:
+                self._insert_sub(cur, new_id, sub)
+
+        # write aliases if provided
+        if getattr(cx, "aliases", None):
+            self.set_aliases(new_id, cx.aliases or [])
+
         return new_id
+
 
     def duplicate_complex(self, src_id: int, new_name: str) -> int:
         """Deep-copy master + sub rows.  Returns new master ID."""
@@ -211,28 +340,133 @@ class MDB:
         """
         return self.create_complex(cx)
 
+    def _reseed_to_max_plus_one(self, cur, table: str, col: str) -> None:
+        """
+        Set AutoNumber seed to MAX(col)+1 for *table*. Safe no-op on failure.
+        This does NOT change existing data; it only nudges the counter.
+        """
+        cur.execute(f"SELECT MAX({col}) AS mx FROM {table}")
+        row = cur.fetchone()
+        mx = int(row.mx or 0)
+        seed = mx + 1
+        try:
+            cur.execute(f"ALTER TABLE {table} ALTER COLUMN {col} COUNTER ({seed}, 1)")
+        except Exception:
+            # Some drivers or states may not allow reseeding — ignore quietly.
+            pass
+        
+    def _update_sub(self, cur, comp_id: int, sub_id: int, sub: SubComponent) -> None:
+        """
+        UPDATE a detCompDesc row while preserving its IDSubComponent.
+        Only columns present in `sub` are touched; others remain as-is.
+        """
+        # Bracket column names to avoid Access reserved words issues (e.g., Value)
+        set_cols = [
+            f"[IDFunction] = ?",
+            f"[Value] = ?",
+            f"[IDUnit] = ?",
+            f"[TolP] = ?",
+            f"[TolN] = ?",
+            f"[ForceBits] = ?",
+        ]
+        set_vals = [
+            int(sub.id_function),
+            sub.value,
+            None if sub.id_unit is None else int(sub.id_unit),
+            None if sub.tol_p   is None else float(sub.tol_p),
+            None if sub.tol_n   is None else float(sub.tol_n),
+            None if sub.force_bits is None else int(sub.force_bits),
+        ]
+
+        # Pins: accept whatever the caller provided (A..H numeric, S may be str/bytes)
+        pins = sub.pins or {}
+        for name, val in pins.items():
+            key = name.upper().strip()
+            if key not in set(list("ABCDEFGH") + ["S"]):
+                raise ValueError(f"Illegal pin '{name}'")
+            colname = f"Pin{key}"
+            set_cols.append(f"[{colname}] = ?")
+            set_vals.append(val)
+
+        sql = (
+            f"UPDATE {DETAIL_T} SET {', '.join(set_cols)} "
+            f"WHERE [{PK_MASTER}] = ? AND [{PK_DETAIL}] = ?"
+        )
+        set_vals.extend([int(comp_id), int(sub_id)])
+        cur.execute(sql, *set_vals)
+
+
     # ── modifiers --------------------------------------------------
     def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
-        """Update a complex either via structured ``ComplexDevice`` or raw fields."""
-
+        """
+        Update a complex. If `updated` is provided:
+        • UPDATE master row (name, total pins)
+        • UPDATE overlapping detail rows *in place* (preserve IDSubComponent)
+        • INSERT any new rows (optionally reseeding to MAX+1 first)
+        • DELETE surplus rows
+        If `fields` are provided (and `updated` is None), behave as before.
+        """
         cur = self._cur()
-        if updated is not None:
-            cur.execute(
-                f"UPDATE {MASTER_T} SET Name=?, TotalPinNumber=? WHERE {PK_MASTER}=?",
-                updated.name,
-                updated.total_pins,
-                comp_id,
-            )
-            cur.execute(f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=?", comp_id)
-            for sub in updated.subcomponents:
-                self._insert_sub(cur, comp_id, sub)
+        aliases_from_fields = fields.pop("aliases", None)
+
+        # Raw field update path (unchanged)
+        if updated is None:
+            if not fields:
+                # Still allow alias-only updates
+                if aliases_from_fields is not None:
+                    self.set_aliases(comp_id, aliases_from_fields)
+                return
+            sql = ", ".join(f"[{k}]=?" for k in fields)
+            vals = list(fields.values()) + [comp_id]
+            cur.execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
+            if aliases_from_fields is not None:
+                self.set_aliases(comp_id, aliases_from_fields)
             return
 
-        if not fields:
-            return
-        sql = ", ".join(f"[{k}]=?" for k in fields)
-        vals = list(fields.values()) + [comp_id]
-        cur.execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
+        # 1) Update master
+        cur.execute(
+            f"UPDATE {MASTER_T} SET Name=?, TotalPinNumber=? WHERE {PK_MASTER}=?",
+            updated.name, int(updated.total_pins), int(comp_id)
+        )
+
+        # 2) Fetch existing detail IDs (stable order)
+        cur.execute(
+            f"SELECT {PK_DETAIL} FROM {DETAIL_T} WHERE {PK_MASTER}=? ORDER BY {PK_DETAIL} ASC",
+            int(comp_id),
+        )
+        existing_ids = [int(r[0]) for r in cur.fetchall()]
+        new_subs = list(updated.subcomponents or [])
+
+        n_exist = len(existing_ids)
+        n_new   = len(new_subs)
+        n_upd   = min(n_exist, n_new)
+
+        # 3) UPDATE overlapping rows in place (preserve PKs)
+        for i in range(n_upd):
+            self._update_sub(cur, comp_id, existing_ids[i], new_subs[i])
+
+        # 4) INSERT any additional rows
+        if n_new > n_exist:
+            try:
+                self._reseed_to_max_plus_one(cur, DETAIL_T, PK_DETAIL)
+            except Exception:
+                pass
+            for sub in new_subs[n_exist:]:
+                self._insert_sub(cur, comp_id, sub)
+
+        # 5) DELETE any surplus rows
+        if n_exist > n_new:
+            extra_ids = existing_ids[n_new:]
+            qmarks = ",".join("?" for _ in extra_ids)
+            cur.execute(
+                f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=? AND {PK_DETAIL} IN ({qmarks})",
+                int(comp_id), *extra_ids
+            )
+
+        # 6) Update aliases if provided on object
+        if getattr(updated, "aliases", None) is not None:
+            self.set_aliases(comp_id, updated.aliases or [])
+
 
     def delete_complex(self, comp_id: int, cascade: bool = True):
         cur = self._cur()
@@ -318,3 +552,4 @@ if __name__ == "__main__":  # pragma: no cover
         elif args.cmd == "dup":
             nid = db.duplicate_complex(args.src_id, args.new_name)
             print(f"Duplicated → ID {nid}")
+

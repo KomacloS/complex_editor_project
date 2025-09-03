@@ -1,0 +1,226 @@
+*** Begin Patch
+*** Update File: src/complex_editor/db/mdb_api.py
+@@
+-from dataclasses import dataclass
++from dataclasses import dataclass
+ from pathlib import Path
+ from typing import Optional, Dict, List, Any, Tuple, Union
+ 
+ import pyodbc
++import re
+@@
+ MASTER_T  = "tabCompDesc"
+ DETAIL_T  = "detCompDesc"
+ FUNC_T    = "tabFunction"
+ 
+ PK_MASTER = "IDCompDesc"
+ PK_DETAIL = "IDSubComponent"
+ 
+ NAME_COL  = "Name"
+ 
+ # pinnable columns order preference
+ PIN_COLUMNS = [f"Pin{c}" for c in "ABCDEFGH"] + ["PinS"]
++
++# alias table
++ALIAS_T   = "tabCompAlias"
++# heuristic for foreign key discovery within alias table
++FK_REGEX  = re.compile(r"id.*comp", re.I)
+@@
+ @dataclass
+ class ComplexDevice:
+     id_comp_desc: Optional[int]
+     name: str
+     total_pins: int
+     subcomponents: List[SubComponent]
++    # list of alternative PNs (can be empty)
++    aliases: List[str] | None = None
+@@
+ class MDB:
+@@
+     def _cur(self):
+         return self._conn.cursor()
++
++    # ------------------------------------------------------------ utils
++    def _alias_schema(self, cur):
++        """
++        Return (fk_col, alias_col, pk_col or None) for tabCompAlias.
++        Heuristics:
++          • FK  : exact 'IDCompDesc' if present, else first matching FK_REGEX
++          • ALIAS: first column matching ('Alias','AltPN','Alternative','PN','PartNumber','Name') that is not FK/PK
++          • PK  : first column that looks like an auto id: startswith 'ID' and contains 'Alias'/'Alt'
++        Raises if table not found or ambiguous.
++        """
++        try:
++            cur.execute(f"SELECT TOP 1 * FROM {ALIAS_T}")
++        except Exception as e:
++            raise RuntimeError(f"Alias table '{ALIAS_T}' not found: {e}")
++
++        cols = [d[0] for d in cur.description]
++
++        # FK column
++        fk_col = PK_MASTER if PK_MASTER in cols else None
++        if not fk_col:
++            fks = [c for c in cols if FK_REGEX.match(c or "")]
++            fk_col = fks[0] if fks else None
++        if not fk_col:
++            raise RuntimeError(f"Could not find FK column to {MASTER_T} in {ALIAS_T}")
++
++        # PK (optional)
++        pk_candidates = [
++            c for c in cols if str(c).lower().startswith("id") and ("alias" in str(c).lower() or "alt" in str(c).lower())
++        ]
++        pk_col = pk_candidates[0] if pk_candidates else None
++
++        # Alias text column
++        preferred = [
++            "Alias",
++            "AliasPN",
++            "AltPN",
++            "AlternativePN",
++            "AltPart",
++            "PN",
++            "PartNumber",
++            "AltName",
++            "Name",
++        ]
++        alias_col = None
++        for name in preferred:
++            if name in cols and name not in (fk_col, pk_col):
++                alias_col = name
++                break
++        if not alias_col:
++            rest = [c for c in cols if c not in (fk_col, pk_col)]
++            alias_col = rest[0] if rest else None
++        if not alias_col:
++            raise RuntimeError(f"Could not identify alias text column in {ALIAS_T}")
++
++        return fk_col, alias_col, pk_col
++
++    # ------------------------------------------------------- alias API
++    def get_aliases(self, comp_id: int) -> List[str]:
++        """Return all alternative PNs (aliases) for a complex."""
++        cur = self._cur()
++        fk_col, alias_col, _ = self._alias_schema(cur)
++        cur.execute(
++            f"SELECT [{alias_col}] FROM {ALIAS_T} WHERE [{fk_col}]=? ORDER BY [{alias_col}]",
++            comp_id,
++        )
++        return [_clean(r[0]).strip() for r in cur.fetchall() if (r and r[0] not in (None, ""))]
++
++    def set_aliases(self, comp_id: int, aliases: List[str]):
++        """
++        Replace aliases for the complex with the provided list.
++        Aliases are trimmed; blanks/duplicates are ignored.
++        """
++        aliases = [a.strip() for a in (aliases or []) if a and a.strip()]
++        aliases = sorted(dict.fromkeys(aliases))  # unique, stable order
++
++        cur = self._cur()
++        fk_col, alias_col, _ = self._alias_schema(cur)
++        cur.execute(f"DELETE FROM {ALIAS_T} WHERE [{fk_col}]=?", comp_id)
++        if aliases:
++            cols_sql = f"[{fk_col}],[{alias_col}]"
++            qm_sql = "?,?"
++            for a in aliases:
++                cur.execute(
++                    f"INSERT INTO {ALIAS_T} ({cols_sql}) VALUES ({qm_sql})", comp_id, _clean(a)
++                )
+@@
+-    def get_complex(self, comp_id: int) -> ComplexDevice:
++    def get_complex(self, comp_id: int) -> ComplexDevice:
+         cur = self._cur()
+         cur.execute(
+             f"SELECT * FROM {MASTER_T} WHERE {PK_MASTER}=?", comp_id
+         )
+         row = cur.fetchone()
+         if not row:
+             raise KeyError(f"Complex ID {comp_id} not found")
+         master_cols = [d[0] for d in cur.description]
+-        m = dict(zip(master_cols, row))
++        m = {k: _clean(v) for k, v in dict(zip(master_cols, row)).items()}
+@@
+-        det_cols = [d[0] for d in cur.description]
++        det_cols = [d[0] for d in cur.description]
+         subs = []
+         for r in cur.fetchall():
+-            d = dict(zip(det_cols, r))
++            d = {k: _clean(v) for k, v in dict(zip(det_cols, r)).items()}
+             pins = {
+                 c[3:]: d[c]
+                 for c in PIN_COLUMNS
+                 if c in d and d[c] not in (None, 0, "")
+             }
+@@
+-                )
+-            )
+-        return ComplexDevice(m[PK_MASTER], m[NAME_COL], m.get("TotalPinNumber", 0), subs)
++                )
++            )
++
++        # aliases (alternative PNs)
++        try:
++            aliases = self.get_aliases(comp_id)
++        except RuntimeError:
++            aliases = []
++
++        return ComplexDevice(m[PK_MASTER], m[NAME_COL], m.get("TotalPinNumber", 0), subs, aliases)
+@@
+     def create_complex(self, cx: ComplexDevice) -> int:
+         cur = self._cur()
+@@
+         if cx.subcomponents:
+             # Optional: nudge detail PK too before the batch insert
+             try:
+                 self._reseed_to_max_plus_one(cur, DETAIL_T, PK_DETAIL)
+             except Exception:
+                 pass
+             for sub in cx.subcomponents:
+                 self._insert_sub(cur, new_id, sub)
+-
+-        return new_id
++
++        # write aliases if provided
++        if getattr(cx, "aliases", None):
++            self.set_aliases(new_id, cx.aliases or [])
++
++        return new_id
+@@
+-    def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
++    def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
+         """
+         Update a complex. If updated is provided:
+@@
+-        cur = self._cur()
++        cur = self._cur()
++        aliases_from_fields = fields.pop("aliases", None)
+@@
+-        if updated is None:
++        if updated is None:
+             if not fields:
+-                return
++                # Still allow alias-only updates
++                if aliases_from_fields is not None:
++                    self.set_aliases(comp_id, aliases_from_fields)
++                return
+             sql = ", ".join(f"[{k}]=?" for k in fields)
+             vals = list(fields.values()) + [comp_id]
+             cur.execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
+-            return
++            if aliases_from_fields is not None:
++                self.set_aliases(comp_id, aliases_from_fields)
++            return
+@@
+-        # 5) DELETE any surplus rows
++        # 5) DELETE any surplus rows
+         if n_exist > n_new:
+             extra_ids = existing_ids[n_new:]
+             qmarks = ",".join("?" for _ in extra_ids)
+             cur.execute(
+                 f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=? AND {PK_DETAIL} IN ({qmarks})",
+                 int(comp_id), *extra_ids
+             )
++
++        # 6) Update aliases if provided on object
++        if getattr(updated, "aliases", None) is not None:
++            self.set_aliases(comp_id, updated.aliases or [])
+*** End Patch
