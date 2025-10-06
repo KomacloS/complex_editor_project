@@ -24,7 +24,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--config",
         type=Path,
         default=None,
-        help="Path to complex_editor.yml (defaults to standard loader search).",
+        help=(
+            "Path to complex_editor.yml (defaults to internal/config or other"
+            " standard search locations)."
+        ),
     )
     parser.add_argument("--host", type=str, default=None, help="Override bridge host")
     parser.add_argument("--port", type=int, default=None, help="Override bridge port")

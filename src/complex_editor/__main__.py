@@ -5,8 +5,15 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__
-from .config.loader import CONFIG_ENV_VAR, load_config
+if __package__ in (None, ""):
+    PACKAGE_ROOT = Path(__file__).resolve().parent
+    sys.path.insert(0, str(PACKAGE_ROOT.parent))
+
+    from complex_editor import __version__  # type: ignore
+    from complex_editor.config.loader import CONFIG_ENV_VAR, load_config  # type: ignore
+else:
+    from . import __version__
+    from .config.loader import CONFIG_ENV_VAR, load_config
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
