@@ -101,6 +101,8 @@ def _make_client(handler) -> TestClient:
         auth_token="token",
         wizard_handler=handler,
         mdb_factory=factory,
+        bridge_host="127.0.0.1",
+        bridge_port=8765,
     )
     return TestClient(app)
 
@@ -120,7 +122,10 @@ def test_bridge_health_and_search_and_detail():
 
     health = client.get("/health", headers=_auth())
     assert health.status_code == 200
-    assert health.json()["ok"] is True
+    payload = health.json()
+    assert payload["ok"] is True
+    assert payload["port"] == 8765
+    assert payload["auth_required"] is True
 
     search = client.get("/complexes/search", params={"pn": "PN"}, headers=_auth())
     assert search.status_code == 200
@@ -167,3 +172,18 @@ def test_bridge_create_complex_cancelled():
     )
     assert resp.status_code == 409
     assert resp.json()["detail"] == "cancelled"
+
+
+def test_bridge_shutdown_endpoint_sets_flag():
+    triggered = {"value": False}
+
+    def handler(pn: str, aliases: list[str] | None) -> BridgeCreateResult:
+        return BridgeCreateResult(created=False, reason="cancelled")
+
+    client = _make_client(handler)
+    client.app.state.trigger_shutdown = lambda: triggered.__setitem__("value", True)
+
+    resp = client.post("/admin/shutdown", headers=_auth())
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert triggered["value"] is True

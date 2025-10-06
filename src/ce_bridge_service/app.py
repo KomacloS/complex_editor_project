@@ -35,11 +35,16 @@ def create_app(
     auth_token: str | None = None,
     wizard_handler: Optional[Callable[[str, Optional[List[str]]], BridgeCreateResult]] = None,
     mdb_factory: Optional[Callable[[Path], MDB]] = None,
+    bridge_host: str | None = None,
+    bridge_port: int | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application for the bridge."""
 
     token = (auth_token or "").strip()
     app = FastAPI(title="Complex Editor Bridge", version=__version__)
+    app.state.bridge_host = bridge_host or ""
+    app.state.bridge_port = int(bridge_port) if bridge_port is not None else 0
+    app.state.trigger_shutdown = lambda: None
     factory = mdb_factory or MDB
 
     async def _require_auth(request: Request) -> None:
@@ -169,7 +174,14 @@ def create_app(
         """Liveness probe."""
 
         mdb_path = str(get_mdb_path())
-        return HealthResponse(ok=True, version=__version__, db_path=mdb_path)
+        return HealthResponse(
+            ok=True,
+            version=__version__,
+            db_path=mdb_path,
+            host=str(app.state.bridge_host or ""),
+            port=int(app.state.bridge_port or 0),
+            auth_required=bool(token),
+        )
 
     @app.get("/complexes/search", response_model=List[ComplexSummary])
     async def search_complexes(
@@ -180,6 +192,17 @@ def create_app(
         if not pn.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pn must not be empty")
         return _search(pn.strip(), limit)
+
+    @app.post("/admin/shutdown")
+    async def shutdown(request: Request, _: None = Depends(_require_auth)) -> dict[str, bool]:
+        trigger = getattr(request.app.state, "trigger_shutdown", None)
+        if not callable(trigger):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Shutdown handler unavailable",
+            )
+        trigger()
+        return {"ok": True}
 
     @app.get("/complexes/{comp_id}", response_model=ComplexDetail)
     async def get_complex(comp_id: int, _: None = Depends(_require_auth)) -> ComplexDetail:
