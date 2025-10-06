@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -6,17 +6,22 @@ from typing import Any, Dict, List, Optional
 
 from PyQt6 import QtCore, QtWidgets
 
+from ..config.loader import BridgeConfig
 from ..core.app_context import AppContext
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
 from ..db.mdb_api import MDB, SubComponent as DbSub, ComplexDevice as DbComplex
 from ..db import schema_introspect
-from .complex_editor import ComplexEditor
-from .adapters import EditorComplex, EditorMacro
-from .buffer_loader import load_editor_complexes_from_buffer
-from .buffer_persistence import load_buffer, save_buffer
+from ..param_spec import ALLOWED_PARAMS
 from ..util.macro_xml_translator import params_to_xml, xml_to_params_tolerant
 from ..util.rules_loader import get_learned_rules
-from ..param_spec import ALLOWED_PARAMS
+from .adapters import EditorComplex, EditorMacro
+from .bridge_controller import BridgeController, QtInvoker
+from .buffer_loader import load_editor_complexes_from_buffer
+from .buffer_persistence import load_buffer, save_buffer
+from .complex_editor import ComplexEditor
+from .settings_dialog import IntegrationSettingsDialog
+
+from ce_bridge_service.types import BridgeCreateResult
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -27,10 +32,16 @@ class MainWindow(QtWidgets.QMainWindow):
         mdb_path: Optional[Path] = None,
         parent: Any | None = None,
         buffer_path: Optional[Path] = None,
+        ctx: AppContext | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Complex View")
-        self.ctx = AppContext()
+        self.ctx = ctx or AppContext()
+        self._bridge_invoker = QtInvoker()
+        self._bridge_controller = BridgeController(
+            lambda: self.ctx.current_db_path(),
+            self._bridge_invoker,
+        )
         self.db: Optional[MDB] = None
         self._buffer_complexes: List[EditorComplex] | None = None
         self._buffer_raw: List[dict] | None = None
@@ -41,9 +52,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._buffer_raw = load_buffer(self._buffer_path)
             self._buffer_complexes = load_editor_complexes_from_buffer(buffer_path)
         else:
-            if mdb_path is None:
-                raise ValueError("mdb_path must be provided when no buffer is given")
-            self.db = self.ctx.open_main_db(mdb_path)
+            target_path = Path(mdb_path) if mdb_path is not None else self.ctx.current_db_path()
+            self.db = self.ctx.open_main_db(target_path, create_if_missing=True)
 
         # cache of {IDFunction -> Name}
         self._func_map: Dict[int, str] = {}
@@ -104,7 +114,10 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self.sub_table)
         self.setCentralWidget(container)
 
+        self._init_menu()
         self._refresh_list()
+        self._apply_bridge_config()
+        self._update_window_title()
 
     # ------------------------------------------------------------------ helpers
     def _ensure_func_map(self) -> None:
@@ -137,12 +150,17 @@ class MainWindow(QtWidgets.QMainWindow):
             result[key] = str(v)
         return result
 
-    def _persist_editor_device(self, updated_ui_dev, comp_id) -> None:
+    def _persist_editor_device(self, updated_ui_dev, comp_id) -> int | None:
         """
         Persist ComplexDevice to MAIN_DB.mdb via mdb_api with strict typing.
 
         Fixes 22018 by ensuring detCompDesc numeric fields (Value, IDUnit, TolP, TolN, ForceBits)
         are always numbers, pins A..H are ints (0 for NC), and PinS is a TEXT string.
+
+        Returns
+        -------
+        int | None
+            The database ID of the persisted complex.
         """
 
         # ---------- helpers ----------
@@ -273,7 +291,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # ---------- persist ----------
         assert self.db is not None
         if comp_id_i is None:
-            self.db.add_complex(db_dev)                        # INSERT
+            comp_id_i = self.db.add_complex(db_dev)            # INSERT
         else:
             self.db.update_complex(comp_id_i, updated=db_dev)  # UPDATE
 
@@ -283,6 +301,7 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
         self._refresh_list()
+        return comp_id_i
 
     def _refresh_list(self) -> None:
         """
@@ -352,6 +371,92 @@ class MainWindow(QtWidgets.QMainWindow):
                     continue
         elif t.rowCount() > 0:
             t.setCurrentCell(0, 0)
+
+
+    # ---------------------------------------------------------------- settings
+    def _init_menu(self) -> None:
+        menubar = self.menuBar()
+        settings_menu = menubar.addMenu("&Settings")
+        integration_action = settings_menu.addAction("Integration…")
+        integration_action.triggered.connect(self._open_integration_settings)
+        self._settings_action = integration_action
+
+    def _open_integration_settings(self) -> None:
+        dialog = IntegrationSettingsDialog(
+            self.ctx,
+            is_bridge_running=self._is_bridge_running,
+            start_bridge=self._start_bridge,
+            stop_bridge=self._stop_bridge,
+            client_snippet=self._bridge_client_snippet,
+            parent=self,
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.db = self.ctx.db
+            self._func_map.clear()
+            if self.db is not None and self._buffer_complexes is None:
+                self._refresh_list()
+            self._update_window_title()
+            self._apply_bridge_config()
+
+    def _apply_bridge_config(self) -> None:
+        cfg = self.ctx.config.bridge
+        if not cfg.enabled:
+            self._bridge_controller.stop()
+            return
+        if not self.ctx.current_db_path().exists():
+            return
+        self._bridge_controller.start(cfg, self._bridge_wizard_handler)
+
+    def _is_bridge_running(self) -> bool:
+        return self._bridge_controller.is_running()
+
+    def _start_bridge(self, cfg: BridgeConfig) -> bool:
+        return self._bridge_controller.start(cfg, self._bridge_wizard_handler)
+
+    def _stop_bridge(self) -> None:
+        self._bridge_controller.stop()
+
+    def _bridge_client_snippet(self, cfg: BridgeConfig) -> str:
+        return self._bridge_controller.snippet(cfg)
+
+    def _bridge_wizard_handler(self, pn: str, aliases: Optional[list[str]]) -> BridgeCreateResult:
+        if self.db is None:
+            return BridgeCreateResult(created=False, reason="database unavailable")
+
+        cursor = self.db._conn.cursor()
+        try:
+            macro_map = schema_introspect.discover_macro_map(cursor) or {}
+        except Exception:
+            macro_map = {}
+
+        editor = ComplexEditor(macro_map)
+        prefill = ComplexDevice(0, [], MacroInstance("", {}))
+        prefill.pn = pn.strip()
+        prefill.aliases = [a.strip() for a in (aliases or []) if a and a.strip()]
+        prefill.pin_count = 0
+        editor.load_device(prefill)
+
+        if editor.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return BridgeCreateResult(created=False, reason="cancelled")
+
+        updated = editor.build_device()
+        new_id = self._persist_editor_device(updated, comp_id=None)
+        if new_id is None:
+            return BridgeCreateResult(created=False, reason="failed to persist")
+        db_path = str(self.ctx.current_db_path())
+        return BridgeCreateResult(created=True, comp_id=int(new_id), db_path=db_path)
+
+    def _update_window_title(self) -> None:
+        try:
+            self.setWindowTitle(f"Complex Editor - {self.ctx.current_db_path()}")
+        except Exception:
+            pass
+
+    def closeEvent(self, event):  # type: ignore[override]
+        try:
+            self._bridge_controller.stop()
+        finally:
+            super().closeEvent(event)
 
 
     def _refresh_subcomponents_db(self, cid: int) -> None:
@@ -618,22 +723,90 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
-def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:
-    from pathlib import Path
+def _ensure_database_available(ctx: AppContext, parent: QtWidgets.QWidget | None = None) -> Path:
     from PyQt6 import QtWidgets
+
+    while True:
+        candidate = ctx.current_db_path()
+        if candidate.exists():
+            return candidate
+        msg = QtWidgets.QMessageBox(parent)
+        msg.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Access Database Required")
+        msg.setText(
+            "The configured Access database could not be found.
+"
+            "Select an existing file or create a new database from the template."
+        )
+        select_btn = msg.addButton("Select Existing...", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+        create_btn = msg.addButton("Create from Template...", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+        quit_btn = msg.addButton("Quit", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked is quit_btn:
+            raise SystemExit(0)
+        if clicked is select_btn:
+            file_name, _ = QtWidgets.QFileDialog.getOpenFileName(
+                parent,
+                "Select Access Database",
+                str(candidate.parent if candidate.parent.exists() else Path.home()),
+                "Access Database (*.mdb *.accdb);;All files (*)",
+            )
+            if not file_name:
+                continue
+            try:
+                ctx.update_mdb_path(Path(file_name), create_if_missing=False)
+                ctx.persist_config()
+                return ctx.current_db_path()
+            except FileNotFoundError:
+                QtWidgets.QMessageBox.warning(
+                    parent,
+                    "File Not Found",
+                    f"The selected file does not exist\n{file_name}",
+                )
+        elif clicked is create_btn:
+            file_name, _ = QtWidgets.QFileDialog.getSaveFileName(
+                parent,
+                "Create Access Database",
+                str(candidate.with_suffix(".mdb")),
+                "Access Database (*.mdb)",
+            )
+            if not file_name:
+                continue
+            dest = Path(file_name)
+            ctx.update_mdb_path(dest, create_if_missing=True)
+            ctx.persist_config()
+            return dest
+
+
+def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:
     import sys
-    # If None ever gets passed, fall back to the repo-local asset
-    if mdb_file is None:
-        mdb_file = Path(__file__).resolve().parents[1] / "assets" / "MAIN_DB.mdb"
-    print(f"[complex_editor] MAIN_DB path: {mdb_file.resolve()}")
+    from PyQt6 import QtWidgets
+
     app = QtWidgets.QApplication(sys.argv)
-    win = MainWindow(mdb_path=mdb_file, buffer_path=buffer_path)
-    try:
-        win.setWindowTitle(f"Complex Editor — {mdb_file.resolve()}")
-    except Exception:
-        pass
+    ctx = AppContext()
+
+    if mdb_file is not None:
+        ctx.update_mdb_path(Path(mdb_file), create_if_missing=True)
+        ctx.persist_config()
+
+    if buffer_path is None:
+        while True:
+            try:
+                ctx.open_main_db(create_if_missing=False)
+                break
+            except FileNotFoundError:
+                _ensure_database_available(ctx)
+        print(f"[complex_editor] Using MDB: {ctx.current_db_path()}")
+
+    win = MainWindow(
+        mdb_path=ctx.current_db_path() if buffer_path is None else None,
+        buffer_path=buffer_path,
+        ctx=ctx,
+    )
     win.resize(1100, 600)
     win.show()
     sys.exit(app.exec())
+
 
 
