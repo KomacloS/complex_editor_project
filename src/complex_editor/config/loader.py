@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
 import importlib.resources
-import yaml
+
+from ..utils import yaml_adapter as yaml
 
 from ..internal.paths import get_app_root, get_internal_root
 

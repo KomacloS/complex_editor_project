@@ -7,7 +7,7 @@ import types
 import logging
 
 import pytest
-import yaml
+from complex_editor.utils import yaml_adapter as yaml
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

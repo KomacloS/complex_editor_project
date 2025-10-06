@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Mapping
 import re
 import operator
-import yaml
+
+from complex_editor.utils import yaml_adapter as yaml
 from packaging.version import Version
 
 OPS = {

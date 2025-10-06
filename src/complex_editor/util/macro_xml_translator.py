@@ -12,12 +12,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 import xml.etree.ElementTree as ET
-import yaml
 import html
 from decimal import Decimal, localcontext, InvalidOperation
 
 # new import for tolerant translation
 from ..learn.spec import LearnedRules
+from ..utils import yaml_adapter as yaml
 
 
 def _ensure_text(data: bytes | str | memoryview | bytearray) -> str:

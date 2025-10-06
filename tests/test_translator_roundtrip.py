@@ -1,6 +1,6 @@
 import os, sys
 from pathlib import Path
-import yaml
+from complex_editor.utils import yaml_adapter as yaml
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))

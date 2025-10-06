@@ -3,7 +3,7 @@ import sys
 import types
 import importlib.resources
 
-import yaml
+from complex_editor.utils import yaml_adapter as yaml
 
 sys.modules.setdefault("pyodbc", types.ModuleType("pyodbc"))
 
