@@ -38,6 +38,9 @@ class HealthResponse(BaseModel):
     ok: bool
     version: str
     db_path: str
+    host: str
+    port: int
+    auth_required: bool
 
 
 __all__ = [

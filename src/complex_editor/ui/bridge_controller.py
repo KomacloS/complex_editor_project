@@ -80,6 +80,8 @@ class BridgeController:
                 wizard_handler=lambda pn, aliases: self._invoker.invoke(
                     wizard_handler, pn, aliases
                 ),
+                bridge_host=config.host,
+                bridge_port=int(config.port),
             )
             app.add_event_handler("startup", self._ready_event.set)
             app.add_event_handler("shutdown", self._ready_event.clear)
