@@ -4,7 +4,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="ComplexEditor"
 DIST_DIR="$PROJECT_ROOT/dist"
-INTERNAL_DIST="$DIST_DIR/internal"
+FINAL_BUNDLE_DIR="$DIST_DIR/Complex Editor"
+FINAL_INTERNAL_DIR="$FINAL_BUNDLE_DIR/internal"
 BUILD_DIR="$PROJECT_ROOT/build"
 SPEC_FILE="$PROJECT_ROOT/${APP_NAME}.spec"
 PYTHON_BIN="${PYTHON:-python}"
@@ -43,26 +44,34 @@ ASSET_DATA="src/complex_editor/assets${DATA_SEP}complex_editor/assets"
   --noconfirm \
   --clean \
   --windowed \
+  --onefile \
   --name "$APP_NAME" \
   --collect-submodules complex_editor \
+  --collect-submodules yaml \
+  --hidden-import yaml \
   --add-data "$RESOURCE_DATA" \
   --add-data "$ASSET_DATA" \
   src/complex_editor/__main__.py
 
-OUTPUT_PATH="$DIST_DIR/$APP_NAME$EXEC_SUFFIX"
+EXECUTABLE_PATH="$DIST_DIR/$APP_NAME$EXEC_SUFFIX"
 
-echo "Build complete: $OUTPUT_PATH"
-
-mkdir -p "$INTERNAL_DIST"
-
-if [ -d "$OUTPUT_PATH" ]; then
-  cp -R "$OUTPUT_PATH"/. "$INTERNAL_DIST"/
-elif [ -f "$OUTPUT_PATH" ]; then
-  cp "$OUTPUT_PATH" "$INTERNAL_DIST/"
+if [ ! -f "$EXECUTABLE_PATH" ]; then
+  echo "error: expected PyInstaller output '$EXECUTABLE_PATH' was not produced" >&2
+  exit 1
 fi
+
+rm -rf "$FINAL_BUNDLE_DIR"
+mkdir -p "$FINAL_INTERNAL_DIR"
+
+cp "$EXECUTABLE_PATH" "$FINAL_BUNDLE_DIR/$APP_NAME$EXEC_SUFFIX"
+rm -f "$EXECUTABLE_PATH"
 
 if [ -d "$PROJECT_ROOT/internal" ]; then
-  cp -R "$PROJECT_ROOT/internal"/. "$INTERNAL_DIST"/
+  cp -R "$PROJECT_ROOT/internal"/. "$FINAL_INTERNAL_DIR"/
 fi
 
-echo "Packaged payload: $INTERNAL_DIST"
+rm -rf "$BUILD_DIR"
+rm -f "$SPEC_FILE"
+
+echo "Build complete: $FINAL_BUNDLE_DIR/$APP_NAME$EXEC_SUFFIX"
+echo "Internal payload: $FINAL_INTERNAL_DIR"
