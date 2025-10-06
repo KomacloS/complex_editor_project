@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="ComplexEditor"
 DIST_DIR="$PROJECT_ROOT/dist"
+INTERNAL_DIST="$DIST_DIR/internal"
 BUILD_DIR="$PROJECT_ROOT/build"
 SPEC_FILE="$PROJECT_ROOT/${APP_NAME}.spec"
 PYTHON_BIN="${PYTHON:-python}"
@@ -51,3 +52,17 @@ ASSET_DATA="src/complex_editor/assets${DATA_SEP}complex_editor/assets"
 OUTPUT_PATH="$DIST_DIR/$APP_NAME$EXEC_SUFFIX"
 
 echo "Build complete: $OUTPUT_PATH"
+
+mkdir -p "$INTERNAL_DIST"
+
+if [ -d "$OUTPUT_PATH" ]; then
+  cp -R "$OUTPUT_PATH"/. "$INTERNAL_DIST"/
+elif [ -f "$OUTPUT_PATH" ]; then
+  cp "$OUTPUT_PATH" "$INTERNAL_DIST/"
+fi
+
+if [ -d "$PROJECT_ROOT/internal" ]; then
+  cp -R "$PROJECT_ROOT/internal"/. "$INTERNAL_DIST"/
+fi
+
+echo "Packaged payload: $INTERNAL_DIST"

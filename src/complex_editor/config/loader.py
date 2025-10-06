@@ -1,23 +1,70 @@
 ﻿from __future__ import annotations
 
+import copy
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
-import os
+from typing import Any, Dict, Optional, cast
 
+import importlib.resources
 import yaml
+
+from ..internal.paths import get_app_root, get_internal_root
 
 CONFIG_ENV_VAR = "CE_CONFIG"
 
-_CONFIG_RELATIVE_PATH = Path("config") / "complex_editor.yml"
-_SRC_ROOT = Path(__file__).resolve().parents[3]
-_REPO_ROOT = _SRC_ROOT.parent
-DEFAULT_CONFIG_PATH = (_REPO_ROOT / _CONFIG_RELATIVE_PATH).resolve()
-DEFAULT_MDB_PATH = Path(r"C:/ProductionData/Complexes/complexes.accdb")
+_CONFIG_FILENAME = "complex_editor.yml"
+_DEFAULT_CONFIG_RESOURCE = "default_config.yaml"
 
 
 class ConfigError(Exception):
     """Raised when the configuration file is malformed or invalid."""
+
+
+def _load_default_config() -> Dict[str, Any]:
+    try:
+        resource = (
+            importlib.resources.files("complex_editor.resources")
+            / _DEFAULT_CONFIG_RESOURCE
+        )
+        raw_text = resource.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {
+            "database": {
+                "mdb_path": r"C:/ProductionData/Complexes/complexes.accdb",
+            },
+            "links": {"bom_db_hint": ""},
+            "bridge": {
+                "enabled": False,
+                "base_url": "http://127.0.0.1:8765",
+                "auth_token": "",
+                "host": "0.0.0.0",
+                "port": 8765,
+                "request_timeout_seconds": 15,
+            },
+        }
+
+    data = yaml.safe_load(raw_text) or {}
+    if not isinstance(data, dict):
+        raise ConfigError("default_config.yaml must contain a mapping at the top level")
+    return cast(Dict[str, Any], data)
+
+
+_DEFAULT_CONFIG_DATA: Dict[str, Any] = _load_default_config()
+
+
+def _default_config_candidates() -> list[Path]:
+    candidates: list[Path] = []
+
+    def _add(path: Path) -> None:
+        resolved = path.resolve()
+        if resolved not in candidates:
+            candidates.append(resolved)
+
+    _add(get_internal_root() / "config" / _CONFIG_FILENAME)
+    _add(get_app_root() / "config" / _CONFIG_FILENAME)
+    _add(Path(__file__).resolve().parents[3] / "config" / _CONFIG_FILENAME)
+    return candidates
 
 
 @dataclass
@@ -57,27 +104,17 @@ class CEConfig:
 
 
 def _default_dict() -> Dict[str, Any]:
-    return {
-        "database": {
-            "mdb_path": str(DEFAULT_MDB_PATH),
-        },
-        "links": {"bom_db_hint": ""},
-        "bridge": {
-            "enabled": False,
-            "base_url": "http://127.0.0.1:8765",
-            "auth_token": "",
-            "host": "0.0.0.0",
-            "port": 8765,
-            "request_timeout_seconds": 15,
-        },
-    }
+    return copy.deepcopy(_DEFAULT_CONFIG_DATA)
 
 
 def _resolve_config_path() -> Path:
     env_override = os.environ.get(CONFIG_ENV_VAR)
     if env_override:
         return Path(env_override).expanduser().resolve()
-    return DEFAULT_CONFIG_PATH
+    for candidate in _default_config_candidates():
+        if candidate.exists():
+            return candidate
+    return _default_config_candidates()[0]
 
 
 def _coerce_database(section: Dict[str, Any]) -> DatabaseConfig:

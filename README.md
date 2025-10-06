@@ -26,6 +26,7 @@ python ui_skeleton.py          # works from project root without PYTHONPATH hack
 ## Directory layout
 
 ```
+internal/            # packaged runtime payload (config, exe, etc.)
 src/complex_editor/   # application packages
 tests/                # pytest unit tests
 examples/             # demo MDB & PDF (not committed)
