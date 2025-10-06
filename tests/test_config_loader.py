@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import importlib
+import builtins
 
 import pytest
 
@@ -67,3 +69,46 @@ def test_invalid_database_path_raises(tmp_path, monkeypatch):
     monkeypatch.setenv(CONFIG_ENV_VAR, str(cfg_path))
     with pytest.raises(ConfigError):
         load_config()
+
+
+def test_loader_works_without_pyyaml(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "fallback.yml"
+    cfg_path.write_text(
+        "\n".join(
+            [
+                "database:",
+                "  mdb_path: C:/Temp/complex.accdb",
+                "links:",
+                "  bom_db_hint: http://example.invalid",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(CONFIG_ENV_VAR, str(cfg_path))
+
+    import complex_editor.utils.yaml_adapter as yaml_adapter
+    import complex_editor.config.loader as loader_module
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "yaml":
+            raise ModuleNotFoundError("No module named 'yaml'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    with monkeypatch.context() as ctx:
+        ctx.setattr(builtins, "__import__", fake_import)
+        importlib.reload(yaml_adapter)
+        importlib.reload(loader_module)
+
+        cfg = loader_module.load_config()
+        assert cfg.database.mdb_path == Path("C:/Temp/complex.accdb")
+        assert cfg.links.bom_db_hint == "http://example.invalid"
+        cfg.links.bom_db_hint = "changed"
+        loader_module.save_config(cfg)
+
+    importlib.reload(yaml_adapter)
+    importlib.reload(loader_module)
+
+    saved = cfg_path.read_text(encoding="utf-8")
+    assert "changed" in saved

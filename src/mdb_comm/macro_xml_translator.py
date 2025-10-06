@@ -3,7 +3,8 @@ from typing import Any, Mapping
 import argparse
 import logging
 from functools import lru_cache
-import yaml
+
+from complex_editor.utils import yaml_adapter as yaml
 
 from complex_editor.util.macro_xml_translator import (
     params_to_xml as _params_to_xml,

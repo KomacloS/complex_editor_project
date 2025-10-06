@@ -2,7 +2,7 @@ import importlib.resources
 import re
 from typing import Dict, Optional
 
-import yaml
+from .utils import yaml_adapter as yaml
 
 _yml = (
     importlib.resources.files("complex_editor.resources")
