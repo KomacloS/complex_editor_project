@@ -2,6 +2,8 @@
 
 import copy
 import os
+import pkgutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
@@ -23,13 +25,50 @@ class ConfigError(Exception):
 
 
 def _load_default_config() -> Dict[str, Any]:
-    try:
-        resource = (
-            importlib.resources.files("complex_editor.resources")
-            / _DEFAULT_CONFIG_RESOURCE
-        )
-        raw_text = resource.read_text(encoding="utf-8")
-    except FileNotFoundError:
+    package = "complex_editor.resources"
+
+    def _read_default_config_text() -> Optional[str]:
+        files_attr = getattr(importlib.resources, "files", None)
+        if files_attr is not None:
+            try:
+                resource = files_attr(package) / _DEFAULT_CONFIG_RESOURCE
+                return resource.read_text(encoding="utf-8")
+            except (FileNotFoundError, AttributeError, OSError):
+                pass
+
+        open_text = getattr(importlib.resources, "open_text", None)
+        if open_text is not None:
+            try:
+                with open_text(package, _DEFAULT_CONFIG_RESOURCE, encoding="utf-8") as fh:
+                    return fh.read()
+            except (FileNotFoundError, AttributeError, OSError):
+                pass
+
+        try:
+            data = pkgutil.get_data(package, _DEFAULT_CONFIG_RESOURCE)
+            if data is not None:
+                return data.decode("utf-8")
+        except (FileNotFoundError, OSError, UnicodeDecodeError):
+            pass
+
+        base_path = getattr(sys, "_MEIPASS", None)
+        if base_path:
+            candidate = (
+                Path(base_path)
+                / "complex_editor"
+                / "resources"
+                / _DEFAULT_CONFIG_RESOURCE
+            )
+            try:
+                if candidate.exists():
+                    return candidate.read_text(encoding="utf-8")
+            except OSError:
+                pass
+
+        return None
+
+    raw_text = _read_default_config_text()
+    if raw_text is None:
         return {
             "database": {
                 "mdb_path": r"C:/ProductionData/Complexes/complexes.accdb",
