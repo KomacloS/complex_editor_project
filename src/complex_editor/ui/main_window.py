@@ -734,8 +734,7 @@ def _ensure_database_available(ctx: AppContext, parent: QtWidgets.QWidget | None
         msg.setIcon(QtWidgets.QMessageBox.Icon.Warning)
         msg.setWindowTitle("Access Database Required")
         msg.setText(
-            "The configured Access database could not be found.
-"
+            "The configured Access database could not be found.\n"
             "Select an existing file or create a new database from the template."
         )
         select_btn = msg.addButton("Select Existing...", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
