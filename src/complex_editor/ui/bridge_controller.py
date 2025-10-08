@@ -56,9 +56,11 @@ class BridgeController:
         self,
         get_mdb_path: Callable[[], Path],
         invoker: QtInvoker,
+        state_provider: Callable[[], dict[str, object]] | None = None,
     ) -> None:
         self._get_mdb_path = get_mdb_path
         self._invoker = invoker
+        self._state_provider = state_provider
         self._external = getattr(sys, "frozen", False)
         self._server: uvicorn.Server | None = None
         self._thread: threading.Thread | None = None
@@ -110,6 +112,7 @@ class BridgeController:
                     ),
                     bridge_host=config.host,
                     bridge_port=int(config.port),
+                    state_provider=self._state_provider,
                 )
             except Exception as exc:
                 msg = f"Failed to initialize bridge service: {exc}"

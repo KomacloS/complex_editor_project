@@ -101,6 +101,15 @@ class DummyCtx:
     def open_main_db(self, _):
         return FakeMDB()
 
+    def wizard_opened(self) -> None:
+        pass
+
+    def wizard_closed(self, *, saved: bool, had_changes: bool = False) -> None:
+        pass
+
+    def bridge_state(self) -> dict[str, bool]:
+        return {"wizard_open": False, "unsaved_changes": False}
+
 
 def test_main_window_load(qtbot, monkeypatch):
     monkeypatch.setattr("complex_editor.ui.main_window.AppContext", lambda: DummyCtx())

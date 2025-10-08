@@ -4,7 +4,7 @@ import hashlib
 import json
 import secrets
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 
@@ -37,6 +37,7 @@ def create_app(
     mdb_factory: Optional[Callable[[Path], MDB]] = None,
     bridge_host: str | None = None,
     bridge_port: int | None = None,
+    state_provider: Callable[[], Dict[str, object]] | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application for the bridge."""
 
@@ -169,6 +170,19 @@ def create_app(
             return BridgeCreateResult(created=False, reason="wizard handler unavailable")
         return wizard_handler(req.pn, req.aliases)
 
+    def _state_snapshot() -> dict[str, bool]:
+        base = {"wizard_open": False, "unsaved_changes": False}
+        if state_provider is None:
+            return base
+        try:
+            payload = state_provider() or {}
+        except Exception:
+            return base
+        for key in ("wizard_open", "unsaved_changes"):
+            if key in payload:
+                base[key] = bool(payload[key])
+        return base
+
     @app.get("/health", response_model=HealthResponse)
     async def health(_: None = Depends(_require_auth)) -> HealthResponse:  # noqa: D401
         """Liveness probe."""
@@ -183,6 +197,19 @@ def create_app(
             auth_required=bool(token),
         )
 
+    @app.get("/state")
+    async def state(_: None = Depends(_require_auth)) -> dict[str, object]:
+        snapshot = _state_snapshot()
+        return {
+            "wizard_open": snapshot["wizard_open"],
+            "unsaved_changes": snapshot["unsaved_changes"],
+            "version": __version__,
+            "db_path": str(get_mdb_path()),
+            "host": str(app.state.bridge_host or ""),
+            "port": int(app.state.bridge_port or 0),
+            "auth_required": bool(token),
+        }
+
     @app.get("/complexes/search", response_model=List[ComplexSummary])
     async def search_complexes(
         pn: str = Query(..., description="Part number or alias pattern"),
@@ -194,7 +221,17 @@ def create_app(
         return _search(pn.strip(), limit)
 
     @app.post("/admin/shutdown")
-    async def shutdown(request: Request, _: None = Depends(_require_auth)) -> dict[str, bool]:
+    async def shutdown(
+        request: Request,
+        force: int = Query(0, description="Force shutdown even with unsaved changes"),
+        _: None = Depends(_require_auth),
+    ) -> dict[str, bool]:
+        snapshot = _state_snapshot()
+        if int(force) != 1 and snapshot.get("unsaved_changes"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="unsaved_changes",
+            )
         trigger = getattr(request.app.state, "trigger_shutdown", None)
         if not callable(trigger):
             raise HTTPException(
