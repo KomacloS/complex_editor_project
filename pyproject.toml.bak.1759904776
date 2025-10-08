@@ -26,9 +26,3 @@ dev = ["pytest", "pytest-qt", "ruff"]
 [tool.setuptools.package-data]
 "complex_editor.resources" = ["*.yaml"]
 "complex_editor.assets" = ["empty_template.mdb"]
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]

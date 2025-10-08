@@ -1,69 +1,44 @@
-# Byte-compiled / optimized / DLL files
+# --- Python bytecode & caches ---
 __pycache__/
 *.py[cod]
-*$py.class
-
-# C extensions
+*.pyo
+*.pyd
 *.so
+*.dll
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
+# --- Virtual environments ---
 .venv/
 venv/
-ENV/
 env/
-.env
 
-# VSCode
-.vscode/
+# --- Build/packaging outputs ---
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
 
-# PyInstaller
-*.manifest
-*.spec
+# --- PyInstaller ---
+# keep the .spec file ONLY if you want it versioned; otherwise ignore it.
+# *.spec
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pytest
+# --- Test & tooling caches ---
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 
-# Logs
-*.log
-
-# Mac
+# --- Editors/OS noise ---
+.vscode/
+.idea/
 .DS_Store
-
-# Windows thumbnail cache
 Thumbs.db
 
-# Jupyter
-.ipynb_checkpoints
+# --- Logs & misc ---
+*.log
 
-# SQLite
-*.sqlite
-*.db
-*.mdb.bak
-
-# PDF render cache
-__pycache_pdf__/
+# --- Optional binaries/compressed files (don’t commit generated EXEs/Zips) ---
+*.exe
+*.zip

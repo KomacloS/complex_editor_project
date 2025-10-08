@@ -1,11 +1,11 @@
-﻿database:
-  mdb_path: "C:\\ProductionData\\Complexes\\complexes.accdb"
+database:
+  mdb_path: C:\Users\Michael\Documents\Python\Complex_Builder\complex_editor_project_new_GUI\src\complex_editor\assets\MAIN_DB.mdb
 links:
-  bom_db_hint: "http://localhost:8080"
+  bom_db_hint: http://localhost:8080
 bridge:
   enabled: false
-  base_url: "http://127.0.0.1:8765"
-  auth_token: ""
-  host: "0.0.0.0"
+  base_url: http://127.0.0.1:8765
+  auth_token: ''
+  host: 0.0.0.0
   port: 8765
   request_timeout_seconds: 15
