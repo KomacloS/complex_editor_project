@@ -40,6 +40,8 @@ esac
 RESOURCE_DATA="src/complex_editor/resources${DATA_SEP}complex_editor/resources"
 ASSET_DATA="src/complex_editor/assets${DATA_SEP}complex_editor/assets"
 
+# Ensure PyInstaller bundles every Qt-dependent UI module; otherwise the frozen
+# app fails to import ``complex_editor.ui`` when launched on Windows.
 "$PYTHON_BIN" -m PyInstaller \
   --noconfirm \
   --clean \
@@ -47,6 +49,7 @@ ASSET_DATA="src/complex_editor/assets${DATA_SEP}complex_editor/assets"
   --onefile \
   --name "$APP_NAME" \
   --collect-submodules complex_editor \
+  --collect-all complex_editor.ui \
   --collect-submodules yaml \
   --hidden-import yaml \
   --add-data "$RESOURCE_DATA" \
