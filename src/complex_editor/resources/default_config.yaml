@@ -1,6 +1,6 @@
 # Default configuration used when complex_editor.yml is missing.
 database:
-  mdb_path: "C:/ProductionData/Complexes/complexes.accdb"
+  mdb_path: "~/Documents/ComplexBuilder/main_db.mdb"
 links:
   bom_db_hint: "http://localhost:8080"
 bridge:

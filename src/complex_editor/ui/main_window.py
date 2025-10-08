@@ -39,8 +39,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ctx = ctx or AppContext()
         self._bridge_invoker = QtInvoker()
         self._bridge_controller = BridgeController(
-            lambda: self.ctx.current_db_path(),
-            self._bridge_invoker,
+            get_mdb_path=lambda: self.ctx.current_db_path(),
+            invoker=self._bridge_invoker,
         )
         self.db: Optional[MDB] = None
         self._buffer_complexes: List[EditorComplex] | None = None
@@ -388,6 +388,7 @@ class MainWindow(QtWidgets.QMainWindow):
             start_bridge=self._start_bridge,
             stop_bridge=self._stop_bridge,
             client_snippet=self._bridge_client_snippet,
+            bridge_error=self._bridge_last_error,
             parent=self,
         )
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
@@ -418,6 +419,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _bridge_client_snippet(self, cfg: BridgeConfig) -> str:
         return self._bridge_controller.snippet(cfg)
+
+    def _bridge_last_error(self) -> str | None:
+        return self._bridge_controller.last_error()
 
     def _bridge_wizard_handler(self, pn: str, aliases: Optional[list[str]]) -> BridgeCreateResult:
         if self.db is None:

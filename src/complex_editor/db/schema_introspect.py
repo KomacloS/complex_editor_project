@@ -38,11 +38,14 @@ def discover_macro_map(cursor_or_conn) -> Dict[int, MacroDef]:
 
     cursor = None
     if cursor_or_conn is not None:
-        cursor = (
-            cursor_or_conn.cursor()
-            if hasattr(cursor_or_conn, "cursor")
-            else cursor_or_conn
-        )
+        if hasattr(cursor_or_conn, "cursor"):
+            cursor = cursor_or_conn.cursor()
+        else:
+            conn = getattr(cursor_or_conn, "_conn", None)
+            if conn is not None and hasattr(conn, "cursor"):
+                cursor = conn.cursor()
+            else:
+                cursor = cursor_or_conn
 
     # If there's no DB connection, build the macro map solely from YAML.
     if cursor is None:

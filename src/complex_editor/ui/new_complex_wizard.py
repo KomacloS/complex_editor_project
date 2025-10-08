@@ -202,12 +202,15 @@ class ParamPage(QtWidgets.QWidget):
                 widget = cb
             else:
                 spin = QtWidgets.QSpinBox()
-                if p.min is not None:
-                    spin.setMinimum(int(p.min))
-                if p.max is not None:
-                    spin.setMaximum(int(p.max))
-                if val is not None and _looks_int(val):
-                    spin.setValue(int(val))
+                min_val = _maybe_int(p.min)
+                max_val = _maybe_int(p.max)
+                if min_val is not None:
+                    spin.setMinimum(min_val)
+                if max_val is not None:
+                    spin.setMaximum(max_val)
+                default_val = _maybe_int(val) if val is not None else None
+                if default_val is not None:
+                    spin.setValue(default_val)
                 widget = spin
             self.widgets[p.name] = widget
             self._layout.addRow(p.name, widget)
@@ -223,9 +226,14 @@ class ParamPage(QtWidgets.QWidget):
 
 
 def _looks_int(val: str) -> bool:
+    return _maybe_int(val) is not None
+
+
+def _maybe_int(val) -> int | None:
+    if val is None:
+        return None
     try:
-        int(val)
-        return True
+        return int(str(val).replace(",", "").strip())
     except Exception:
-        return False
+        return None
 

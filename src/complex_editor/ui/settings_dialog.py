@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlparse
@@ -16,6 +17,9 @@ BridgeStatusCb = Optional[Callable[[], bool]]
 BridgeStartCb = Optional[Callable[[BridgeConfig], bool]]
 BridgeStopCb = Optional[Callable[[], None]]
 BridgeSnippetCb = Optional[Callable[[BridgeConfig], str]]
+BridgeErrorCb = Optional[Callable[[], Optional[str]]]
+
+logger = logging.getLogger(__name__)
 
 
 class IntegrationSettingsDialog(QtWidgets.QDialog):
@@ -29,6 +33,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         start_bridge: BridgeStartCb = None,
         stop_bridge: BridgeStopCb = None,
         client_snippet: BridgeSnippetCb = None,
+        bridge_error: BridgeErrorCb = None,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -38,6 +43,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         self._start_bridge = start_bridge
         self._stop_bridge = stop_bridge
         self._client_snippet = client_snippet
+        self._bridge_error = bridge_error
         self._mdb_path = ctx.current_db_path()
 
         self._build_ui()
@@ -280,11 +286,24 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.information(self, "Unavailable", "Bridge start handler not wired yet.")
             return
         cfg = self._gather_bridge_config()
+        logger.info(
+            "Bridge start button pressed (host=%s port=%s auth=%s enabled=%s).",
+            cfg.host,
+            cfg.port,
+            "enabled" if cfg.auth_token else "disabled",
+            cfg.enabled,
+        )
         ok = self._start_bridge(cfg)
         if ok:
+            logger.info("Bridge reported successful startup.")
             QtWidgets.QMessageBox.information(self, "Bridge", "Bridge started")
         else:
-            QtWidgets.QMessageBox.warning(self, "Bridge", "Failed to start bridge")
+            logger.warning("Bridge failed to start. Check bridge controller logs for details.")
+            details = self._bridge_error() if self._bridge_error else None
+            message = "Failed to start bridge"
+            if details:
+                message = f"{message}:\n{details}"
+            QtWidgets.QMessageBox.warning(self, "Bridge", message)
         self._refresh_bridge_panel()
 
     def _on_bridge_stop(self) -> None:

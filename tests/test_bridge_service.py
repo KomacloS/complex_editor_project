@@ -12,6 +12,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from ce_bridge_service.app import create_app
+from ce_bridge_service import run as run_module
 from ce_bridge_service.types import BridgeCreateResult
 from complex_editor.db.mdb_api import ComplexDevice as DbComplex
 from complex_editor.db.mdb_api import SubComponent as DbSub
@@ -187,3 +188,33 @@ def test_bridge_shutdown_endpoint_sets_flag():
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
     assert triggered["value"] is True
+
+
+def test_build_server_cmd_frozen(monkeypatch):
+    monkeypatch.setattr(run_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(run_module.sys, "executable", "ComplexEditor.exe")
+    cmd = run_module._build_server_cmd("127.0.0.1", 8765, "XYZ")
+    assert cmd == [
+        "ComplexEditor.exe",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8765",
+        "--token",
+        "XYZ",
+    ]
+
+
+def test_build_server_cmd_dev(monkeypatch):
+    monkeypatch.setattr(run_module.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(run_module.sys, "executable", "/usr/bin/python")
+    cmd = run_module._build_server_cmd("localhost", 9000, None)
+    assert cmd == [
+        "/usr/bin/python",
+        "-m",
+        "ce_bridge_service.run",
+        "--host",
+        "localhost",
+        "--port",
+        "9000",
+    ]

@@ -114,10 +114,11 @@ def _run_server(cfg, bridge_cfg) -> int:
         bridge_port=int(bridge_cfg.port),
     )
 
+    mode = "frozen" if getattr(sys, "frozen", False) else "dev"
     auth_mode = "enabled" if bridge_cfg.auth_token else "disabled"
     print(
         f"[ce-bridge] listening on http://{bridge_cfg.host}:{bridge_cfg.port} "
-        f"(auth: {auth_mode})",
+        f"(auth: {auth_mode}, {mode})",
         flush=True,
     )
 
@@ -139,6 +140,12 @@ def _run_server(cfg, bridge_cfg) -> int:
     except KeyboardInterrupt:  # pragma: no cover - CLI convenience
         pass
     return 0
+
+
+def serve_from_config(cfg) -> int:
+    """Public entry to run the bridge server from an already-loaded config."""
+    bridge_cfg = cfg.bridge
+    return _run_server(cfg, bridge_cfg)
 
 
 def _ensure_bridge(cfg, bridge_cfg) -> int:
@@ -167,18 +174,32 @@ def _ensure_bridge(cfg, bridge_cfg) -> int:
         )
 
     # not running, start new process
-    cmd = [
-        sys.executable,
-        "-m",
-        "ce_bridge_service.run",
-        "--host",
-        bridge_cfg.host,
-        "--port",
-        str(port),
-    ]
-    if token:
-        cmd.extend(["--token", token])
-
+    if getattr(sys, "frozen", False):
+        cmd = [
+            sys.executable,
+            "--run-bridge-server",
+            "--host",
+            bridge_cfg.host,
+            "--port",
+            str(port),
+        ]
+        if token:
+            cmd += ["--token", token]
+        ce_cfg = os.environ.get("CE_CONFIG")
+        if ce_cfg:
+            cmd += ["--config", ce_cfg]
+    else:
+        cmd = [
+            sys.executable,
+            "-m",
+            "ce_bridge_service.run",
+            "--host",
+            bridge_cfg.host,
+            "--port",
+            str(port),
+        ]
+        if token:
+            cmd += ["--token", token]
     env = os.environ.copy()
     process = subprocess.Popen(
         cmd,
@@ -198,9 +219,10 @@ def _ensure_bridge(cfg, bridge_cfg) -> int:
             status, _, _ = _probe_health(bridge_cfg.host, port, token or None)
             if status == "running":
                 auth_mode = "enabled" if token else "disabled"
+                frozen_suffix = " (frozen)" if getattr(sys, "frozen", False) else ""
                 print(
                     f"[ce-bridge] listening on http://{_display_host(bridge_cfg.host, probe_host)}:{port} "
-                    f"(auth: {auth_mode})",
+                    f"(auth: {auth_mode}){frozen_suffix}",
                     flush=True,
                 )
                 return 0

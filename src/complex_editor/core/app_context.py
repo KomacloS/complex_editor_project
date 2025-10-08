@@ -1,12 +1,13 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from pathlib import Path
 import importlib.resources
 import shutil
+from pathlib import Path
 from typing import Optional
 
 from complex_editor.config.loader import CEConfig, load_config, save_config
 from complex_editor.db.mdb_api import MDB
+from complex_editor.internal.paths import get_app_root, get_internal_root
 
 
 class AppContext:
@@ -14,6 +15,18 @@ class AppContext:
 
     def __init__(self, config: Optional[CEConfig] = None) -> None:
         self.config: CEConfig = config or load_config()
+        persist_needed = False
+        if self._is_packaged_path(self.config.source_path):
+            self.config.with_source(self._user_config_path())
+            persist_needed = True
+        if self._needs_database_migration(self.config.database.mdb_path):
+            self.config.database.mdb_path = self._default_db_path()
+            persist_needed = True
+        if persist_needed:
+            try:
+                self.persist_config()
+            except Exception:
+                pass
         self.db: MDB | None = None
 
     # ------------------------------ config helpers ------------------------------
@@ -29,12 +42,73 @@ class AppContext:
         return self.config.database.mdb_path
 
     def _copy_template(self, dest: Path) -> None:
-        template = importlib.resources.files("complex_editor.assets").joinpath(
-            "empty_template.mdb"
-        )
+        candidates = ("MAIN_DB.mdb", "empty_template.mdb")
+        assets_pkg = "complex_editor.assets"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with importlib.resources.as_file(template) as tmpl_path:
-            shutil.copy(tmpl_path, dest)
+        files_fn = getattr(importlib.resources, "files", None)
+        for name in candidates:
+            try:
+                if files_fn is not None:
+                    resource = files_fn(assets_pkg).joinpath(name)
+                    with importlib.resources.as_file(resource) as tmpl_path:
+                        if tmpl_path.exists() and tmpl_path.stat().st_size > 0:
+                            shutil.copy(tmpl_path, dest)
+                            return
+                else:  # pragma: no cover - legacy Python fallback
+                    with importlib.resources.path(assets_pkg, name) as tmpl_path:  # type: ignore[attr-defined]
+                        if tmpl_path.exists() and tmpl_path.stat().st_size > 0:
+                            shutil.copy(tmpl_path, dest)
+                            return
+            except (FileNotFoundError, AttributeError):
+                continue
+        raise FileNotFoundError("No database template available in assets package")
+
+    @staticmethod
+    def _default_db_path() -> Path:
+        return Path.home() / "Documents" / "ComplexBuilder" / "main_db.mdb"
+
+    @staticmethod
+    def _user_config_path() -> Path:
+        return Path.home() / ".complex_editor" / "complex_editor.yml"
+
+    def _is_packaged_path(self, source: Optional[Path]) -> bool:
+        if source is None:
+            return True
+        try:
+            resolved = source.expanduser().resolve(strict=False)
+        except Exception:
+            resolved = source
+        roots: list[Path] = []
+        for root_fn in (get_internal_root, get_app_root):
+            try:
+                roots.append(root_fn().resolve(strict=False))
+            except Exception:
+                roots.append(root_fn())
+        for root in roots:
+            try:
+                if resolved.is_relative_to(root):
+                    return True
+            except AttributeError:  # pragma: no cover - legacy Python fallback
+                if root in resolved.parents or resolved == root:
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    def _needs_database_migration(self, candidate: Path) -> bool:
+        if self._is_packaged_path(candidate):
+            return True
+        expanded = candidate.expanduser()
+        try:
+            resolved = expanded.resolve(strict=False)
+        except Exception:
+            resolved = expanded
+        try:
+            if resolved.exists() and resolved.stat().st_size == 0:
+                return True
+        except OSError:
+            pass
+        return False
 
     def create_database(self, dest: Path, *, overwrite: bool = False) -> Path:
         dest = dest.expanduser()
@@ -55,7 +129,7 @@ class AppContext:
     def open_main_db(self, file: Path | None = None, *, create_if_missing: bool = True) -> MDB:
         """Open the main MDB according to config or explicit ``file``."""
         target = Path(file) if file is not None else self.current_db_path()
-        target = target.expanduser().resolve()
+        target = target.expanduser().resolve(strict=False)
         if create_if_missing and not target.exists():
             self._copy_template(target)
         if not target.exists():

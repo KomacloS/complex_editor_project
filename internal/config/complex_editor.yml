@@ -1,5 +1,5 @@
 database:
-  mdb_path: C:\Users\Michael\Documents\Python\Complex_Builder\complex_editor_project_new_GUI\src\complex_editor\assets\MAIN_DB.mdb
+  mdb_path: ~/Documents/ComplexBuilder/main_db.mdb
 links:
   bom_db_hint: http://localhost:8080
 bridge:

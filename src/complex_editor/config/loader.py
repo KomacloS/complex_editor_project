@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import copy
 import os
@@ -69,9 +69,10 @@ def _load_default_config() -> Dict[str, Any]:
 
     raw_text = _read_default_config_text()
     if raw_text is None:
+        default_db = Path.home() / "Documents" / "ComplexBuilder" / "main_db.mdb"
         return {
             "database": {
-                "mdb_path": r"C:/ProductionData/Complexes/complexes.accdb",
+                "mdb_path": str(default_db),
             },
             "links": {"bom_db_hint": ""},
             "bridge": {
@@ -101,6 +102,7 @@ def _default_config_candidates() -> list[Path]:
         if resolved not in candidates:
             candidates.append(resolved)
 
+    _add(Path.home() / ".complex_editor" / _CONFIG_FILENAME)
     _add(get_internal_root() / "config" / _CONFIG_FILENAME)
     _add(get_app_root() / "config" / _CONFIG_FILENAME)
     _add(Path(__file__).resolve().parents[3] / "config" / _CONFIG_FILENAME)

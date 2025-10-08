@@ -4,6 +4,11 @@ import sys
 from pathlib import Path
 
 
+def _stderr_supports_tty() -> bool:
+    stream = getattr(sys, "stderr", None)
+    return bool(stream and hasattr(stream, "isatty") and stream.isatty())
+
+
 class ColorFormatter(logging.Formatter):
     COLORS = {
         'DEBUG': '\033[36m',
@@ -17,7 +22,7 @@ class ColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
         msg = super().format(record)
         color = self.COLORS.get(record.levelname)
-        if color and sys.stderr.isatty():
+        if color and _stderr_supports_tty():
             msg = f"{color}{msg}{self.RESET}"
         return msg
 
@@ -38,7 +43,7 @@ def _configure() -> None:
         },
     }
     root_handlers = ['file']
-    if sys.stderr.isatty():
+    if _stderr_supports_tty():
         handlers['console'] = {
             'class': 'logging.StreamHandler',
             'stream': 'ext://sys.stderr',

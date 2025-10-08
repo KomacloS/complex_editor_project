@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
+import sys
 import socket
 import threading
 from concurrent.futures import Future
+from types import SimpleNamespace
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable, Optional
@@ -11,7 +14,10 @@ import uvicorn
 from PyQt6 import QtCore, QtWidgets
 
 from ce_bridge_service import BridgeCreateResult, create_app
+from ce_bridge_service import run as bridge_run
 from complex_editor.config.loader import BridgeConfig
+
+logger = logging.getLogger(__name__)
 
 
 class QtInvoker(QtCore.QObject):
@@ -53,38 +59,65 @@ class BridgeController:
     ) -> None:
         self._get_mdb_path = get_mdb_path
         self._invoker = invoker
+        self._external = getattr(sys, "frozen", False)
         self._server: uvicorn.Server | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._ready_event = threading.Event()
         self._running = threading.Event()
         self._last_config: BridgeConfig | None = None
+        self._last_error: str | None = None
+        self._startup_success = False
 
     def start(
         self,
         config: BridgeConfig,
         wizard_handler: Callable[[str, Optional[list[str]]], BridgeCreateResult],
     ) -> bool:
+        auth_state = "enabled" if config.auth_token else "disabled"
+        self._last_error = None
+        self._startup_success = False
+        logger.info(
+            "Bridge start requested host=%s port=%s (auth %s)",
+            config.host,
+            config.port,
+            auth_state,
+        )
+        if self._external:
+            return self._start_external(config)
+
         if self.is_running():
             if self._last_config and self._configs_equal(self._last_config, config):
+                logger.info(
+                    "Bridge already running with matching configuration; reusing existing server."
+                )
                 return True
+            logger.info("Bridge configuration changed; restarting bridge server.")
             self.stop()
         with self._lock:
-
             if self._port_in_use(config.host, int(config.port)):
+                msg = f"Port {config.port} is already in use on host {config.host}."
+                self._last_error = msg
+                logger.warning("Bridge start aborted: %s", msg)
                 return False
 
-            app = create_app(
-                get_mdb_path=lambda: self._coerce_path(self._get_mdb_path()),
-                auth_token=config.auth_token or None,
-                wizard_handler=lambda pn, aliases: self._invoker.invoke(
-                    wizard_handler, pn, aliases
-                ),
-                bridge_host=config.host,
-                bridge_port=int(config.port),
-            )
-            app.add_event_handler("startup", self._ready_event.set)
-            app.add_event_handler("shutdown", self._ready_event.clear)
+            try:
+                app = create_app(
+                    get_mdb_path=lambda: self._coerce_path(self._get_mdb_path()),
+                    auth_token=config.auth_token or None,
+                    wizard_handler=lambda pn, aliases: self._invoker.invoke(
+                        wizard_handler, pn, aliases
+                    ),
+                    bridge_host=config.host,
+                    bridge_port=int(config.port),
+                )
+            except Exception as exc:
+                msg = f"Failed to initialize bridge service: {exc}"
+                self._last_error = msg
+                logger.exception("Bridge start failed while constructing FastAPI application.")
+                return False
+            app.add_event_handler("startup", self._on_startup)
+            app.add_event_handler("shutdown", self._on_shutdown)
 
             uvicorn_config = uvicorn.Config(
                 app,
@@ -94,38 +127,76 @@ class BridgeController:
             )
             server = uvicorn.Server(uvicorn_config)
 
-            thread = threading.Thread(target=server.run, name="CEBridgeServer", daemon=True)
+            thread = threading.Thread(
+                target=self._server_worker,
+                args=(server,),
+                name="CEBridgeServer",
+                daemon=True,
+            )
             self._server = server
             self._thread = thread
             self._ready_event.clear()
             self._running.clear()
             thread.start()
+            logger.debug("Bridge server thread launched.")
 
         if not self._ready_event.wait(timeout=3):
+            msg = "Bridge service did not report ready state within 3 seconds."
+            self._last_error = msg
+            logger.error("Bridge server failed to report ready state within timeout; shutting it down.")
+            self.stop()
+            return False
+
+        with self._lock:
+            startup_ok = self._startup_success
+            last_error = self._last_error
+        if not startup_ok:
+            logger.error("Bridge server failed during startup: %s", last_error or "unknown error")
             self.stop()
             return False
 
         self._running.set()
         self._last_config = replace(config)
+        self._last_error = None
+        logger.info(
+            "Bridge server running on http://%s:%s (auth %s)",
+            config.host,
+            config.port,
+            auth_state,
+        )
         return True
 
     def stop(self) -> None:
+        if self._external:
+            self._stop_external()
+            return
         thread: threading.Thread | None = None
+        was_running = self._running.is_set()
         with self._lock:
             if self._server is None or self._thread is None:
+                logger.debug("Bridge stop requested but no server instance is active.")
                 return
+            logger.info("Stopping bridge server.")
             self._server.should_exit = True
             self._server.force_exit = True
             thread = self._thread
         if thread is not None:
             thread.join(timeout=5)
+            if thread.is_alive():
+                logger.warning("Bridge server thread did not terminate within timeout.")
         with self._lock:
             self._server = None
             self._thread = None
             self._running.clear()
             self._last_config = None
+            if was_running:
+                self._last_error = None
+            self._startup_success = False
+            logger.debug("Bridge server state cleared.")
 
     def is_running(self) -> bool:
+        if self._external:
+            return self._external_is_running()
         if self._running.is_set():
             return True
         with self._lock:
@@ -143,6 +214,102 @@ class BridgeController:
             f"-H \"Content-Type: application/json\" "
             f"{auth}-d '{{\"pn\": \"PN123\", \"aliases\": [\"ALT1\"]}}'"
         )
+
+    def last_error(self) -> str | None:
+        return self._last_error
+
+    # --------------------------- external helpers ---------------------------
+    def _start_external(self, config: BridgeConfig) -> bool:
+        cfg = self._build_external_config(config)
+        try:
+            bridge_run._ensure_bridge(cfg, cfg.bridge)
+        except SystemExit as exc:
+            message = str(exc) or "Bridge start failed"
+            self._last_error = message
+            logger.error("External bridge start failed: %s", message)
+            return False
+        except Exception as exc:  # pragma: no cover - defensive
+            self._last_error = f"Unexpected bridge start failure: {exc}"
+            logger.exception("External bridge start raised unexpected exception.")
+            return False
+        self._last_config = replace(config)
+        self._last_error = None
+        logger.info(
+            "Bridge server running via external process on http://%s:%s (auth %s, frozen)",
+            cfg.bridge.host,
+            cfg.bridge.port,
+            "enabled" if cfg.bridge.auth_token else "disabled",
+        )
+        return True
+
+    def _external_is_running(self) -> bool:
+        if self._last_config is None:
+            return False
+        cfg = self._build_external_config(self._last_config)
+        token = cfg.bridge.auth_token or None
+        status, _, _ = bridge_run._probe_health(
+            cfg.bridge.host,
+            int(cfg.bridge.port),
+            token,
+        )
+        return status == "running"
+
+    def _stop_external(self) -> None:
+        if self._last_config is None:
+            return
+        cfg = self._build_external_config(self._last_config)
+        try:
+            bridge_run._shutdown_bridge(cfg, cfg.bridge)
+        except SystemExit as exc:
+            message = str(exc) or "Bridge shutdown reported failure"
+            self._last_error = message
+            logger.warning("External bridge shutdown raised SystemExit: %s", message)
+        except Exception as exc:  # pragma: no cover - defensive
+            self._last_error = f"Unexpected bridge shutdown failure: {exc}"
+            logger.exception("External bridge shutdown raised unexpected exception.")
+        else:
+            self._last_error = None
+            self._last_config = None
+            logger.info("External bridge server shutdown complete.")
+
+    def _build_external_config(self, config: BridgeConfig) -> SimpleNamespace:
+        db_path = self._coerce_path(self._get_mdb_path())
+        base_url = getattr(config, "base_url", None) or f"http://{config.host}:{int(config.port)}"
+        timeout = getattr(config, "request_timeout_seconds", 15)
+        database = SimpleNamespace(mdb_path=db_path)
+        bridge_ns = SimpleNamespace(
+            enabled=config.enabled,
+            base_url=base_url,
+            auth_token=config.auth_token or "",
+            host=config.host,
+            port=int(config.port),
+            request_timeout_seconds=timeout,
+        )
+        cfg = SimpleNamespace(database=database, bridge=bridge_ns)
+        return cfg
+
+    # --------------------------- embedded server helpers ---------------------------
+    def _server_worker(self, server: uvicorn.Server) -> None:
+        try:
+            server.run()
+        except BaseException as exc:  # pragma: no cover - defensive
+            logger.exception("Bridge server crashed while running.")
+            with self._lock:
+                self._last_error = f"Bridge server crashed: {exc}"
+                self._startup_success = False
+            self._ready_event.set()
+            raise
+
+    def _on_startup(self) -> None:
+        logger.debug("Bridge server signaled startup.")
+        with self._lock:
+            self._startup_success = True
+        self._ready_event.set()
+
+    def _on_shutdown(self) -> None:
+        logger.debug("Bridge server signaled shutdown.")
+        self._ready_event.clear()
+        self._running.clear()
 
     @staticmethod
     def _configs_equal(a: BridgeConfig, b: BridgeConfig) -> bool:
