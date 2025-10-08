@@ -434,19 +434,41 @@ class MainWindow(QtWidgets.QMainWindow):
             macro_map = {}
 
         editor = ComplexEditor(macro_map)
+        opener = getattr(self.ctx, "wizard_opened", None)
+        closer = getattr(self.ctx, "wizard_closed", None)
+        closer_called = False
+        result: int | QtWidgets.QDialog.DialogCode = QtWidgets.QDialog.DialogCode.Rejected
+        if callable(opener):
+            opener()
+
         prefill = ComplexDevice(0, [], MacroInstance("", {}))
         prefill.pn = pn.strip()
         prefill.aliases = [a.strip() for a in (aliases or []) if a and a.strip()]
         prefill.pin_count = 0
         editor.load_device(prefill)
 
-        if editor.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-            return BridgeCreateResult(created=False, reason="cancelled")
+        try:
+            result = editor.exec()
+            if result != QtWidgets.QDialog.DialogCode.Accepted:
+                if callable(closer):
+                    closer(saved=False, had_changes=False)
+                    closer_called = True
+                return BridgeCreateResult(created=False, reason="cancelled")
 
-        updated = editor.build_device()
-        new_id = self._persist_editor_device(updated, comp_id=None)
-        if new_id is None:
-            return BridgeCreateResult(created=False, reason="failed to persist")
+            updated = editor.build_device()
+            new_id = self._persist_editor_device(updated, comp_id=None)
+            if callable(closer):
+                closer(saved=new_id is not None, had_changes=True)
+                closer_called = True
+            if new_id is None:
+                return BridgeCreateResult(created=False, reason="failed to persist")
+        finally:
+            if callable(closer) and not closer_called:
+                closer(
+                    saved=False,
+                    had_changes=result == QtWidgets.QDialog.DialogCode.Accepted,
+                )
+
         db_path = str(self.ctx.current_db_path())
         return BridgeCreateResult(created=True, comp_id=int(new_id), db_path=db_path)
 
@@ -583,9 +605,30 @@ class MainWindow(QtWidgets.QMainWindow):
         cursor = self.db._conn.cursor()
         macro_map = schema_introspect.discover_macro_map(cursor) or {}
         editor = ComplexEditor(macro_map)
-        if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            updated = editor.build_device()
-            self._persist_editor_device(updated, comp_id=None)
+        opener = getattr(self.ctx, "wizard_opened", None)
+        closer = getattr(self.ctx, "wizard_closed", None)
+        closer_called = False
+        result: int | QtWidgets.QDialog.DialogCode = QtWidgets.QDialog.DialogCode.Rejected
+        if callable(opener):
+            opener()
+        try:
+            result = editor.exec()
+            if result == QtWidgets.QDialog.DialogCode.Accepted:
+                updated = editor.build_device()
+                new_id = self._persist_editor_device(updated, comp_id=None)
+                if callable(closer):
+                    closer(saved=new_id is not None, had_changes=True)
+                    closer_called = True
+            else:
+                if callable(closer):
+                    closer(saved=False, had_changes=False)
+                    closer_called = True
+        finally:
+            if callable(closer) and not closer_called:
+                closer(
+                    saved=False,
+                    had_changes=result == QtWidgets.QDialog.DialogCode.Accepted,
+                )
 
 
     def _on_edit(self) -> None:

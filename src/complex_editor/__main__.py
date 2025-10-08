@@ -93,14 +93,31 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.load_buffer is not None:
         from PyQt6 import QtWidgets  # type: ignore
+        from .core.app_context import AppContext
         from .io.buffer_loader import load_complex_from_buffer_json, to_wizard_prefill
         from .ui.new_complex_wizard import NewComplexWizard
 
         app = QtWidgets.QApplication(sys.argv)
+        ctx = AppContext()
         buf = load_complex_from_buffer_json(args.load_buffer)
         prefill = to_wizard_prefill(buf, lambda name: None, lambda m: m)
         wiz = NewComplexWizard.from_wizard_prefill(prefill)
+        ctx.wizard_opened()
+
+        def _on_finished(result: int) -> None:
+            saved = result == QtWidgets.QDialog.DialogCode.Accepted
+            ctx.wizard_closed(saved=saved, had_changes=saved)
+
+        wiz.finished.connect(_on_finished)
         wiz.show()
+        try:
+            wiz.raise_()
+        except Exception:
+            pass
+        try:
+            wiz.activateWindow()
+        except Exception:
+            pass
         sys.exit(app.exec())
 
     from .ui.main_window import run_gui

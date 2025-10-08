@@ -28,6 +28,8 @@ class AppContext:
             except Exception:
                 pass
         self.db: MDB | None = None
+        self.wizard_open: bool = False
+        self.unsaved_changes: bool = False
 
     # ------------------------------ config helpers ------------------------------
     def reload_config(self) -> CEConfig:
@@ -153,6 +155,42 @@ class AppContext:
 
     def close(self) -> None:
         self._close_db()
+
+    # ----------------------------- wizard tracking ---------------------------
+    def wizard_opened(self) -> None:
+        """Mark the new complex wizard as open with unsaved data."""
+
+        self.wizard_open = True
+        self.unsaved_changes = True
+
+    def wizard_closed(self, *, saved: bool, had_changes: bool = False) -> None:
+        """Update wizard flags when the dialog closes.
+
+        Parameters
+        ----------
+        saved:
+            ``True`` when the wizard successfully persisted changes.
+        had_changes:
+            ``True`` if the user made changes that were not saved.  When
+            ``False`` the wizard closed without modifications and we clear the
+            unsaved flag regardless of ``saved``.
+        """
+
+        self.wizard_open = False
+        if saved or not had_changes:
+            self.unsaved_changes = False
+        else:
+            # Preserve the unsaved flag so external controllers know that work
+            # was lost (for example when persistence fails).
+            self.unsaved_changes = True
+
+    def bridge_state(self) -> dict[str, bool]:
+        """Return a snapshot of bridge-relevant state."""
+
+        return {
+            "wizard_open": bool(self.wizard_open),
+            "unsaved_changes": bool(self.unsaved_changes),
+        }
 
 
 __all__ = ["AppContext"]

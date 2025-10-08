@@ -36,6 +36,15 @@ class DummyCtx:
     def open_main_db(self, _):
         return FakeDB()
 
+    def wizard_opened(self) -> None:
+        pass
+
+    def wizard_closed(self, *, saved: bool, had_changes: bool = False) -> None:
+        pass
+
+    def bridge_state(self) -> dict[str, bool]:
+        return {"wizard_open": False, "unsaved_changes": False}
+
 
 class DummyLine:
     def __init__(self, text=""):

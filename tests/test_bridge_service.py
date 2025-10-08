@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from fastapi.testclient import TestClient
 
@@ -91,11 +92,21 @@ def _make_dataset() -> dict[int, dict]:
     return {1: {"device": device}}
 
 
-def _make_client(handler) -> TestClient:
+def _make_client(handler, state: dict | Callable[[], dict] | None = None) -> TestClient:
     data = _make_dataset()
 
     def factory(path: Path) -> FakeMDB:
         return FakeMDB(path, data)
+
+    if state is None:
+        def provider() -> dict[str, object]:
+            return {}
+    elif callable(state):
+        def provider() -> dict[str, object]:
+            return state()
+    else:
+        def provider() -> dict[str, object]:
+            return state
 
     app = create_app(
         get_mdb_path=lambda: Path("dummy.mdb"),
@@ -104,6 +115,7 @@ def _make_client(handler) -> TestClient:
         mdb_factory=factory,
         bridge_host="127.0.0.1",
         bridge_port=8765,
+        state_provider=provider,
     )
     return TestClient(app)
 
@@ -141,6 +153,13 @@ def test_bridge_health_and_search_and_detail():
     assert payload["id"] == 1
     assert payload["pin_map"]["1"]["A"] == 1
     assert payload["macro_ids"] == [10]
+
+    state = client.get("/state", headers=_auth())
+    assert state.status_code == 200
+    state_payload = state.json()
+    assert state_payload["wizard_open"] is False
+    assert state_payload["unsaved_changes"] is False
+    assert state_payload["db_path"] == "dummy.mdb"
 
 
 def test_bridge_create_complex_success():
@@ -181,12 +200,35 @@ def test_bridge_shutdown_endpoint_sets_flag():
     def handler(pn: str, aliases: list[str] | None) -> BridgeCreateResult:
         return BridgeCreateResult(created=False, reason="cancelled")
 
-    client = _make_client(handler)
+    client = _make_client(handler, state={"wizard_open": False, "unsaved_changes": False})
     client.app.state.trigger_shutdown = lambda: triggered.__setitem__("value", True)
 
     resp = client.post("/admin/shutdown", headers=_auth())
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+    assert triggered["value"] is True
+
+
+def test_bridge_shutdown_blocked_when_unsaved():
+    triggered = {"value": False}
+
+    def handler(pn: str, aliases: list[str] | None) -> BridgeCreateResult:
+        return BridgeCreateResult(created=False, reason="cancelled")
+
+    client = _make_client(
+        handler,
+        state=lambda: {"wizard_open": True, "unsaved_changes": True},
+    )
+    client.app.state.trigger_shutdown = lambda: triggered.__setitem__("value", True)
+
+    resp = client.post("/admin/shutdown", headers=_auth())
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "unsaved_changes"
+    assert triggered["value"] is False
+
+    forced = client.post("/admin/shutdown", headers=_auth(), params={"force": 1})
+    assert forced.status_code == 200
+    assert forced.json() == {"ok": True}
     assert triggered["value"] is True
 
 
