@@ -8,6 +8,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     PACKAGE_ROOT = Path(__file__).resolve().parent
     sys.path.insert(0, str(PACKAGE_ROOT.parent))
+    __package__ = "complex_editor"
 
     from complex_editor import __version__  # type: ignore
     from complex_editor.config.loader import CONFIG_ENV_VAR, load_config  # type: ignore
