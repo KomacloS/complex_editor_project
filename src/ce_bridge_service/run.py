@@ -118,7 +118,7 @@ def _run_server(cfg, bridge_cfg) -> int:
     auth_mode = "enabled" if bridge_cfg.auth_token else "disabled"
     print(
         f"[ce-bridge] listening on http://{bridge_cfg.host}:{bridge_cfg.port} "
-        f"(auth: {auth_mode}, {mode})",
+        f"(auth: {auth_mode}, ui: headless, mode: {mode})",
         flush=True,
     )
 

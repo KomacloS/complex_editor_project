@@ -41,6 +41,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._bridge_controller = BridgeController(
             get_mdb_path=lambda: self.ctx.current_db_path(),
             invoker=self._bridge_invoker,
+            state_provider=self.ctx.bridge_state,
         )
         self.db: Optional[MDB] = None
         self._buffer_complexes: List[EditorComplex] | None = None
@@ -825,12 +826,18 @@ def _ensure_database_available(ctx: AppContext, parent: QtWidgets.QWidget | None
             return dest
 
 
-def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> None:
-    import sys
+def run_gui(
+    mdb_file: Path | None = None,
+    buffer_path: Path | None = None,
+    *,
+    ctx: AppContext | None = None,
+    bridge_autostart: BridgeConfig | None = None,
+    bridge_ui_mode: str = "headless",
+) -> None:
     from PyQt6 import QtWidgets
 
     app = QtWidgets.QApplication(sys.argv)
-    ctx = AppContext()
+    ctx = ctx or AppContext()
 
     if mdb_file is not None:
         ctx.update_mdb_path(Path(mdb_file), create_if_missing=True)
@@ -852,6 +859,28 @@ def run_gui(mdb_file: Path | None = None, buffer_path: Path | None = None) -> No
     )
     win.resize(1100, 600)
     win.show()
+
+    if bridge_autostart is not None:
+        started = win._bridge_controller.start(bridge_autostart, win._bridge_wizard_handler)
+        auth_mode = "enabled" if bridge_autostart.auth_token else "disabled"
+        ui_mode = bridge_ui_mode or "headless"
+        host = bridge_autostart.host
+        port = int(bridge_autostart.port)
+        if not started:
+            print(
+                f"[ce-bridge] failed to start on http://{host}:{port} "
+                f"(auth: {auth_mode}, ui: {ui_mode})",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise SystemExit(1)
+        print(
+            f"[ce-bridge] listening on http://{host}:{port} "
+            f"(auth: {auth_mode}, ui: {ui_mode})",
+            flush=True,
+        )
+
+    app.aboutToQuit.connect(win._bridge_controller.stop)
     sys.exit(app.exec())
 
 

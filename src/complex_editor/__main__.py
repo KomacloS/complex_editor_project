@@ -29,6 +29,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", type=Path, default=None, help="Path to configuration file")
     parser.add_argument("--buffer", type=Path, default=None, help="Open the GUI against a buffer JSON file")
     parser.add_argument("--load-buffer", type=Path, default=None, help="Preview a buffer JSON in the wizard")
+    parser.add_argument(
+        "--with-ui",
+        action="store_true",
+        help="Run the bridge with the desktop UI instead of in headless mode",
+    )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--run-bridge-server", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
@@ -51,8 +56,23 @@ def _forward_bridge_args(args: argparse.Namespace) -> list[str]:
     return forwarded
 
 
+def _ensure_interactive_qt() -> None:
+    platform = os.environ.get("QT_QPA_PLATFORM", "")
+    if platform.lower() == "offscreen":
+        os.environ.pop("QT_QPA_PLATFORM", None)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    if args.start_bridge and args.shutdown_bridge:
+        raise SystemExit("--start-bridge and --shutdown-bridge cannot be used together")
+
+    if args.with_ui and not args.start_bridge:
+        raise SystemExit("--with-ui requires --start-bridge")
+
+    if args.port is not None and (args.port <= 0 or args.port > 65535):
+        raise SystemExit("Bridge port must be between 1 and 65535")
 
     if args.run_bridge_server:
         if args.config is not None:
@@ -71,14 +91,31 @@ def main(argv: list[str] | None = None) -> int:
 
         return bridge_run.serve_from_config(cfg)
 
-    if args.start_bridge and args.shutdown_bridge:
-        raise SystemExit("--start-bridge and --shutdown-bridge cannot be used together")
-
-    if args.port is not None and (args.port <= 0 or args.port > 65535):
-        raise SystemExit("Bridge port must be between 1 and 65535")
-
     if args.config is not None:
         os.environ[CONFIG_ENV_VAR] = str(Path(args.config).expanduser())
+
+    if args.start_bridge and args.with_ui:
+        from .core.app_context import AppContext
+        from .ui.main_window import run_gui
+
+        if args.buffer is not None:
+            raise SystemExit("--buffer cannot be combined with --start-bridge --with-ui")
+
+        cfg = load_config()
+        bridge_cfg = cfg.bridge
+        bridge_cfg.enabled = True
+        if args.host is not None:
+            bridge_cfg.host = args.host
+        if args.port is not None:
+            bridge_cfg.port = int(args.port)
+        if args.token is not None:
+            bridge_cfg.auth_token = args.token
+        bridge_cfg.base_url = f"http://{bridge_cfg.host}:{bridge_cfg.port}"
+
+        ctx = AppContext(cfg)
+        _ensure_interactive_qt()
+        run_gui(ctx=ctx, bridge_autostart=bridge_cfg, bridge_ui_mode="with-ui")
+        return 0
 
     if args.start_bridge or args.shutdown_bridge:
         # Load configuration to surface validation errors early before delegating.
@@ -97,11 +134,16 @@ def main(argv: list[str] | None = None) -> int:
         from .io.buffer_loader import load_complex_from_buffer_json, to_wizard_prefill
         from .ui.new_complex_wizard import NewComplexWizard
 
+        _ensure_interactive_qt()
         app = QtWidgets.QApplication(sys.argv)
         ctx = AppContext()
         buf = load_complex_from_buffer_json(args.load_buffer)
         prefill = to_wizard_prefill(buf, lambda name: None, lambda m: m)
         wiz = NewComplexWizard.from_wizard_prefill(prefill)
+        pn = (getattr(prefill, "complex_name", "") or "").strip()
+        if pn:
+            wiz.setWindowTitle(f"New Complex — {pn}")
+        wiz.setMinimumSize(1000, 720)
         ctx.wizard_opened()
 
         def _on_finished(result: int) -> None:
@@ -118,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
             wiz.activateWindow()
         except Exception:
             pass
+        app.processEvents()
         sys.exit(app.exec())
 
     from .ui.main_window import run_gui
