@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
@@ -97,10 +98,20 @@ def _make_dataset() -> dict[int, dict]:
 def _make_client(
     handler,
     state: dict | Callable[[], dict] | None = None,
-    mdb_path: Path | None = None,
+    mdb_path: Path | Callable[[], Path] | None = None,
 ) -> TestClient:
     data = _make_dataset()
-    mdb_location = Path(mdb_path) if mdb_path is not None else ROOT / "tests" / "data" / "dummy.mdb"
+    default_path = ROOT / "tests" / "data" / "dummy.mdb"
+
+    if callable(mdb_path):
+        def get_path() -> Path:
+            candidate = mdb_path()
+            return candidate if isinstance(candidate, Path) else Path(candidate)
+    else:
+        mdb_location = Path(mdb_path) if mdb_path is not None else default_path
+
+        def get_path() -> Path:
+            return mdb_location
 
     def factory(path: Path) -> FakeMDB:
         return FakeMDB(path, data)
@@ -116,7 +127,7 @@ def _make_client(
             return state
 
     app = create_app(
-        get_mdb_path=lambda: mdb_location,
+        get_mdb_path=get_path,
         auth_token="token",
         wizard_handler=handler,
         mdb_factory=factory,
@@ -134,15 +145,84 @@ def _auth() -> dict[str, str]:
     return {"Authorization": "Bearer token"}
 
 
+def _wait_until(predicate, timeout: float = 1.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def _wait_for_ready(client: TestClient, timeout: float = 1.0) -> bool:
+    return _wait_until(lambda: client.app.state.ready, timeout)
+
+
 def test_bridge_requires_bearer_token():
     client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
     assert client.get("/health").status_code == 401
     assert client.get("/health", headers={"Authorization": "Bearer nope"}).status_code == 403
 
 
+def test_bridge_startup_background_readiness():
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+    assert client.app.state.ready is False
+    assert client.app.state.last_ready_error == "warming_up"
+    assert _wait_for_ready(client)
+    health = client.get("/health", headers=_auth())
+    assert health.status_code == 200
+    assert health.json()["ok"] is True
+
+
+def test_bridge_invalid_mdb_path_reports_reason(tmp_path):
+    missing = tmp_path / "missing.mdb"
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"), mdb_path=missing)
+    assert _wait_until(lambda: client.app.state.last_ready_error not in {"", "warming_up"}, timeout=1.0)
+    resp = client.get("/health", headers=_auth())
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["ok"] is False
+    assert str(missing) in body["reason"]
+    state = client.get("/state", headers=_auth()).json()
+    assert state["ready"] is False
+    assert str(missing) in state["last_ready_error"]
+
+
+def test_bridge_mdb_path_change_triggers_recheck(tmp_path):
+    valid = tmp_path / "valid.mdb"
+    valid.write_text("dummy")
+    mutable_path = {"value": valid}
+    ui_state = {"wizard_open": False, "unsaved_changes": False, "mdb_path": str(valid)}
+
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        state=ui_state,
+        mdb_path=lambda: mutable_path["value"],
+    )
+
+    assert _wait_for_ready(client)
+
+    missing = tmp_path / "missing.mdb"
+    mutable_path["value"] = missing
+    ui_state["mdb_path"] = str(missing)
+    client.get("/state", headers=_auth())
+    assert _wait_until(lambda: client.app.state.ready is False, timeout=1.0)
+    assert _wait_until(lambda: str(missing) in client.app.state.last_ready_error, timeout=1.0)
+    assert client.get("/health", headers=_auth()).status_code == 503
+
+    mutable_path["value"] = valid
+    ui_state["mdb_path"] = str(valid)
+    client.get("/state", headers=_auth())
+    assert _wait_for_ready(client)
+    final_state = client.get("/state", headers=_auth()).json()
+    assert final_state["ready"] is True
+    assert final_state["last_ready_error"] == ""
+
+
 def test_bridge_health_and_search_and_detail():
     client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
 
+    assert _wait_for_ready(client)
     health = client.get("/health", headers=_auth())
     assert health.status_code == 200
     payload = health.json()
@@ -170,6 +250,8 @@ def test_bridge_health_and_search_and_detail():
     assert state.status_code == 200
     state_payload = state.json()
     assert state_payload["ready"] is True
+    assert state_payload["last_ready_error"] == ""
+    assert isinstance(state_payload["checks"], list)
     assert state_payload["wizard_open"] is False
     assert state_payload["unsaved_changes"] is False
     assert state_payload["host"] == "127.0.0.1"
@@ -181,13 +263,13 @@ def test_bridge_health_blocks_until_ready():
     client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
 
     client.app.state.ready = False
-    client.app.state.ready_reason = "warming_up"
+    client.app.state.last_ready_error = "warming_up"
     warming = client.get("/health", headers=_auth())
     assert warming.status_code == 503
     assert warming.json() == {"ok": False, "reason": "warming_up"}
 
     client.app.state.ready = True
-    client.app.state.ready_reason = ""
+    client.app.state.last_ready_error = ""
     healthy = client.get("/health", headers=_auth())
     assert healthy.status_code == 200
     assert healthy.json()["ok"] is True
