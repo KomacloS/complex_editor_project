@@ -19,6 +19,7 @@ from .bridge_controller import BridgeController, QtInvoker
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
 from .complex_editor import ComplexEditor
+from .new_complex_wizard import NewComplexWizard
 from .settings_dialog import IntegrationSettingsDialog
 
 from ce_bridge_service.types import BridgeCreateResult
@@ -47,6 +48,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._buffer_complexes: List[EditorComplex] | None = None
         self._buffer_raw: List[dict] | None = None
         self._buffer_path: Path | None = None
+        self._active_wizard: QtWidgets.QDialog | None = None
 
         if buffer_path is not None and Path(buffer_path).exists():
             self._buffer_path = Path(buffer_path)
@@ -424,9 +426,39 @@ class MainWindow(QtWidgets.QMainWindow):
     def _bridge_last_error(self) -> str | None:
         return self._bridge_controller.last_error()
 
+    def _create_prefilled_wizard(
+        self,
+        macro_map: dict[int, MacroDef],
+        pn: str,
+        aliases: Optional[list[str]],
+    ) -> NewComplexWizard:
+        pn_clean = (pn or "").strip()
+        alias_list = [a.strip() for a in (aliases or []) if a and a.strip()]
+        try:
+            title = f"New Complex — {pn_clean}" if pn_clean else None
+        except Exception:
+            title = None
+        wizard = NewComplexWizard(macro_map, parent=self, title=title)
+
+        device = ComplexDevice(0, [], MacroInstance("", {}))
+        device.pn = pn_clean
+        device.aliases = alias_list
+        device.alt_pn = alias_list[0] if alias_list else ""
+        device.pin_count = 0
+        device.subcomponents = []
+
+        try:
+            wizard._editor.load_device(device)  # type: ignore[attr-defined]
+        except AttributeError:
+            pass
+        return wizard
+
     def _bridge_wizard_handler(self, pn: str, aliases: Optional[list[str]]) -> BridgeCreateResult:
         if self.db is None:
             return BridgeCreateResult(created=False, reason="database unavailable")
+
+        if self._active_wizard is not None or getattr(self.ctx, "wizard_open", False):
+            return BridgeCreateResult(created=False, reason="wizard busy")
 
         cursor = self.db._conn.cursor()
         try:
@@ -434,44 +466,67 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             macro_map = {}
 
-        editor = ComplexEditor(macro_map)
         opener = getattr(self.ctx, "wizard_opened", None)
         closer = getattr(self.ctx, "wizard_closed", None)
-        closer_called = False
-        result: int | QtWidgets.QDialog.DialogCode = QtWidgets.QDialog.DialogCode.Rejected
-        if callable(opener):
-            opener()
 
-        prefill = ComplexDevice(0, [], MacroInstance("", {}))
-        prefill.pn = pn.strip()
-        prefill.aliases = [a.strip() for a in (aliases or []) if a and a.strip()]
-        prefill.pin_count = 0
-        editor.load_device(prefill)
-
+        wizard = self._create_prefilled_wizard(macro_map, pn, aliases)
+        wizard.setMinimumSize(1000, 720)
+        wizard.show()
         try:
-            result = editor.exec()
+            wizard.raise_()
+        except Exception:
+            pass
+        try:
+            wizard.activateWindow()
+        except Exception:
+            pass
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            try:
+                app.processEvents()
+            except Exception:
+                pass
+
+        if callable(opener):
+            try:
+                opener()
+            except Exception:
+                pass
+
+        self._active_wizard = wizard
+        saved = False
+        had_changes = False
+        try:
+            result = wizard.exec()
             if result != QtWidgets.QDialog.DialogCode.Accepted:
-                if callable(closer):
-                    closer(saved=False, had_changes=False)
-                    closer_called = True
                 return BridgeCreateResult(created=False, reason="cancelled")
 
-            updated = editor.build_device()
-            new_id = self._persist_editor_device(updated, comp_id=None)
-            if callable(closer):
-                closer(saved=new_id is not None, had_changes=True)
-                closer_called = True
+            had_changes = True
+            editor_device: ComplexDevice
+            if hasattr(wizard, "to_complex_device"):
+                editor_device = wizard.to_complex_device()  # type: ignore[call-arg]
+            else:
+                editor_obj = getattr(wizard, "_editor", None)
+                if editor_obj is None:
+                    raise AttributeError("Wizard does not expose editor state")
+                editor_device = editor_obj.build_device()
+            new_id = self._persist_editor_device(editor_device, comp_id=None)
             if new_id is None:
                 return BridgeCreateResult(created=False, reason="failed to persist")
+            saved = True
+            db_path = str(self.ctx.current_db_path())
+            return BridgeCreateResult(created=True, comp_id=int(new_id), db_path=db_path)
         finally:
-            if callable(closer) and not closer_called:
-                closer(
-                    saved=False,
-                    had_changes=result == QtWidgets.QDialog.DialogCode.Accepted,
-                )
-
-        db_path = str(self.ctx.current_db_path())
-        return BridgeCreateResult(created=True, comp_id=int(new_id), db_path=db_path)
+            if callable(closer):
+                try:
+                    closer(saved=saved, had_changes=had_changes)
+                except Exception:
+                    pass
+            try:
+                wizard.deleteLater()
+            except Exception:
+                pass
+            self._active_wizard = None
 
     def _update_window_title(self) -> None:
         try:
