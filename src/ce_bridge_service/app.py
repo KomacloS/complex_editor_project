@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 
 from complex_editor import __version__
 from complex_editor.db.mdb_api import (
@@ -29,6 +31,9 @@ from .models import (
 from .types import BridgeCreateResult
 
 
+logger = logging.getLogger(__name__)
+
+
 def create_app(
     *,
     get_mdb_path: Callable[[], Path],
@@ -42,11 +47,119 @@ def create_app(
     """Return a configured FastAPI application for the bridge."""
 
     token = (auth_token or "").strip()
+    auth_mode = "enabled" if token else "disabled"
     app = FastAPI(title="Complex Editor Bridge", version=__version__)
     app.state.bridge_host = bridge_host or ""
     app.state.bridge_port = int(bridge_port) if bridge_port is not None else 0
     app.state.trigger_shutdown = lambda: None
+    app.state.auth_required = bool(token)
+    app.state.ready = False
+    app.state.ready_reason = "warming_up"
+    app.state.mdb_path = ""
+    app.state.last_selftest_checks = []
     factory = mdb_factory or MDB
+
+    def _set_ready(value: bool, reason: str = "") -> None:
+        app.state.ready = bool(value)
+        app.state.ready_reason = "" if value else (reason or "warming_up")
+
+    def _first_failure_reason(checks: List[Dict[str, object]]) -> str:
+        for entry in checks:
+            if not entry.get("ok"):
+                detail = entry.get("detail")
+                if detail is None:
+                    detail = entry.get("name", "")
+                return str(detail)
+        return ""
+
+    def _execute_checks() -> tuple[bool, List[Dict[str, object]], str]:
+        checks: List[Dict[str, object]] = []
+        ok_all = True
+        resolved_path = ""
+
+        def record_success(name: str, detail: Optional[str] = None) -> None:
+            entry: Dict[str, object] = {"name": name, "ok": True}
+            if detail:
+                entry["detail"] = detail
+            checks.append(entry)
+
+        def record_failure(name: str, error: Exception) -> None:
+            nonlocal ok_all
+            ok_all = False
+            checks.append({"name": name, "ok": False, "detail": str(error)})
+
+        try:
+            raw_path = get_mdb_path()
+            path = raw_path if isinstance(raw_path, Path) else Path(str(raw_path))
+            resolved_path = str(path)
+            record_success("config_loaded", resolved_path)
+        except Exception as exc:
+            record_failure("config_loaded", exc)
+            return False, checks, resolved_path
+
+        path_obj = Path(resolved_path)
+        try:
+            if not path_obj.exists():
+                raise FileNotFoundError(resolved_path)
+            if not path_obj.is_file():
+                raise IsADirectoryError(resolved_path)
+            record_success("mdb_path_accessible", resolved_path)
+        except Exception as exc:
+            record_failure("mdb_path_accessible", exc)
+            return False, checks, resolved_path
+
+        try:
+            with factory(path_obj) as db:
+                cur = db._cur()
+                cur.execute(f"SELECT {PK_MASTER} FROM {MASTER_T}")
+                cur.fetchall()
+            record_success("mdb_connection", "select_ok")
+        except Exception as exc:
+            record_failure("mdb_connection", exc)
+
+        try:
+            signature = hashlib.sha256(resolved_path.encode("utf-8")).hexdigest()
+            record_success("bridge_signature", signature)
+        except Exception as exc:
+            record_failure("bridge_signature", exc)
+
+        record_success("auth_mode", auth_mode)
+        return ok_all, checks, resolved_path
+
+    @app.on_event("startup")
+    async def _on_app_startup() -> None:
+        _set_ready(False, "warming_up")
+        logger.info(
+            "Bridge starting host=%s port=%s auth=%s",
+            app.state.bridge_host or "",
+            app.state.bridge_port or 0,
+            auth_mode,
+        )
+        ok, checks, resolved_path = _execute_checks()
+        app.state.last_selftest_checks = checks
+        app.state.mdb_path = resolved_path
+        if ok:
+            _set_ready(True, "")
+            logger.info(
+                "Bridge ready host=%s port=%s auth=%s",
+                app.state.bridge_host or "",
+                app.state.bridge_port or 0,
+                auth_mode,
+            )
+        else:
+            reason = _first_failure_reason(checks) or "readiness_failed"
+            _set_ready(False, reason)
+            logger.warning(
+                "Bridge readiness failed host=%s port=%s auth=%s reason=%s",
+                app.state.bridge_host or "",
+                app.state.bridge_port or 0,
+                auth_mode,
+                reason,
+            )
+
+    @app.on_event("shutdown")
+    async def _on_app_shutdown() -> None:
+        _set_ready(False, "shutdown")
 
     async def _require_auth(request: Request) -> None:
         if not token:
@@ -81,6 +194,41 @@ def create_app(
         except Exception:
             return []
 
+    def _normalize_aliases(values: Optional[List[str]]) -> List[str]:
+        return [a.strip() for a in (values or []) if a and a.strip()]
+
+    def _find_existing_complex(pn: str, aliases: List[str]) -> Dict[str, object] | None:
+        tokens = {pn.strip().lower()}
+        tokens.update(a.strip().lower() for a in aliases)
+        tokens.discard("")
+        if not tokens:
+            return None
+        mdb_path = get_mdb_path()
+        with factory(mdb_path) as db:
+            cur = db._cur()
+            cur.execute(
+                f"SELECT {PK_MASTER}, {NAME_COL} FROM {MASTER_T} ORDER BY {NAME_COL} ASC"
+            )
+            rows = cur.fetchall()
+            for comp_id, name in rows:
+                cid = int(comp_id)
+                canonical = str(name or "").strip()
+                canonical_norm = canonical.lower()
+                alias_list = [a.strip() for a in _iter_aliases(db, cid)]
+                alias_norms = {a.lower() for a in alias_list if a}
+                if (
+                    canonical_norm in tokens
+                    or alias_norms & tokens
+                    or (canonical_norm and canonical_norm in alias_norms)
+                ):
+                    return {
+                        "id": cid,
+                        "pn": canonical,
+                        "aliases": alias_list,
+                        "db_path": str(mdb_path),
+                    }
+        return None
+
     def _search(term: str, limit: int) -> List[ComplexSummary]:
         like = _normalize_pattern(term)
         mdb_path = get_mdb_path()
@@ -112,7 +260,7 @@ def create_app(
                 summaries.append(
                     ComplexSummary(
                         id=cid,
-                        name=str(name or ""),
+                        pn=str(name or ""),
                         aliases=aliases,
                         db_path=str(mdb_path),
                     )
@@ -144,8 +292,8 @@ def create_app(
                     key = str(sub.id_sub_component) if getattr(sub, "id_sub_component", None) is not None else str(idx)
                     pin_map[key] = entries
             payload = {
-                "id": int(device.id_comp_desc),
-                "name": device.name,
+                "id": int(device.id_comp_desc or comp_id),
+                "pn": str(device.name or ""),
                 "aliases": aliases,
                 "db_path": str(mdb_path),
                 "total_pins": int(device.total_pins or 0),
@@ -155,7 +303,7 @@ def create_app(
             }
             hash_basis = {
                 "id": payload["id"],
-                "name": payload["name"],
+                "pn": payload["pn"],
                 "aliases": aliases,
                 "pin_map": pin_map,
                 "macro_ids": payload["macro_ids"],
@@ -184,14 +332,25 @@ def create_app(
         return base
 
     @app.get("/health", response_model=HealthResponse)
-    async def health(_: None = Depends(_require_auth)) -> HealthResponse:  # noqa: D401
-        """Liveness probe."""
+    async def health(_: None = Depends(_require_auth)) -> HealthResponse | JSONResponse:  # noqa: D401
+        """Readiness-aware liveness probe."""
 
-        mdb_path = str(get_mdb_path())
+        if not getattr(app.state, "ready", False):
+            reason = getattr(app.state, "ready_reason", "warming_up") or "warming_up"
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"ok": False, "reason": reason},
+            )
+        resolved_path = app.state.mdb_path or ""
+        if not resolved_path:
+            try:
+                resolved_path = str(get_mdb_path())
+            except Exception:
+                resolved_path = ""
         return HealthResponse(
             ok=True,
             version=__version__,
-            db_path=mdb_path,
+            db_path=resolved_path,
             host=str(app.state.bridge_host or ""),
             port=int(app.state.bridge_port or 0),
             auth_required=bool(token),
@@ -201,14 +360,39 @@ def create_app(
     async def state(_: None = Depends(_require_auth)) -> dict[str, object]:
         snapshot = _state_snapshot()
         return {
+            "ready": bool(getattr(app.state, "ready", False)),
             "wizard_open": snapshot["wizard_open"],
             "unsaved_changes": snapshot["unsaved_changes"],
             "version": __version__,
-            "db_path": str(get_mdb_path()),
             "host": str(app.state.bridge_host or ""),
             "port": int(app.state.bridge_port or 0),
             "auth_required": bool(token),
         }
+
+    @app.post("/selftest")
+    async def selftest(_: None = Depends(_require_auth)) -> JSONResponse:
+        ok, checks, resolved_path = _execute_checks()
+        app.state.last_selftest_checks = checks
+        app.state.mdb_path = resolved_path
+        reason = _first_failure_reason(checks) or "selftest_failed"
+        _set_ready(ok, "" if ok else reason)
+        if ok:
+            logger.info(
+                "Bridge selftest passed host=%s port=%s auth=%s",
+                app.state.bridge_host or "",
+                app.state.bridge_port or 0,
+                auth_mode,
+            )
+        else:
+            logger.warning(
+                "Bridge selftest failed host=%s port=%s auth=%s reason=%s",
+                app.state.bridge_host or "",
+                app.state.bridge_port or 0,
+                auth_mode,
+                reason,
+            )
+        status_code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
+        return JSONResponse(status_code=status_code, content={"ok": ok, "checks": checks})
 
     @app.get("/complexes/search", response_model=List[ComplexSummary])
     async def search_complexes(
@@ -261,13 +445,28 @@ def create_app(
         request.pn = request.pn.strip()
         if not request.pn:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pn must not be empty")
-        request.aliases = [a.strip() for a in (request.aliases or []) if a and a.strip()]
+        request.aliases = _normalize_aliases(request.aliases)
+
+        existing = _find_existing_complex(request.pn, request.aliases)
+        if existing is not None:
+            model = ComplexCreateResponse(**existing)
+            return JSONResponse(status_code=status.HTTP_200_OK, content=model.model_dump())
+
         result = _handle_create(request)
         if result.created:
             db_path = result.db_path or str(get_mdb_path())
-            return ComplexCreateResponse(id=int(result.comp_id or 0), db_path=db_path)
+            return ComplexCreateResponse(
+                id=int(result.comp_id or 0),
+                pn=request.pn,
+                aliases=request.aliases,
+                db_path=db_path,
+            )
         reason = result.reason or "cancelled"
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
+        if reason.strip().lower() == "cancelled":
+            return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"reason": "cancelled"})
+        lowered = reason.strip().lower()
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE if "unavailable" in lowered else status.HTTP_500_INTERNAL_SERVER_ERROR
+        raise HTTPException(status_code=status_code, detail=reason)
 
     return app
 

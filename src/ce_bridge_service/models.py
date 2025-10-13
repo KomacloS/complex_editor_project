@@ -9,9 +9,9 @@ class ComplexSummary(BaseModel):
     """Search result summary for a complex."""
 
     id: int
-    name: str
+    pn: str
     aliases: List[str] = Field(default_factory=list)
-    db_path: str
+    db_path: Optional[str] = None
 
 
 class ComplexDetail(ComplexSummary):
@@ -31,7 +31,9 @@ class ComplexCreateRequest(BaseModel):
 
 class ComplexCreateResponse(BaseModel):
     id: int
-    db_path: str
+    pn: str
+    aliases: List[str] = Field(default_factory=list)
+    db_path: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

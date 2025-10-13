@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import atexit
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable
 
 from fastapi.testclient import TestClient
@@ -92,8 +94,13 @@ def _make_dataset() -> dict[int, dict]:
     return {1: {"device": device}}
 
 
-def _make_client(handler, state: dict | Callable[[], dict] | None = None) -> TestClient:
+def _make_client(
+    handler,
+    state: dict | Callable[[], dict] | None = None,
+    mdb_path: Path | None = None,
+) -> TestClient:
     data = _make_dataset()
+    mdb_location = Path(mdb_path) if mdb_path is not None else ROOT / "tests" / "data" / "dummy.mdb"
 
     def factory(path: Path) -> FakeMDB:
         return FakeMDB(path, data)
@@ -109,7 +116,7 @@ def _make_client(handler, state: dict | Callable[[], dict] | None = None) -> Tes
             return state
 
     app = create_app(
-        get_mdb_path=lambda: Path("dummy.mdb"),
+        get_mdb_path=lambda: mdb_location,
         auth_token="token",
         wizard_handler=handler,
         mdb_factory=factory,
@@ -117,7 +124,10 @@ def _make_client(handler, state: dict | Callable[[], dict] | None = None) -> Tes
         bridge_port=8765,
         state_provider=provider,
     )
-    return TestClient(app)
+    client = TestClient(app)
+    client.__enter__()
+    atexit.register(lambda: client.__exit__(None, None, None))
+    return client
 
 
 def _auth() -> dict[str, str]:
@@ -145,21 +155,60 @@ def test_bridge_health_and_search_and_detail():
     body = search.json()
     assert len(body) == 1
     assert body[0]["id"] == 1
+    assert body[0]["pn"] == "PN-100"
     assert body[0]["aliases"] == ["ALT-1"]
 
     detail = client.get("/complexes/1", headers=_auth())
     assert detail.status_code == 200
     payload = detail.json()
     assert payload["id"] == 1
+    assert payload["pn"] == "PN-100"
     assert payload["pin_map"]["1"]["A"] == 1
     assert payload["macro_ids"] == [10]
 
     state = client.get("/state", headers=_auth())
     assert state.status_code == 200
     state_payload = state.json()
+    assert state_payload["ready"] is True
     assert state_payload["wizard_open"] is False
     assert state_payload["unsaved_changes"] is False
-    assert state_payload["db_path"] == "dummy.mdb"
+    assert state_payload["host"] == "127.0.0.1"
+    assert state_payload["port"] == 8765
+    assert state_payload["auth_required"] is True
+
+
+def test_bridge_health_blocks_until_ready():
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+
+    client.app.state.ready = False
+    client.app.state.ready_reason = "warming_up"
+    warming = client.get("/health", headers=_auth())
+    assert warming.status_code == 503
+    assert warming.json() == {"ok": False, "reason": "warming_up"}
+
+    client.app.state.ready = True
+    client.app.state.ready_reason = ""
+    healthy = client.get("/health", headers=_auth())
+    assert healthy.status_code == 200
+    assert healthy.json()["ok"] is True
+
+
+def test_bridge_selftest_success_and_failure(tmp_path):
+    handler = lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled")  # noqa: E731
+    client = _make_client(handler)
+    ok_resp = client.post("/selftest", headers=_auth())
+    assert ok_resp.status_code == 200
+    ok_payload = ok_resp.json()
+    assert ok_payload["ok"] is True
+    assert any(check["name"] == "mdb_connection" for check in ok_payload["checks"])
+
+    missing_path = tmp_path / "missing.mdb"
+    failing_client = _make_client(handler, mdb_path=missing_path)
+    fail_resp = failing_client.post("/selftest", headers=_auth())
+    assert fail_resp.status_code == 503
+    fail_payload = fail_resp.json()
+    assert fail_payload["ok"] is False
+    assert any(not check["ok"] for check in fail_payload["checks"])
 
 
 def test_bridge_create_complex_success():
@@ -176,7 +225,10 @@ def test_bridge_create_complex_success():
         json={"pn": "NEW-PN", "aliases": ["ALT"]},
     )
     assert resp.status_code == 201
-    assert resp.json()["id"] == 42
+    payload = resp.json()
+    assert payload["id"] == 42
+    assert payload["pn"] == "NEW-PN"
+    assert payload["aliases"] == ["ALT"]
     assert calls == [("NEW-PN", ["ALT"])]
 
 
@@ -191,7 +243,26 @@ def test_bridge_create_complex_cancelled():
         json={"pn": "PN", "aliases": []},
     )
     assert resp.status_code == 409
-    assert resp.json()["detail"] == "cancelled"
+    assert resp.json() == {"reason": "cancelled"}
+def test_bridge_create_complex_existing_returns_existing():
+    calls: list[tuple[str, list[str]]] = []
+
+    def handler(pn: str, aliases: list[str] | None) -> BridgeCreateResult:
+        calls.append((pn, aliases or []))
+        return BridgeCreateResult(created=True, comp_id=999, db_path="dummy.mdb")
+
+    client = _make_client(handler)
+    resp = client.post(
+        "/complexes",
+        headers=_auth() | {"Content-Type": "application/json"},
+        json={"pn": "PN-100", "aliases": ["ALT-1"]},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["id"] == 1
+    assert payload["pn"] == "PN-100"
+    assert payload["aliases"] == ["ALT-1"]
+    assert calls == []
 
 
 def test_bridge_shutdown_endpoint_sets_flag():
@@ -233,25 +304,96 @@ def test_bridge_shutdown_blocked_when_unsaved():
 
 
 def test_build_server_cmd_frozen(monkeypatch):
+    db_path = ROOT / "tests" / "data" / "dummy.mdb"
+    cfg = SimpleNamespace(database=SimpleNamespace(mdb_path=db_path))
+    bridge_cfg = SimpleNamespace(host="127.0.0.1", port=8765, auth_token="XYZ", base_url="http://127.0.0.1:8765")
+    responses = iter(
+        [
+            ("not_running", None, "127.0.0.1"),
+            ("running", {"ok": True}, "127.0.0.1"),
+        ]
+    )
+    monkeypatch.setattr(run_module, "_probe_health", lambda host, port, token, timeout=1.0: next(responses))
+    recorded: dict[str, object] = {}
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+        def terminate(self):
+            recorded["terminated"] = True
+
+        def kill(self):
+            recorded["killed"] = True
+
+    def fake_popen(cmd, **kwargs):
+        recorded["cmd"] = cmd
+        recorded["env"] = kwargs.get("env")
+        return FakeProcess()
+
+    monkeypatch.setattr(run_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(run_module.time, "sleep", lambda _: None)
     monkeypatch.setattr(run_module.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(run_module.sys, "executable", "ComplexEditor.exe")
-    cmd = run_module._build_server_cmd("127.0.0.1", 8765, "XYZ")
-    assert cmd == [
+    monkeypatch.setattr(run_module.sys, "executable", "ComplexEditor.exe", raising=False)
+    monkeypatch.setenv("CE_CONFIG", "bridge.yml")
+
+    assert run_module._ensure_bridge(cfg, bridge_cfg) == 0
+    assert recorded["cmd"] == [
         "ComplexEditor.exe",
+        "--run-bridge-server",
         "--host",
         "127.0.0.1",
         "--port",
         "8765",
         "--token",
         "XYZ",
+        "--config",
+        "bridge.yml",
     ]
 
 
 def test_build_server_cmd_dev(monkeypatch):
+    db_path = ROOT / "tests" / "data" / "dummy.mdb"
+    cfg = SimpleNamespace(database=SimpleNamespace(mdb_path=db_path))
+    bridge_cfg = SimpleNamespace(host="localhost", port=9000, auth_token="", base_url="http://localhost:9000")
+    responses = iter(
+        [
+            ("not_running", None, "localhost"),
+            ("running", {"ok": True}, "localhost"),
+        ]
+    )
+    monkeypatch.setattr(run_module, "_probe_health", lambda host, port, token, timeout=1.0: next(responses))
+    recorded: dict[str, object] = {}
+
+    class FakeProcess:
+        def poll(self):
+            return None
+
+        def wait(self, timeout=None):
+            return 0
+
+        def terminate(self):
+            recorded["terminated"] = True
+
+        def kill(self):
+            recorded["killed"] = True
+
+    def fake_popen(cmd, **kwargs):
+        recorded["cmd"] = cmd
+        recorded["env"] = kwargs.get("env")
+        return FakeProcess()
+
+    monkeypatch.setattr(run_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(run_module.time, "sleep", lambda _: None)
     monkeypatch.setattr(run_module.sys, "frozen", False, raising=False)
-    monkeypatch.setattr(run_module.sys, "executable", "/usr/bin/python")
-    cmd = run_module._build_server_cmd("localhost", 9000, None)
-    assert cmd == [
+    monkeypatch.setattr(run_module.sys, "executable", "/usr/bin/python", raising=False)
+    monkeypatch.delenv("CE_CONFIG", raising=False)
+
+    assert run_module._ensure_bridge(cfg, bridge_cfg) == 0
+    assert recorded["cmd"] == [
         "/usr/bin/python",
         "-m",
         "ce_bridge_service.run",
