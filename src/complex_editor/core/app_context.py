@@ -184,12 +184,13 @@ class AppContext:
             # was lost (for example when persistence fails).
             self.unsaved_changes = True
 
-    def bridge_state(self) -> dict[str, bool]:
+    def bridge_state(self) -> dict[str, object]:
         """Return a snapshot of bridge-relevant state."""
 
         return {
             "wizard_open": bool(self.wizard_open),
             "unsaved_changes": bool(self.unsaved_changes),
+            "mdb_path": str(self.current_db_path()),
         }
 
 
