@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -54,23 +55,46 @@ def create_app(
     app.state.trigger_shutdown = lambda: None
     app.state.auth_required = bool(token)
     app.state.ready = False
-    app.state.ready_reason = "warming_up"
+    app.state.last_ready_error = "warming_up"
     app.state.mdb_path = ""
-    app.state.last_selftest_checks = []
+    app.state.last_ready_checks = []
+    app.state._observed_mdb_path = ""
+    app.state._readiness_lock = asyncio.Lock()
+    app.state._readiness_task = None
+    app.state._reschedule_required = False
+    app.state._pending_mdb_path = None
     factory = mdb_factory or MDB
 
-    def _set_ready(value: bool, reason: str = "") -> None:
+    def _set_ready(value: bool, reason: str = "", *, force_log: bool = False) -> None:
+        previous = bool(getattr(app.state, "ready", False))
         app.state.ready = bool(value)
-        app.state.ready_reason = "" if value else (reason or "warming_up")
+        error = "" if value else (reason or "warming_up")
+        app.state.last_ready_error = error
+        if previous != app.state.ready or force_log:
+            host = app.state.bridge_host or ""
+            port = app.state.bridge_port or 0
+            if app.state.ready:
+                logger.info("Bridge ready host=%s port=%s auth=%s", host, port, auth_mode)
+            else:
+                logger.warning(
+                    "Bridge not ready host=%s port=%s auth=%s reason=%s",
+                    host,
+                    port,
+                    auth_mode,
+                    error or "warming_up",
+                )
 
-    def _first_failure_reason(checks: List[Dict[str, object]]) -> str:
+    def _summarize_failures(checks: List[Dict[str, object]]) -> str:
+        failures: List[str] = []
         for entry in checks:
-            if not entry.get("ok"):
-                detail = entry.get("detail")
-                if detail is None:
-                    detail = entry.get("name", "")
-                return str(detail)
-        return ""
+            if entry.get("ok"):
+                continue
+            detail = entry.get("detail")
+            if detail is None:
+                detail = entry.get("name", "")
+            failures.append(str(detail))
+        summary = "; ".join(part for part in (item.strip() for item in failures) if part)
+        return summary
 
     def _execute_checks() -> tuple[bool, List[Dict[str, object]], str]:
         checks: List[Dict[str, object]] = []
@@ -126,36 +150,77 @@ def create_app(
         record_success("auth_mode", auth_mode)
         return ok_all, checks, resolved_path
 
+    async def run_startup_checks() -> tuple[bool, List[Dict[str, object]], str]:
+        return await asyncio.to_thread(_execute_checks)
+
+    def _apply_check_result(
+        ok: bool,
+        checks: List[Dict[str, object]],
+        resolved_path: str,
+        *,
+        log_failures: bool,
+    ) -> None:
+        app.state.last_ready_checks = list(checks)
+        app.state.mdb_path = resolved_path
+        pending = getattr(app.state, "_pending_mdb_path", None)
+        if pending and str(pending) == resolved_path:
+            app.state._pending_mdb_path = None
+        if ok:
+            _set_ready(True, "")
+            return
+        reason = _summarize_failures(checks) or "readiness_failed"
+        _set_ready(False, reason, force_log=log_failures)
+
+    def _record_exception(exc: Exception) -> None:
+        app.state.last_ready_checks = []
+        message = f"{type(exc).__name__}: {exc}"
+        _set_ready(False, message, force_log=True)
+
+    async def _perform_check_and_update(*, log_failures: bool) -> tuple[bool, List[Dict[str, object]], str]:
+        async with app.state._readiness_lock:
+            try:
+                ok, checks, resolved_path = await run_startup_checks()
+            except Exception as exc:  # pragma: no cover - defensive
+                _record_exception(exc)
+                return False, [], str(getattr(app.state, "mdb_path", ""))
+            _apply_check_result(ok, checks, resolved_path, log_failures=log_failures)
+            return ok, checks, resolved_path
+
+    async def _background_readiness_runner(log_failures: bool) -> None:
+        try:
+            while True:
+                await _perform_check_and_update(log_failures=log_failures)
+                if not getattr(app.state, "_reschedule_required", False):
+                    break
+                app.state._reschedule_required = False
+        finally:
+            app.state._readiness_task = None
+            app.state._reschedule_required = False
+
+    def _schedule_readiness_check(*, log_failures: bool) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover - startup safeguard
+            return
+        task = getattr(app.state, "_readiness_task", None)
+        if task is None or task.done():
+            app.state._reschedule_required = False
+            app.state._readiness_task = loop.create_task(
+                _background_readiness_runner(log_failures)
+            )
+        else:
+            app.state._reschedule_required = True
+
     @app.on_event("startup")
     async def _on_app_startup() -> None:
         _set_ready(False, "warming_up")
         logger.info(
-            "Bridge starting host=%s port=%s auth=%s",
+            "Bridge listening host=%s port=%s auth=%s",
             app.state.bridge_host or "",
             app.state.bridge_port or 0,
             auth_mode,
         )
-        ok, checks, resolved_path = _execute_checks()
-        app.state.last_selftest_checks = checks
-        app.state.mdb_path = resolved_path
-        if ok:
-            _set_ready(True, "")
-            logger.info(
-                "Bridge ready host=%s port=%s auth=%s",
-                app.state.bridge_host or "",
-                app.state.bridge_port or 0,
-                auth_mode,
-            )
-        else:
-            reason = _first_failure_reason(checks) or "readiness_failed"
-            _set_ready(False, reason)
-            logger.warning(
-                "Bridge readiness failed host=%s port=%s auth=%s reason=%s",
-                app.state.bridge_host or "",
-                app.state.bridge_port or 0,
-                auth_mode,
-                reason,
-            )
+        _schedule_readiness_check(log_failures=True)
 
     @app.on_event("shutdown")
     async def _on_app_shutdown() -> None:
@@ -329,6 +394,20 @@ def create_app(
         for key in ("wizard_open", "unsaved_changes"):
             if key in payload:
                 base[key] = bool(payload[key])
+        new_path_val = payload.get("mdb_path") if isinstance(payload, dict) else None
+        if new_path_val is not None:
+            new_path = str(new_path_val).strip()
+            app.state._observed_mdb_path = new_path
+            current = str(app.state.mdb_path or "").strip()
+            pending = app.state._pending_mdb_path
+            if new_path and new_path != current:
+                if pending != new_path:
+                    app.state._pending_mdb_path = new_path
+                    _set_ready(False, "warming_up")
+                    app.state.last_ready_checks = []
+                    _schedule_readiness_check(log_failures=True)
+            elif pending and new_path == current:
+                app.state._pending_mdb_path = None
         return base
 
     @app.get("/health", response_model=HealthResponse)
@@ -336,7 +415,7 @@ def create_app(
         """Readiness-aware liveness probe."""
 
         if not getattr(app.state, "ready", False):
-            reason = getattr(app.state, "ready_reason", "warming_up") or "warming_up"
+            reason = getattr(app.state, "last_ready_error", "") or "warming_up"
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 content={"ok": False, "reason": reason},
@@ -361,6 +440,8 @@ def create_app(
         snapshot = _state_snapshot()
         return {
             "ready": bool(getattr(app.state, "ready", False)),
+            "last_ready_error": str(getattr(app.state, "last_ready_error", "")),
+            "checks": list(getattr(app.state, "last_ready_checks", [])),
             "wizard_open": snapshot["wizard_open"],
             "unsaved_changes": snapshot["unsaved_changes"],
             "version": __version__,
@@ -371,27 +452,21 @@ def create_app(
 
     @app.post("/selftest")
     async def selftest(_: None = Depends(_require_auth)) -> JSONResponse:
-        ok, checks, resolved_path = _execute_checks()
-        app.state.last_selftest_checks = checks
-        app.state.mdb_path = resolved_path
-        reason = _first_failure_reason(checks) or "selftest_failed"
-        _set_ready(ok, "" if ok else reason)
+        ok, checks, _ = await _perform_check_and_update(log_failures=True)
+        status_code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
+        reason = getattr(app.state, "last_ready_error", "")
+        host = app.state.bridge_host or ""
+        port = app.state.bridge_port or 0
         if ok:
-            logger.info(
-                "Bridge selftest passed host=%s port=%s auth=%s",
-                app.state.bridge_host or "",
-                app.state.bridge_port or 0,
-                auth_mode,
-            )
+            logger.info("Bridge selftest passed host=%s port=%s auth=%s", host, port, auth_mode)
         else:
             logger.warning(
                 "Bridge selftest failed host=%s port=%s auth=%s reason=%s",
-                app.state.bridge_host or "",
-                app.state.bridge_port or 0,
+                host,
+                port,
                 auth_mode,
-                reason,
+                reason or "selftest_failed",
             )
-        status_code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
         return JSONResponse(status_code=status_code, content={"ok": ok, "checks": checks})
 
     @app.get("/complexes/search", response_model=List[ComplexSummary])
