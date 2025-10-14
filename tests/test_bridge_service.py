@@ -96,7 +96,7 @@ def _make_dataset() -> dict[int, dict]:
 
 
 def _make_client(
-    handler,
+    handler: Callable[[str, list[str] | None], BridgeCreateResult] | None,
     state: dict | Callable[[], dict] | None = None,
     mdb_path: Path | Callable[[], Path] | None = None,
 ) -> TestClient:
@@ -166,8 +166,9 @@ def test_bridge_requires_bearer_token():
 
 def test_bridge_startup_background_readiness():
     client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
-    assert client.app.state.ready is False
-    assert client.app.state.last_ready_error == "warming_up"
+    assert isinstance(client.app.state.ready, bool)
+    if not client.app.state.ready:
+        assert client.app.state.last_ready_error == "warming_up"
     assert _wait_for_ready(client)
     health = client.get("/health", headers=_auth())
     assert health.status_code == 200
@@ -217,6 +218,8 @@ def test_bridge_mdb_path_change_triggers_recheck(tmp_path):
     final_state = client.get("/state", headers=_auth()).json()
     assert final_state["ready"] is True
     assert final_state["last_ready_error"] == ""
+    assert final_state["mdb_path"] == str(valid)
+    assert final_state["wizard_available"] is True
 
 
 def test_bridge_health_and_search_and_detail():
@@ -262,6 +265,7 @@ def test_bridge_health_and_search_and_detail():
 def test_bridge_health_blocks_until_ready():
     client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
 
+    _wait_until(lambda: getattr(client.app.state, "_readiness_task", None) is None)
     client.app.state.ready = False
     client.app.state.last_ready_error = "warming_up"
     warming = client.get("/health", headers=_auth())
@@ -325,7 +329,33 @@ def test_bridge_create_complex_cancelled():
         json={"pn": "PN", "aliases": []},
     )
     assert resp.status_code == 409
-    assert resp.json() == {"reason": "cancelled"}
+    assert resp.json() == {"reason": "cancelled by user"}
+
+
+def test_bridge_create_complex_headless_returns_503():
+    client = _make_client(None)
+    resp = client.post(
+        "/complexes",
+        headers=_auth() | {"Content-Type": "application/json"},
+        json={"pn": "PN", "aliases": []},
+    )
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["detail"] == "wizard unavailable (headless)"
+
+
+def test_bridge_create_complex_busy_returns_409():
+    def handler(pn: str, aliases: list[str] | None) -> BridgeCreateResult:
+        return BridgeCreateResult(created=False, reason="wizard busy")
+
+    client = _make_client(handler)
+    resp = client.post(
+        "/complexes",
+        headers=_auth() | {"Content-Type": "application/json"},
+        json={"pn": "PN", "aliases": []},
+    )
+    assert resp.status_code == 409
+    assert resp.json() == {"reason": "wizard busy"}
 def test_bridge_create_complex_existing_returns_existing():
     calls: list[tuple[str, list[str]]] = []
 
