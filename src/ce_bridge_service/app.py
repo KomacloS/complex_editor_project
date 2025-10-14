@@ -58,6 +58,7 @@ def create_app(
     app.state.last_ready_error = "warming_up"
     app.state.mdb_path = ""
     app.state.last_ready_checks = []
+    app.state.wizard_available = wizard_handler is not None
     app.state._observed_mdb_path = ""
     app.state._readiness_lock = asyncio.Lock()
     app.state._readiness_task = None
@@ -378,13 +379,34 @@ def create_app(
             ).hexdigest()
             return ComplexDetail(**payload)
 
-    def _handle_create(req: ComplexCreateRequest) -> BridgeCreateResult:
+    async def _handle_create(req: ComplexCreateRequest) -> BridgeCreateResult:
         if wizard_handler is None:
-            return BridgeCreateResult(created=False, reason="wizard handler unavailable")
-        return wizard_handler(req.pn, req.aliases)
+            reason = "wizard unavailable (headless)"
+            logger.warning(
+                "Bridge create request rejected: %s (pn=%s)",
+                reason,
+                req.pn,
+            )
+            return BridgeCreateResult(created=False, reason=reason)
+        try:
+            result = await asyncio.to_thread(wizard_handler, req.pn, req.aliases)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Wizard handler raised while creating pn=%s", req.pn)
+            return BridgeCreateResult(
+                created=False,
+                reason=f"wizard handler failed: {exc}",
+            )
+        if result is None:  # pragma: no cover - defensive fallback
+            logger.error("Wizard handler returned no result for pn=%s", req.pn)
+            return BridgeCreateResult(created=False, reason="wizard handler returned no result")
+        return result
 
-    def _state_snapshot() -> dict[str, bool]:
-        base = {"wizard_open": False, "unsaved_changes": False}
+    def _state_snapshot() -> dict[str, object]:
+        base: dict[str, object] = {
+            "wizard_open": False,
+            "unsaved_changes": False,
+            "mdb_path": str(app.state.mdb_path or ""),
+        }
         if state_provider is None:
             return base
         try:
@@ -394,6 +416,11 @@ def create_app(
         for key in ("wizard_open", "unsaved_changes"):
             if key in payload:
                 base[key] = bool(payload[key])
+        if "mdb_path" in payload:
+            try:
+                base["mdb_path"] = str(payload["mdb_path"] or "")
+            except Exception:
+                base["mdb_path"] = ""
         new_path_val = payload.get("mdb_path") if isinstance(payload, dict) else None
         if new_path_val is not None:
             new_path = str(new_path_val).strip()
@@ -444,10 +471,12 @@ def create_app(
             "checks": list(getattr(app.state, "last_ready_checks", [])),
             "wizard_open": snapshot["wizard_open"],
             "unsaved_changes": snapshot["unsaved_changes"],
+            "mdb_path": str(snapshot.get("mdb_path", app.state.mdb_path or "")),
             "version": __version__,
             "host": str(app.state.bridge_host or ""),
             "port": int(app.state.bridge_port or 0),
             "auth_required": bool(token),
+            "wizard_available": bool(app.state.wizard_available),
         }
 
     @app.post("/selftest")
@@ -524,24 +553,44 @@ def create_app(
 
         existing = _find_existing_complex(request.pn, request.aliases)
         if existing is not None:
+            logger.info(
+                "Bridge create request found existing complex pn=%s id=%s", request.pn, existing["id"]
+            )
             model = ComplexCreateResponse(**existing)
             return JSONResponse(status_code=status.HTTP_200_OK, content=model.model_dump())
 
-        result = _handle_create(request)
+        result = await _handle_create(request)
         if result.created:
             db_path = result.db_path or str(get_mdb_path())
+            logger.info(
+                "Bridge wizard created new complex pn=%s id=%s", request.pn, result.comp_id
+            )
             return ComplexCreateResponse(
                 id=int(result.comp_id or 0),
                 pn=request.pn,
                 aliases=request.aliases,
                 db_path=db_path,
             )
-        reason = result.reason or "cancelled"
-        if reason.strip().lower() == "cancelled":
-            return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"reason": "cancelled"})
-        lowered = reason.strip().lower()
-        status_code = status.HTTP_503_SERVICE_UNAVAILABLE if "unavailable" in lowered else status.HTTP_500_INTERNAL_SERVER_ERROR
-        raise HTTPException(status_code=status_code, detail=reason)
+        reason = (result.reason or "cancelled").strip() or "cancelled"
+        lowered = reason.lower()
+        if lowered in {"cancelled", "cancelled by user"}:
+            message = "cancelled by user"
+            logger.info("Bridge wizard cancelled by user pn=%s", request.pn)
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"reason": message},
+            )
+        if "busy" in lowered:
+            logger.warning("Bridge create request rejected: %s pn=%s", reason, request.pn)
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"reason": reason},
+            )
+        if "unavailable" in lowered:
+            logger.warning("Bridge create request failed: %s pn=%s", reason, request.pn)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
+        logger.error("Bridge wizard failed pn=%s reason=%s", request.pn, reason)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=reason)
 
     return app
 
