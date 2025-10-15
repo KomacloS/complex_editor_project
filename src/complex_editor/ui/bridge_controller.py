@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable, Optional
+from copy import deepcopy
 
 import uvicorn
 from PyQt6 import QtCore, QtWidgets
@@ -23,6 +24,15 @@ logger = logging.getLogger(__name__)
 class QtInvoker(QtCore.QObject):
     """Utility to run callables on the Qt GUI thread and wait for the result."""
 
+    _execute_signal = QtCore.pyqtSignal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._execute_signal.connect(
+            self._execute,
+            QtCore.Qt.ConnectionType.QueuedConnection,
+        )
+
     @QtCore.pyqtSlot(object)
     def _execute(self, payload: tuple[Callable, tuple, dict, Future]) -> None:
         func, args, kwargs, future = payload
@@ -36,16 +46,14 @@ class QtInvoker(QtCore.QObject):
             future.set_result(result)
 
     def invoke(self, func: Callable, *args, **kwargs):
-        if QtCore.QThread.currentThread() == QtWidgets.QApplication.instance().thread():
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return func(*args, **kwargs)
+        if QtCore.QThread.currentThread() == app.thread():
             return func(*args, **kwargs)
         future: Future = Future()
         payload = (func, args, kwargs, future)
-        QtCore.QMetaObject.invokeMethod(
-            self,
-            "_execute",
-            QtCore.Qt.ConnectionType.QueuedConnection,
-            payload,
-        )
+        self._execute_signal.emit(payload)
         return future.result()
 
 
@@ -57,11 +65,14 @@ class BridgeController:
         get_mdb_path: Callable[[], Path],
         invoker: QtInvoker,
         state_provider: Callable[[], dict[str, object]] | None = None,
+        open_complex: Callable[[int, str], dict[str, object]] | None = None,
     ) -> None:
         self._get_mdb_path = get_mdb_path
         self._invoker = invoker
         self._state_provider = state_provider
-        self._external = getattr(sys, "frozen", False)
+        self._focus_callback = open_complex
+        self._external_capable = getattr(sys, "frozen", False)
+        self._use_external: bool | None = None
         self._server: uvicorn.Server | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -85,7 +96,9 @@ class BridgeController:
             config.port,
             auth_state,
         )
-        if self._external:
+        use_external = self._decide_external()
+        self._use_external = use_external
+        if use_external:
             return self._start_external(config)
 
         if self.is_running():
@@ -113,6 +126,13 @@ class BridgeController:
                     bridge_host=config.host,
                     bridge_port=int(config.port),
                     state_provider=self._state_provider,
+                    focus_handler=(
+                        None
+                        if self._focus_callback is None
+                        else lambda comp_id, mode: self._invoker.invoke(
+                            self._focus_callback, comp_id, mode
+                        )
+                    ),
                 )
             except Exception as exc:
                 msg = f"Failed to initialize bridge service: {exc}"
@@ -122,11 +142,14 @@ class BridgeController:
             app.add_event_handler("startup", self._on_startup)
             app.add_event_handler("shutdown", self._on_shutdown)
 
+            log_config = self._uvicorn_log_config()
             uvicorn_config = uvicorn.Config(
                 app,
                 host=config.host,
                 port=int(config.port),
                 log_level="info",
+                use_colors=False,
+                log_config=log_config,
             )
             server = uvicorn.Server(uvicorn_config)
 
@@ -170,8 +193,10 @@ class BridgeController:
         return True
 
     def stop(self) -> None:
-        if self._external:
+        use_external = self._use_external if self._use_external is not None else self._decide_external()
+        if use_external:
             self._stop_external()
+            self._use_external = None
             return
         thread: threading.Thread | None = None
         was_running = self._running.is_set()
@@ -196,9 +221,11 @@ class BridgeController:
                 self._last_error = None
             self._startup_success = False
             logger.debug("Bridge server state cleared.")
+        self._use_external = None
 
     def is_running(self) -> bool:
-        if self._external:
+        use_external = self._use_external if self._use_external is not None else self._decide_external()
+        if use_external:
             return self._external_is_running()
         if self._running.is_set():
             return True
@@ -222,6 +249,35 @@ class BridgeController:
         return self._last_error
 
     # --------------------------- external helpers ---------------------------
+    def _decide_external(self) -> bool:
+        if not self._external_capable:
+            return False
+        try:
+            app = QtWidgets.QApplication.instance()
+        except Exception:
+            app = None
+        return app is None
+
+    def _uvicorn_log_config(self) -> dict[str, object]:
+        base = deepcopy(uvicorn.config.LOGGING_CONFIG)
+        try:
+            base["formatters"]["default"]["use_colors"] = False
+        except Exception:
+            pass
+        try:
+            base["formatters"]["access"]["use_colors"] = False
+        except Exception:
+            pass
+
+        stderr = getattr(sys, "stderr", None)
+        stdout = getattr(sys, "stdout", None)
+
+        if stderr is None:
+            base["handlers"]["default"] = {"class": "logging.NullHandler"}
+        if stdout is None:
+            base["handlers"]["access"] = {"class": "logging.NullHandler"}
+        return base
+
     def _start_external(self, config: BridgeConfig) -> bool:
         cfg = self._build_external_config(config)
         try:

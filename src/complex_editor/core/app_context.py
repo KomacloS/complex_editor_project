@@ -30,6 +30,7 @@ class AppContext:
         self.db: MDB | None = None
         self.wizard_open: bool = False
         self.unsaved_changes: bool = False
+        self.focused_comp_id: int | None = None
 
     # ------------------------------ config helpers ------------------------------
     def reload_config(self) -> CEConfig:
@@ -191,6 +192,7 @@ class AppContext:
             "wizard_open": bool(self.wizard_open),
             "unsaved_changes": bool(self.unsaved_changes),
             "mdb_path": str(self.current_db_path()),
+            "focused_comp_id": None if self.focused_comp_id is None else int(self.focused_comp_id),
         }
 
 

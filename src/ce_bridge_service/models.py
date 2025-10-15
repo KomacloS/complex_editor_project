@@ -29,11 +29,29 @@ class ComplexCreateRequest(BaseModel):
     aliases: Optional[List[str]] = None
 
 
+class ComplexOpenRequest(BaseModel):
+    mode: Optional[str] = Field(default="view")
+
+
 class ComplexCreateResponse(BaseModel):
     id: int
     pn: str
     aliases: List[str] = Field(default_factory=list)
     db_path: Optional[str] = None
+
+
+class AliasUpdateRequest(BaseModel):
+    add: List[str] = Field(default_factory=list)
+    remove: List[str] = Field(default_factory=list)
+
+
+class AliasUpdateResponse(BaseModel):
+    id: int
+    pn: str
+    aliases: List[str] = Field(default_factory=list)
+    db_path: str
+    updated: Dict[str, List[str]]
+    source_hash: str
 
 
 class HealthResponse(BaseModel):
@@ -49,6 +67,9 @@ __all__ = [
     "ComplexSummary",
     "ComplexDetail",
     "ComplexCreateRequest",
+    "ComplexOpenRequest",
     "ComplexCreateResponse",
+    "AliasUpdateRequest",
+    "AliasUpdateResponse",
     "HealthResponse",
 ]

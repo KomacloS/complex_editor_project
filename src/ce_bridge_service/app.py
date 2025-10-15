@@ -23,8 +23,11 @@ from complex_editor.db.mdb_api import (
 )
 
 from .models import (
+    AliasUpdateRequest,
+    AliasUpdateResponse,
     ComplexCreateRequest,
     ComplexCreateResponse,
+    ComplexOpenRequest,
     ComplexDetail,
     ComplexSummary,
     HealthResponse,
@@ -33,6 +36,10 @@ from .types import BridgeCreateResult
 
 
 logger = logging.getLogger(__name__)
+
+
+class FocusBusyError(Exception):
+    """Raised when the UI refuses to focus/open the requested complex because it is busy."""
 
 
 def create_app(
@@ -44,6 +51,7 @@ def create_app(
     bridge_host: str | None = None,
     bridge_port: int | None = None,
     state_provider: Callable[[], Dict[str, object]] | None = None,
+    focus_handler: Callable[[int, str], Dict[str, object]] | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application for the bridge."""
 
@@ -64,6 +72,9 @@ def create_app(
     app.state._readiness_task = None
     app.state._reschedule_required = False
     app.state._pending_mdb_path = None
+    app.state.focused_comp_id = None
+    app.state.wizard_open = False
+    app.state.focus_handler_available = bool(focus_handler)
     factory = mdb_factory or MDB
 
     def _set_ready(value: bool, reason: str = "", *, force_log: bool = False) -> None:
@@ -263,6 +274,32 @@ def create_app(
     def _normalize_aliases(values: Optional[List[str]]) -> List[str]:
         return [a.strip() for a in (values or []) if a and a.strip()]
 
+    def _alias_key(value: str) -> str:
+        return value.strip().upper()
+
+    def _normalize_alias_tokens(values: Optional[List[str]]) -> List[str]:
+        tokens: List[str] = []
+        seen: set[str] = set()
+        for raw in values or []:
+            cleaned = raw.strip().upper()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            tokens.append(cleaned)
+        return tokens
+
+    def _collect_canonical_map(db: MDB) -> Dict[str, int]:
+        mapping: Dict[str, int] = {}
+        try:
+            rows = db.list_complexes()
+        except Exception:
+            return mapping
+        for cid, name, _ in rows:
+            key = _alias_key(str(name or ""))
+            if key:
+                mapping[key] = int(cid)
+        return mapping
+
     def _find_existing_complex(pn: str, aliases: List[str]) -> Dict[str, object] | None:
         tokens = {pn.strip().lower()}
         tokens.update(a.strip().lower() for a in aliases)
@@ -403,9 +440,10 @@ def create_app(
 
     def _state_snapshot() -> dict[str, object]:
         base: dict[str, object] = {
-            "wizard_open": False,
+            "wizard_open": bool(getattr(app.state, "wizard_open", False)),
             "unsaved_changes": False,
             "mdb_path": str(app.state.mdb_path or ""),
+            "focused_comp_id": getattr(app.state, "focused_comp_id", None),
         }
         if state_provider is None:
             return base
@@ -435,6 +473,14 @@ def create_app(
                     _schedule_readiness_check(log_failures=True)
             elif pending and new_path == current:
                 app.state._pending_mdb_path = None
+        if isinstance(payload, dict) and "focused_comp_id" in payload:
+            try:
+                value = payload["focused_comp_id"]
+                base["focused_comp_id"] = None if value in (None, "") else int(value)
+            except Exception:
+                base["focused_comp_id"] = None
+        app.state.focused_comp_id = base["focused_comp_id"]
+        app.state.wizard_open = bool(base["wizard_open"])
         return base
 
     @app.get("/health", response_model=HealthResponse)
@@ -477,6 +523,8 @@ def create_app(
             "port": int(app.state.bridge_port or 0),
             "auth_required": bool(token),
             "wizard_available": bool(app.state.wizard_available),
+            "alias_ops_supported": True,
+            "focused_comp_id": snapshot.get("focused_comp_id"),
         }
 
     @app.post("/selftest")
@@ -535,6 +583,195 @@ def create_app(
             return _detail(comp_id)
         except KeyError as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    @app.post("/complexes/{comp_id}/open")
+    async def open_complex(
+        comp_id: int,
+        payload: ComplexOpenRequest | None = None,
+        _: None = Depends(_require_auth),
+    ) -> JSONResponse:
+        if focus_handler is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="headless",
+            )
+
+        request_model = payload or ComplexOpenRequest()
+        raw_mode = request_model.mode or "view"
+        mode = raw_mode.strip().lower()
+        if mode not in {"view", "edit"}:
+            logger.info(
+                "Bridge open request rejected (invalid mode) comp_id=%s mode=%s",
+                comp_id,
+                raw_mode,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_mode",
+            )
+
+        logger.info("Bridge open request received comp_id=%s mode=%s", comp_id, mode)
+
+        snapshot = _state_snapshot()
+        if mode != "edit" and (snapshot.get("wizard_open") or snapshot.get("unsaved_changes")):
+            logger.info(
+                "Bridge open request rejected (busy) comp_id=%s mode=%s wizard_open=%s unsaved=%s",
+                comp_id,
+                mode,
+                snapshot.get("wizard_open"),
+                snapshot.get("unsaved_changes"),
+            )
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"reason": "busy"},
+            )
+
+        mdb_path = get_mdb_path()
+        pn = ""
+        with factory(mdb_path) as db:
+            try:
+                device = db.get_complex(comp_id)
+                pn = str(getattr(device, "name", "") or "")
+            except KeyError as exc:
+                logger.info("Bridge open request missing comp_id=%s mode=%s", comp_id, mode)
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.exception("Bridge open lookup failed comp_id=%s mode=%s", comp_id, mode)
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="lookup_failed",
+                ) from exc
+
+        try:
+            result = focus_handler(comp_id, mode)
+        except FocusBusyError:
+            logger.info("Bridge open handler reported busy comp_id=%s mode=%s", comp_id, mode)
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"reason": "busy"},
+            )
+        except KeyError as exc:
+            logger.info("Bridge open handler reported missing comp_id=%s mode=%s", comp_id, mode)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Bridge open handler failed comp_id=%s mode=%s", comp_id, mode)
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="focus_failed") from exc
+
+        focus_id = comp_id
+        if isinstance(result, dict):
+            pn = str(result.get("pn") or pn)
+            if "focused_comp_id" in result:
+                try:
+                    candidate = result["focused_comp_id"]
+                    if candidate not in (None, ""):
+                        focus_id = int(candidate)
+                except Exception:
+                    focus_id = comp_id
+            if "wizard_open" in result:
+                app.state.wizard_open = bool(result["wizard_open"])
+        app.state.focused_comp_id = focus_id
+        # Refresh cached state after the UI updates so /state reflects the change
+        updated_snapshot = _state_snapshot()
+        logger.info(
+            "Bridge open request completed comp_id=%s mode=%s focus_id=%s wizard_open=%s",
+            comp_id,
+            mode,
+            updated_snapshot.get("focused_comp_id"),
+            updated_snapshot.get("wizard_open"),
+        )
+        return JSONResponse(status_code=status.HTTP_200_OK, content={"ok": True})
+
+    @app.post(
+        "/complexes/{comp_id}/aliases",
+        response_model=AliasUpdateResponse,
+    )
+    async def update_aliases(
+        comp_id: int,
+        payload: AliasUpdateRequest,
+        _: None = Depends(_require_auth),
+    ) -> AliasUpdateResponse:
+        request = payload.model_copy(deep=True)
+        add_tokens = _normalize_alias_tokens(request.add)
+        remove_tokens = _normalize_alias_tokens(request.remove)
+        mdb_path = get_mdb_path()
+        added: List[str] = []
+        removed: List[str] = []
+        skipped: List[str] = []
+
+        with factory(mdb_path) as db:
+            try:
+                device = db.get_complex(comp_id)
+            except KeyError as exc:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+            canonical = str(device.name or "")
+            canonical_key = _alias_key(canonical)
+            canonical_map = _collect_canonical_map(db)
+            if canonical_key:
+                canonical_map.setdefault(canonical_key, comp_id)
+
+            conflicts = []
+            for alias in add_tokens:
+                owner = canonical_map.get(alias)
+                if owner is not None and owner != comp_id:
+                    conflicts.append({"alias": alias, "existing_id": owner})
+            if conflicts:
+                logger.warning(
+                    "Bridge alias update conflict comp_id=%s conflicts=%s",
+                    comp_id,
+                    len(conflicts),
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_409_CONFLICT,
+                    content={"reason": "alias_conflict", "conflicts": conflicts},
+                )
+
+            existing_aliases = db.get_aliases(comp_id)
+            alias_map = {_alias_key(a): a for a in existing_aliases}
+            current_aliases = dict(alias_map)
+
+            for alias in remove_tokens:
+                if alias in current_aliases:
+                    removed_value = current_aliases.pop(alias)
+                    removed.append(_alias_key(removed_value))
+                else:
+                    skipped.append(alias)
+
+            for alias in add_tokens:
+                if alias == canonical_key:
+                    skipped.append(alias)
+                    continue
+                if alias in current_aliases:
+                    skipped.append(alias)
+                    continue
+                current_aliases[alias] = alias
+                added.append(alias)
+
+            changed = bool(added or removed)
+            if changed:
+                db.set_aliases(comp_id, list(current_aliases.values()))
+
+        updated_summary = {
+            "added": added,
+            "removed": removed,
+            "skipped": skipped,
+        }
+        detail = _detail(comp_id)
+        logger.info(
+            "Bridge alias update completed comp_id=%s added=%s removed=%s skipped=%s",
+            comp_id,
+            len(added),
+            len(removed),
+            len(skipped),
+        )
+        return AliasUpdateResponse(
+            id=detail.id,
+            pn=detail.pn,
+            aliases=detail.aliases,
+            db_path=str(mdb_path),
+            updated=updated_summary,
+            source_hash=detail.source_hash,
+        )
 
     @app.post(
         "/complexes",
@@ -595,4 +832,4 @@ def create_app(
     return app
 
 
-__all__ = ["create_app"]
+__all__ = ["create_app", "FocusBusyError"]

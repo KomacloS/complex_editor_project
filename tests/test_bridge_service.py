@@ -15,7 +15,7 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from ce_bridge_service.app import create_app
+from ce_bridge_service.app import create_app, FocusBusyError
 from ce_bridge_service import run as run_module
 from ce_bridge_service.types import BridgeCreateResult
 from complex_editor.db.mdb_api import ComplexDevice as DbComplex
@@ -73,6 +73,19 @@ class FakeMDB:
     def get_complex(self, comp_id: int) -> DbComplex:
         return self.data[comp_id]["device"]
 
+    def set_aliases(self, comp_id: int, aliases: list[str]) -> None:
+        cleaned = [a.strip() for a in (aliases or []) if a and str(a).strip()]
+        unique_sorted = sorted(dict.fromkeys(cleaned))
+        self.data[comp_id]["device"].aliases = unique_sorted
+
+    def list_complexes(self) -> list[tuple[int, str, int]]:
+        entries: list[tuple[int, str, int]] = []
+        for cid in sorted(self.data):
+            device = self.data[cid]["device"]
+            subs = len(device.subcomponents or [])
+            entries.append((cid, device.name, subs))
+        return entries
+
 
 def _make_dataset() -> dict[int, dict]:
     sub = DbSub(
@@ -95,12 +108,27 @@ def _make_dataset() -> dict[int, dict]:
     return {1: {"device": device}}
 
 
+def _make_dataset_with_peer() -> dict[int, dict]:
+    base = _make_dataset()
+    peer = DbComplex(
+        id_comp_desc=2,
+        name="ALT-2",
+        total_pins=4,
+        subcomponents=[],
+        aliases=[],
+    )
+    base[2] = {"device": peer}
+    return base
+
+
 def _make_client(
     handler: Callable[[str, list[str] | None], BridgeCreateResult] | None,
     state: dict | Callable[[], dict] | None = None,
     mdb_path: Path | Callable[[], Path] | None = None,
+    dataset: dict[int, dict] | None = None,
+    focus_handler: Callable[[int, str], dict[str, object]] | None = None,
 ) -> TestClient:
-    data = _make_dataset()
+    data = dataset if dataset is not None else _make_dataset()
     default_path = ROOT / "tests" / "data" / "dummy.mdb"
 
     if callable(mdb_path):
@@ -134,6 +162,7 @@ def _make_client(
         bridge_host="127.0.0.1",
         bridge_port=8765,
         state_provider=provider,
+        focus_handler=focus_handler,
     )
     client = TestClient(app)
     client.__enter__()
@@ -258,8 +287,254 @@ def test_bridge_health_and_search_and_detail():
     assert state_payload["wizard_open"] is False
     assert state_payload["unsaved_changes"] is False
     assert state_payload["host"] == "127.0.0.1"
-    assert state_payload["port"] == 8765
-    assert state_payload["auth_required"] is True
+    assert state_payload["alias_ops_supported"] is True
+    assert state_payload["focused_comp_id"] is None
+
+
+def test_alias_update_happy_path():
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+
+    assert _wait_for_ready(client)
+
+    add_resp = client.post(
+        "/complexes/1/aliases",
+        json={"add": [" alt-2 "]},
+        headers=_auth(),
+    )
+    assert add_resp.status_code == 200
+    add_body = add_resp.json()
+    assert add_body["updated"] == {"added": ["ALT-2"], "removed": [], "skipped": []}
+    assert "ALT-2" in add_body["aliases"]
+    add_hash = add_body["source_hash"]
+
+    repeat_resp = client.post(
+        "/complexes/1/aliases",
+        json={"add": ["alt-2"]},
+        headers=_auth(),
+    )
+    assert repeat_resp.status_code == 200
+    repeat_body = repeat_resp.json()
+    assert repeat_body["updated"] == {"added": [], "removed": [], "skipped": ["ALT-2"]}
+    assert repeat_body["aliases"].count("ALT-2") == 1
+    assert repeat_body["source_hash"] == add_hash
+
+    remove_resp = client.post(
+        "/complexes/1/aliases",
+        json={"remove": ["alt-2"]},
+        headers=_auth(),
+    )
+    assert remove_resp.status_code == 200
+    remove_body = remove_resp.json()
+    assert remove_body["updated"] == {"added": [], "removed": ["ALT-2"], "skipped": []}
+    assert "ALT-2" not in remove_body["aliases"]
+    assert remove_body["source_hash"] != add_hash
+
+    final_resp = client.post(
+        "/complexes/1/aliases",
+        json={"remove": ["ALT-2"]},
+        headers=_auth(),
+    )
+    assert final_resp.status_code == 200
+    final_body = final_resp.json()
+    assert final_body["updated"] == {"added": [], "removed": [], "skipped": ["ALT-2"]}
+    assert final_body["aliases"] == ["ALT-1"]
+    assert final_body["source_hash"] == remove_body["source_hash"]
+
+
+def test_alias_update_conflict():
+    dataset = _make_dataset_with_peer()
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"), dataset=dataset)
+
+    assert _wait_for_ready(client)
+    resp = client.post(
+        "/complexes/1/aliases",
+        json={"add": ["alt-2"]},
+        headers=_auth(),
+    )
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["reason"] == "alias_conflict"
+    assert body["conflicts"] == [{"alias": "ALT-2", "existing_id": 2}]
+
+
+def test_alias_update_requires_auth():
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+
+    resp = client.post("/complexes/1/aliases", json={"add": ["ALT-3"]})
+    assert resp.status_code == 401
+
+
+def test_alias_update_missing_complex():
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+
+    resp = client.post("/complexes/999/aliases", json={"add": ["ALT-3"]}, headers=_auth())
+    assert resp.status_code == 404
+
+
+def test_open_complex_success():
+    dataset = _make_dataset()
+    state = {
+        "wizard_open": False,
+        "unsaved_changes": False,
+        "mdb_path": str(ROOT / "tests" / "data" / "dummy.mdb"),
+        "focused_comp_id": None,
+    }
+    focused: dict[str, object] = {}
+    modes: list[str] = []
+
+    def focus_handler(comp_id: int, mode: str) -> dict[str, object]:
+        modes.append(mode)
+        focused["id"] = comp_id
+        device = dataset[comp_id]["device"]
+        state["focused_comp_id"] = comp_id
+        return {"pn": device.name}
+
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        state=lambda: state,
+        dataset=dataset,
+        focus_handler=focus_handler,
+    )
+
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/1/open", headers=_auth())
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert focused["id"] == 1
+    assert modes == ["view"]
+
+    state_resp = client.get("/state", headers=_auth())
+    assert state_resp.status_code == 200
+    assert state_resp.json()["focused_comp_id"] == 1
+
+
+def test_open_complex_not_found():
+    dataset = _make_dataset()
+    invoked = {"count": 0}
+
+    def focus_handler(comp_id: int, mode: str) -> dict[str, object]:
+        invoked["count"] += 1
+        raise KeyError(comp_id)
+
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+        focus_handler=focus_handler,
+    )
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/99/open", headers=_auth())
+    assert resp.status_code == 404
+    assert invoked["count"] == 0
+
+
+def test_open_complex_busy_blocks():
+    dataset = _make_dataset()
+    state = {
+        "wizard_open": True,
+        "unsaved_changes": True,
+        "mdb_path": str(ROOT / "tests" / "data" / "dummy.mdb"),
+        "focused_comp_id": None,
+    }
+    invoked = {"count": 0}
+
+    def focus_handler(comp_id: int, mode: str) -> dict[str, object]:
+        invoked["count"] += 1
+        return {"pn": dataset[comp_id]["device"].name}
+
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        state=lambda: state,
+        dataset=dataset,
+        focus_handler=focus_handler,
+    )
+
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/1/open", headers=_auth())
+    assert resp.status_code == 409
+    assert resp.json() == {"reason": "busy"}
+    assert invoked["count"] == 0
+
+
+def test_open_complex_edit_mode_sets_wizard_state():
+    dataset = _make_dataset()
+    state = {
+        "wizard_open": False,
+        "unsaved_changes": False,
+        "mdb_path": str(ROOT / "tests" / "data" / "dummy.mdb"),
+        "focused_comp_id": None,
+    }
+    recorded: dict[str, object] = {"mode": None, "count": 0}
+
+    def focus_handler(comp_id: int, mode: str) -> dict[str, object]:
+        recorded["mode"] = mode
+        recorded["count"] = recorded.get("count", 0) + 1
+        state["focused_comp_id"] = comp_id
+        state["wizard_open"] = True
+        return {"pn": dataset[comp_id]["device"].name, "wizard_open": True}
+
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        state=lambda: state,
+        dataset=dataset,
+        focus_handler=focus_handler,
+    )
+
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/1/open", headers=_auth(), json={"mode": "edit"})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert recorded["mode"] == "edit"
+    assert recorded["count"] == 1
+
+    state_payload = client.get("/state", headers=_auth()).json()
+    assert state_payload["wizard_open"] is True
+    assert state_payload["focused_comp_id"] == 1
+
+
+def test_open_complex_edit_busy_returns_conflict():
+    dataset = _make_dataset()
+    invocations = {"count": 0, "mode": None}
+
+    def focus_handler(comp_id: int, mode: str) -> dict[str, object]:
+        invocations["count"] += 1
+        invocations["mode"] = mode
+        raise FocusBusyError("busy")
+
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+        focus_handler=focus_handler,
+        state={"wizard_open": False, "unsaved_changes": False},
+    )
+
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/1/open", headers=_auth(), json={"mode": "edit"})
+    assert resp.status_code == 409
+    assert resp.json() == {"reason": "busy"}
+    assert invocations["count"] == 1
+    assert invocations["mode"] == "edit"
+
+
+def test_open_complex_rejects_invalid_mode():
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        focus_handler=lambda comp_id, mode: {"pn": "PN-100"},
+    )
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/1/open", headers=_auth(), json={"mode": "launch"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "invalid_mode"
+
+
+def test_open_complex_headless():
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        focus_handler=None,
+    )
+    assert _wait_for_ready(client)
+    resp = client.post("/complexes/1/open", headers=_auth())
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "headless"
 
 
 def test_bridge_health_blocks_until_ready():

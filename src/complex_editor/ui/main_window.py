@@ -23,6 +23,7 @@ from .new_complex_wizard import NewComplexWizard
 from .settings_dialog import IntegrationSettingsDialog
 
 from ce_bridge_service.types import BridgeCreateResult
+from ce_bridge_service.app import FocusBusyError
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -43,12 +44,15 @@ class MainWindow(QtWidgets.QMainWindow):
             get_mdb_path=lambda: self.ctx.current_db_path(),
             invoker=self._bridge_invoker,
             state_provider=self.ctx.bridge_state,
+            open_complex=lambda comp_id, mode: self.focus_complex(comp_id, mode=mode),
         )
         self.db: Optional[MDB] = None
         self._buffer_complexes: List[EditorComplex] | None = None
         self._buffer_raw: List[dict] | None = None
         self._buffer_path: Path | None = None
         self._active_wizard: QtWidgets.QDialog | None = None
+        self._active_editor: ComplexEditor | None = None
+        self._active_editor_id: int | None = None
 
         if buffer_path is not None and Path(buffer_path).exists():
             self._buffer_path = Path(buffer_path)
@@ -641,6 +645,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_selected(self) -> None:
         row = self.list.currentRow()
         if row < 0:
+            if hasattr(self.ctx, "focused_comp_id"):
+                self.ctx.focused_comp_id = None
             self.sub_table.setRowCount(0)
             self.sub_table.setColumnCount(0)
             return
@@ -652,9 +658,276 @@ class MainWindow(QtWidgets.QMainWindow):
         cid_item = self.list.item(row, 0)
         if cid_item is None:
             return
-        self._refresh_subcomponents_db(int(cid_item.text()))
+        try:
+            cid_val = int(cid_item.text())
+        except Exception:
+            cid_val = None
+        if hasattr(self.ctx, "focused_comp_id"):
+            self.ctx.focused_comp_id = cid_val
+        if cid_val is None:
+            return
+        self._refresh_subcomponents_db(cid_val)
+
+    def _process_events(self) -> None:
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        try:
+            app.processEvents()
+        except Exception:
+            pass
+
+    def _bring_window_forward(self, widget: QtWidgets.QWidget) -> None:
+        try:
+            widget.showNormal()
+        except Exception:
+            try:
+                widget.show()
+            except Exception:
+                pass
+        try:
+            widget.setWindowState(widget.windowState() & ~QtCore.Qt.WindowState.WindowMinimized)
+        except Exception:
+            pass
+        try:
+            widget.raise_()
+        except Exception:
+            pass
+        try:
+            widget.activateWindow()
+        except Exception:
+            pass
+
+    def _find_row_for_comp(self, comp_id: int) -> Optional[int]:
+        for row in range(self.list.rowCount()):
+            item = self.list.item(row, 0)
+            if item is None:
+                continue
+            try:
+                if int(item.text()) == int(comp_id):
+                    return row
+            except Exception:
+                continue
+        return None
+
+    def _create_editor_for(self, comp_id: int) -> ComplexEditor:
+        assert self.db is not None
+        cursor = self.db._conn.cursor()
+        try:
+            macro_map = schema_introspect.discover_macro_map(cursor) or {}
+        except Exception:
+            macro_map = {}
+        raw = self.db.get_complex(comp_id)
+        editor = ComplexEditor(macro_map)
+        device = ComplexDevice(0, [], MacroInstance("", {}))
+        device.id = comp_id
+        device.pn = getattr(raw, "name", "")
+        try:
+            device.aliases = list(getattr(raw, "aliases", []) or [])
+        except Exception:
+            device.aliases = []
+        device.pin_count = getattr(raw, "total_pins", 0)
+        device.subcomponents = []
+        for sc in getattr(raw, "subcomponents", []) or []:
+            name = self._func_name(sc.id_function)
+            pin_list = [sc.pins.get(k, 0) for k in ["A", "B", "C", "D"]]
+            pin_s_raw = (sc.pins or {}).get("S", "")
+            if isinstance(pin_s_raw, bytes):
+                try:
+                    pin_s_text = pin_s_raw.decode("utf-16", errors="ignore")
+                except Exception:
+                    pin_s_text = ""
+            else:
+                pin_s_text = str(pin_s_raw or "")
+            _rules = get_learned_rules()
+            xml_map = {}
+            try:
+                xml_map = xml_to_params_tolerant(pin_s_text, rules=_rules) if pin_s_text else {}
+            except Exception:
+                xml_map = {}
+            params = xml_map.get(name) or (next(iter(xml_map.values())) if xml_map else {})
+            device.subcomponents.append(SubComponent(MacroInstance(name, params), tuple(pin_list)))
+        editor.load_device(device)
+        try:
+            editor.setWindowTitle(f"Edit Complex — {device.pn}")
+        except Exception:
+            pass
+        return editor
+
+    def _ensure_editor_for(self, comp_id: int, pn_text: str) -> bool:
+        if self.db is None:
+            raise FocusBusyError("database unavailable")
+        if self._active_wizard is not None:
+            raise FocusBusyError("wizard busy")
+        if self._active_editor is not None:
+            if self._active_editor_id == comp_id:
+                self._bring_window_forward(self._active_editor)
+                self._process_events()
+                return True
+            raise FocusBusyError("editor busy")
+        if getattr(self.ctx, "wizard_open", False):
+            raise FocusBusyError("wizard busy")
+
+        editor = self._create_editor_for(comp_id)
+        editor.setModal(False)
+        try:
+            editor.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        except Exception:
+            pass
+
+        opener = getattr(self.ctx, "wizard_opened", None)
+        if callable(opener):
+            try:
+                opener()
+            except Exception:
+                pass
+
+        self._active_editor = editor
+        self._active_editor_id = int(comp_id)
+
+        def _on_finished(result: int, dlg=editor, cid=comp_id) -> None:
+            self._on_editor_finished(dlg, cid, result)
+
+        editor.finished.connect(_on_finished)
+        editor.show()
+        try:
+            editor.setWindowTitle(editor.windowTitle() or f"Edit Complex — {pn_text}")
+        except Exception:
+            pass
+        self._bring_window_forward(editor)
+        self._process_events()
+        return True
+
+    def _reselect_after_save(self, comp_id: int) -> None:
+        self._refresh_list()
+        row = self._find_row_for_comp(comp_id)
+        if row is None:
+            return
+        self.list.setCurrentCell(row, 0)
+        self.list.scrollToItem(
+            self.list.item(row, 0),
+            QtWidgets.QAbstractItemView.ScrollHint.PositionAtCenter,
+        )
+        self._process_events()
+        self._on_selected()
+
+    def _on_editor_finished(self, editor: ComplexEditor, comp_id: int, result: int) -> None:
+        saved = False
+        had_changes = result == QtWidgets.QDialog.DialogCode.Accepted
+        try:
+            if result == QtWidgets.QDialog.DialogCode.Accepted:
+                try:
+                    updated = editor.build_device()
+                    saved_id = self._persist_editor_device(updated, comp_id=comp_id)
+                    saved = saved_id is not None
+                    if saved:
+                        self._reselect_after_save(comp_id)
+                        try:
+                            QtWidgets.QMessageBox.information(self, "Updated", "Complex updated")
+                        except Exception:
+                            pass
+                except Exception as exc:
+                    try:
+                        QtWidgets.QMessageBox.warning(
+                            self,
+                            "Save Failed",
+                            f"Failed to update complex {comp_id}: {exc}",
+                        )
+                    except Exception:
+                        pass
+            else:
+                had_changes = False
+        finally:
+            closer = getattr(self.ctx, "wizard_closed", None)
+            if callable(closer):
+                try:
+                    closer(saved=saved, had_changes=had_changes)
+                except Exception:
+                    pass
+            if self._active_editor is editor:
+                self._active_editor = None
+                self._active_editor_id = None
+            try:
+                editor.deleteLater()
+            except Exception:
+                pass
+            self._process_events()
 
     # ------------------------------------------------------------------ actions
+    def focus_complex(self, comp_id: int, mode: str = "view") -> dict[str, object]:
+        """
+        Select the complex in the list, refresh the detail pane, and bring the window forward.
+
+        Returns a dict with ``pn`` for logging. Raises KeyError if the complex is not found.
+        """
+
+        if self.db is None:
+            raise KeyError(comp_id)
+
+        normalized_mode = (mode or "view").strip().lower()
+        if normalized_mode not in {"view", "edit"}:
+            raise ValueError(f"Unsupported focus mode: {mode}")
+
+        # Refresh to keep the table aligned with the database contents.
+        self._refresh_list()
+
+        target_row = self._find_row_for_comp(comp_id)
+        if target_row is None:
+            raise KeyError(comp_id)
+
+        previous_row = self.list.currentRow()
+
+        self._bring_window_forward(self)
+
+        self.list.setCurrentCell(target_row, 0)
+        self.list.scrollToItem(
+            self.list.item(target_row, 0),
+            QtWidgets.QAbstractItemView.ScrollHint.PositionAtCenter,
+        )
+        self._process_events()
+        self._on_selected()
+
+        pn_item = self.list.item(target_row, 1)
+        pn_text = pn_item.text() if pn_item is not None else ""
+        self.ctx.focused_comp_id = int(comp_id)
+
+        try:
+            self.list.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+            app = QtWidgets.QApplication.instance()
+            if app is not None:
+                app.setActiveWindow(self)
+        except Exception:
+            pass
+
+        wizard_flag = False
+        if normalized_mode == "edit":
+            try:
+                self._ensure_editor_for(comp_id, pn_text)
+                wizard_flag = getattr(self.ctx, "wizard_open", True)
+            except FocusBusyError:
+                if previous_row != target_row and previous_row >= 0:
+                    try:
+                        self.list.setCurrentCell(previous_row, 0)
+                        self._on_selected()
+                    except Exception:
+                        pass
+                raise
+        else:
+            try:
+                app = QtWidgets.QApplication.instance()
+                if app is not None:
+                    app.setActiveWindow(self)
+
+            except Exception:
+                pass
+
+        self._process_events()
+        return {
+            "pn": pn_text,
+            "focused_comp_id": int(comp_id),
+            "wizard_open": bool(wizard_flag),
+        }
+
     def _new_complex(self) -> None:
         if self.db is None:
             return
@@ -730,11 +1003,38 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 dev.subcomponents.append(SubComponent(MacroInstance(mname, params), tuple(pins)))
             editor.load_device(dev)
-            if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-                updated = editor.build_device()
-                self._persist_editor_device(updated, comp_id=cx.id)
-                self.list.selectRow(row)
-                self._on_selected()
+            opener = getattr(self.ctx, "wizard_opened", None)
+            closer = getattr(self.ctx, "wizard_closed", None)
+            closer_called = False
+            if callable(opener):
+                try:
+                    opener()
+                except Exception:
+                    pass
+            result = QtWidgets.QDialog.DialogCode.Rejected
+            try:
+                result = editor.exec()
+                if result == QtWidgets.QDialog.DialogCode.Accepted:
+                    updated = editor.build_device()
+                    self._persist_editor_device(updated, comp_id=cx.id)
+                    self.list.selectRow(row)
+                    self._on_selected()
+                    if callable(closer):
+                        closer(saved=True, had_changes=True)
+                        closer_called = True
+                else:
+                    if callable(closer):
+                        closer(saved=False, had_changes=False)
+                        closer_called = True
+            finally:
+                if callable(closer) and not closer_called:
+                    try:
+                        closer(
+                            saved=False,
+                            had_changes=result == QtWidgets.QDialog.DialogCode.Accepted,
+                        )
+                    except Exception:
+                        pass
             return
 
         cid_item = self.list.item(row, 0)
@@ -779,12 +1079,42 @@ class MainWindow(QtWidgets.QMainWindow):
 
             dev.subcomponents.append(SubComponent(MacroInstance(name, params), tuple(pin_list)))
         editor.load_device(dev)
-        if editor.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            updated = editor.build_device()
-            self._persist_editor_device(updated, comp_id=cid)
-            self.list.selectRow(row)
-            self._on_selected()
-            QtWidgets.QMessageBox.information(self, "Updated", "Complex updated")
+        opener = getattr(self.ctx, "wizard_opened", None)
+        closer = getattr(self.ctx, "wizard_closed", None)
+        closer_called = False
+        if callable(opener):
+            try:
+                opener()
+            except Exception:
+                pass
+        result = QtWidgets.QDialog.DialogCode.Rejected
+        saved = False
+        try:
+            result = editor.exec()
+            if result == QtWidgets.QDialog.DialogCode.Accepted:
+                updated = editor.build_device()
+                saved_id = self._persist_editor_device(updated, comp_id=cid)
+                saved = saved_id is not None
+                self.list.selectRow(row)
+                self._on_selected()
+                if saved:
+                    try:
+                        QtWidgets.QMessageBox.information(self, "Updated", "Complex updated")
+                    except Exception:
+                        pass
+                if callable(closer):
+                    closer(saved=saved, had_changes=True)
+                    closer_called = True
+            else:
+                if callable(closer):
+                    closer(saved=False, had_changes=False)
+                    closer_called = True
+        finally:
+            if callable(closer) and not closer_called:
+                try:
+                    closer(saved=saved, had_changes=result == QtWidgets.QDialog.DialogCode.Accepted)
+                except Exception:
+                    pass
 
     def _delete_selected(self) -> None:
         row = self.list.currentRow()
