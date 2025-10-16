@@ -1,16 +1,23 @@
 ﻿from __future__ import annotations
 
+import logging
+import os
 import sys
+import importlib.resources
+import shutil
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets, QtGui
 
 from ..config.loader import BridgeConfig
 from ..core.app_context import AppContext
 from ..domain import ComplexDevice, MacroDef, MacroInstance, SubComponent
 from ..db.mdb_api import MDB, SubComponent as DbSub, ComplexDevice as DbComplex
 from ..db import schema_introspect
+from ..db.pn_exporter import ExportOptions, ExportReport
 from ..param_spec import ALLOWED_PARAMS
 from ..util.macro_xml_translator import params_to_xml, xml_to_params_tolerant
 from ..util.rules_loader import get_learned_rules
@@ -19,11 +26,16 @@ from .bridge_controller import BridgeController, QtInvoker
 from .buffer_loader import load_editor_complexes_from_buffer
 from .buffer_persistence import load_buffer, save_buffer
 from .complex_editor import ComplexEditor
+from .export_progress_dialog import ExportProgressDialog
+from .export_worker import ExportPnWorker
 from .new_complex_wizard import NewComplexWizard
 from .settings_dialog import IntegrationSettingsDialog
 
 from ce_bridge_service.types import BridgeCreateResult
 from ce_bridge_service.app import FocusBusyError
+
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -53,6 +65,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._active_wizard: QtWidgets.QDialog | None = None
         self._active_editor: ComplexEditor | None = None
         self._active_editor_id: int | None = None
+        self.actionExportSelectedPn: QtGui.QAction | None = None
+        self._export_toolbar: QtWidgets.QToolBar | None = None
+        self._export_thread: QtCore.QThread | None = None
+        self._export_worker: ExportPnWorker | None = None
+        self._export_progress_dialog: ExportProgressDialog | None = None
+        self._export_template_tmpdir: tempfile.TemporaryDirectory[str] | None = None
+        self._export_in_progress: bool = False
+        self._export_last_report: ExportReport | None = None
 
         if buffer_path is not None and Path(buffer_path).exists():
             self._buffer_path = Path(buffer_path)
@@ -70,6 +90,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list.setHorizontalHeaderLabels(["ID", "Name", "#Subs"])
         self.list.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
+        )
+        self.list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection
         )
         self.list.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers
@@ -379,10 +402,38 @@ class MainWindow(QtWidgets.QMainWindow):
         elif t.rowCount() > 0:
             t.setCurrentCell(0, 0)
 
+        self._update_export_action_state()
+
 
     # ---------------------------------------------------------------- settings
     def _init_menu(self) -> None:
         menubar = self.menuBar()
+        file_menu = menubar.addMenu("&File")
+        export_action = QtGui.QAction("Export Selected PN…", self)
+        export_action.setObjectName("actionExportSelectedPn")
+        export_action.setToolTip("Export selected PN to a new .mdb")
+        export_action.setStatusTip("Export selected PN to a new .mdb")
+        shortcut = QtGui.QKeySequence("Ctrl+E")
+        if sys.platform == "darwin":
+            shortcut = QtGui.QKeySequence("Meta+E")
+        export_action.setShortcut(shortcut)
+        icon = QtGui.QIcon.fromTheme("database-export")
+        if icon.isNull():
+            icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogSaveButton)
+        export_action.setIcon(icon)
+        export_action.setEnabled(False)
+        export_action.triggered.connect(self._on_export_selected_pn)
+        file_menu.addAction(export_action)
+        self.actionExportSelectedPn = export_action
+
+        if self._export_toolbar is None:
+            toolbar = self.addToolBar("Main")
+            toolbar.setObjectName("mainToolBar")
+            toolbar.setMovable(False)
+            toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
+            toolbar.addAction(export_action)
+            self._export_toolbar = toolbar
+
         settings_menu = menubar.addMenu("&Settings")
         integration_action = settings_menu.addAction("Integration…")
         integration_action.triggered.connect(self._open_integration_settings)
@@ -539,9 +590,18 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
 
     def closeEvent(self, event):  # type: ignore[override]
+        if self._export_in_progress:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Export in progress",
+                "An export is running. Cancel it before closing.",
+            )
+            event.ignore()
+            return
         try:
             self._bridge_controller.stop()
         finally:
+            self._clear_temp_template()
             super().closeEvent(event)
 
 
@@ -644,6 +704,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_selected(self) -> None:
         row = self.list.currentRow()
+        self._update_export_action_state()
         if row < 0:
             if hasattr(self.ctx, "focused_comp_id"):
                 self.ctx.focused_comp_id = None
@@ -667,6 +728,427 @@ class MainWindow(QtWidgets.QMainWindow):
         if cid_val is None:
             return
         self._refresh_subcomponents_db(cid_val)
+
+    def _selected_pns(self) -> list[str]:
+        model = self.list.selectionModel()
+        if model is None:
+            return []
+        rows = sorted({index.row() for index in model.selectedRows()})
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            item = self.list.item(row, 1)
+            if item is None:
+                continue
+            value = (item.text() or "").strip()
+            if not value or value in seen:
+                continue
+            ordered.append(value)
+            seen.add(value)
+        return ordered
+
+    def _export_settings(self) -> QtCore.QSettings:
+        return QtCore.QSettings("ComplexEditor", "ComplexEditor")
+
+    def _export_last_directory(self) -> Path:
+        settings = self._export_settings()
+        raw = settings.value("Export/LastDirectory", "")
+        if isinstance(raw, str) and raw.strip():
+            candidate = Path(raw).expanduser()
+            try:
+                if candidate.exists():
+                    return candidate
+            except Exception:
+                pass
+        try:
+            base = self.ctx.current_db_path().expanduser().resolve(strict=False)
+            parent = base.parent
+            if parent.exists():
+                return parent
+        except Exception:
+            pass
+        docs = QtCore.QStandardPaths.writableLocation(
+            QtCore.QStandardPaths.StandardLocation.DocumentsLocation
+        )
+        if docs:
+            return Path(docs)
+        return Path.home()
+
+    def _save_export_last_directory(self, directory: Path) -> None:
+        settings = self._export_settings()
+        settings.setValue("Export/LastDirectory", str(directory))
+
+    @staticmethod
+    def _sanitize_filename_component(text: str) -> str:
+        safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in text.strip())
+        safe = safe.strip("_.")
+        return safe or "pn"
+
+    def _default_export_filename(self, pn_names: List[str]) -> str:
+        if len(pn_names) == 1:
+            slug = self._sanitize_filename_component(pn_names[0])
+            return f"export_{slug}.mdb"
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        return f"export_{len(pn_names)}_pn_{stamp}.mdb"
+
+    def _clear_temp_template(self) -> None:
+        if self._export_template_tmpdir is not None:
+            try:
+                self._export_template_tmpdir.cleanup()
+            except Exception:
+                pass
+            self._export_template_tmpdir = None
+
+    def _resolve_template_path(self) -> Path:
+        settings = self._export_settings()
+        raw = settings.value("Export/EmptyMDBTemplatePath", "")
+        if isinstance(raw, str) and raw.strip():
+            candidate = Path(raw).expanduser()
+            if candidate.exists() and candidate.is_file():
+                try:
+                    if candidate.stat().st_size > 0:
+                        return candidate
+                except OSError:
+                    pass
+            # Stored path is invalid or empty – forget it and fall back to bundled template.
+            settings.remove("Export/EmptyMDBTemplatePath")
+            settings.sync()
+        self._clear_temp_template()
+        try:
+            resource = importlib.resources.files("complex_editor.assets") / "Empty_mdb.mdb"
+            with importlib.resources.as_file(resource) as tmpl_path:
+                if tmpl_path.exists():
+                    temp_dir = tempfile.TemporaryDirectory(prefix="complex_export_template_")
+                    self._export_template_tmpdir = temp_dir
+                    temp_target = Path(temp_dir.name) / "Empty_mdb.mdb"
+                    shutil.copyfile(tmpl_path, temp_target)
+                    return temp_target
+        except (FileNotFoundError, ModuleNotFoundError):
+            pass
+        raise FileNotFoundError("Empty template is required.")
+
+    def _prompt_browse_template(self) -> Path | None:
+        directory = self._export_last_directory()
+        file_name, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Empty Template",
+            str(directory),
+            "Access Database (*.mdb *.accdb);;All files (*)",
+        )
+        if not file_name:
+            return None
+        path = Path(file_name).expanduser()
+        if not path.exists():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Template Missing",
+                f"The selected template does not exist:\n{file_name}",
+            )
+            return None
+        settings = self._export_settings()
+        settings.setValue("Export/EmptyMDBTemplatePath", str(path))
+        settings.sync()
+        return path
+
+    def _ensure_template_path(self) -> Path | None:
+        while True:
+            try:
+                return self._resolve_template_path()
+            except (FileNotFoundError, RuntimeError) as exc:
+                box = QtWidgets.QMessageBox(self)
+                box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+                box.setWindowTitle("Empty template is required")
+                message = str(exc).strip() or "An empty MDB template is required to export the selected PN."
+                box.setText(message)
+                box.setInformativeText(
+                    "Browse to a template file or cancel the export."
+                )
+                browse_btn = box.addButton(
+                    "Browse…",
+                    QtWidgets.QMessageBox.ButtonRole.AcceptRole,
+                )
+                cancel_btn = box.addButton(
+                    QtWidgets.QMessageBox.StandardButton.Cancel
+                )
+                box.exec()
+                if box.clickedButton() is not browse_btn:
+                    return None
+                path = self._prompt_browse_template()
+                if path is not None:
+                    return path
+
+    def _set_status_message(self, message: str, timeout_ms: int = 0) -> None:
+        try:
+            bar = self.statusBar()
+            bar.showMessage(message, timeout_ms)
+        except Exception:
+            pass
+
+    def _start_export_job(
+        self,
+        source_path: Path,
+        template_path: Path,
+        target_path: Path,
+        pn_names: List[str],
+    ) -> None:
+        if self._export_in_progress:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export running",
+                "An export is already running. Please wait for it to finish.",
+            )
+            return
+        options = ExportOptions(
+            strict_schema_compat=True,
+            include_macros=True,
+            include_macro_param_defs=True,
+            fail_if_target_not_empty=True,
+        )
+        self._export_in_progress = True
+        self._update_export_action_state()
+        self._set_status_message(f"Exporting {len(pn_names)} PN…")
+        self._export_last_report = None
+
+        worker = ExportPnWorker(
+            source_path=source_path,
+            template_path=template_path,
+            target_path=target_path,
+            pn_names=pn_names,
+            options=options,
+        )
+        thread = QtCore.QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.progress.connect(self._on_export_progress)
+        worker.finished.connect(self._on_export_finished)
+        worker.failed.connect(self._on_export_failed)
+        worker.canceled.connect(self._on_export_canceled)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        worker.canceled.connect(thread.quit)
+        thread.finished.connect(self._on_export_thread_finished)
+
+        dialog = ExportProgressDialog(self)
+        dialog.set_stage_text("Preparing export…")
+        dialog.update_progress("Preparing export…", 0, 0)
+        dialog.set_cancel_enabled(True)
+        dialog.cancel_requested.connect(worker.request_cancel)
+        self._export_progress_dialog = dialog
+        dialog.show()
+
+        self._export_worker = worker
+        self._export_thread = thread
+        thread.start()
+
+    def _finalize_export_job(self) -> None:
+        if self._export_progress_dialog is not None:
+            self._export_progress_dialog.set_cancel_enabled(False)
+            self._export_progress_dialog.allow_close(True)
+            self._export_progress_dialog.close()
+            self._export_progress_dialog = None
+        self._export_worker = None
+        self._export_in_progress = False
+        self._update_export_action_state()
+        self._clear_temp_template()
+
+    def _on_export_thread_finished(self) -> None:
+        if self._export_thread is not None:
+            try:
+                self._export_thread.wait(100)
+            except Exception:
+                pass
+        self._export_thread = None
+
+    def _on_export_progress(self, message: str, current: int, total: int) -> None:
+        if self._export_progress_dialog is not None:
+            self._export_progress_dialog.update_progress(message, current, total)
+        self._set_status_message(message)
+
+    def _show_export_summary(self, report: ExportReport) -> None:
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Information)
+        dialog.setWindowTitle("Export complete")
+        dialog.setText("Export complete.")
+        dialog.setInformativeText(
+            "Exported {count} PN\nSubcomponents: {subs}\nAliases: {aliases}\nDuration: {duration:.1f} s".format(
+                count=report.complex_count,
+                subs=report.subcomponent_count,
+                aliases=report.alias_count,
+                duration=report.elapsed_seconds,
+            )
+        )
+        open_btn = dialog.addButton(
+            "Open Folder",
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        copy_btn = dialog.addButton(
+            "Copy Path",
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        dialog.addButton(QtWidgets.QMessageBox.StandardButton.Ok)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked is open_btn:
+            QtGui.QDesktopServices.openUrl(
+                QtCore.QUrl.fromLocalFile(str(report.target_path.parent))
+            )
+        elif clicked is copy_btn:
+            QtWidgets.QApplication.clipboard().setText(str(report.target_path))
+
+    def _on_export_finished(self, report: ExportReport) -> None:
+        self._set_status_message("Export complete.", 5000)
+        self._export_last_report = report
+        self._finalize_export_job()
+        self._show_export_summary(report)
+
+    def _save_export_log(self, detail: str) -> None:
+        directory = self._export_last_directory()
+        default = f"export_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        file_name, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save export log",
+            str(directory / default),
+            "Log files (*.log);;Text files (*.txt);;All files (*)",
+        )
+        if not file_name:
+            return
+        path = Path(file_name)
+        try:
+            path.write_text(detail, encoding="utf-8")
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Unable to save log",
+                f"Failed to write log file:\n{exc}",
+            )
+
+    def _on_export_failed(self, message: str, detail: str) -> None:
+        self._set_status_message("Export failed.", 5000)
+        self._finalize_export_job()
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        dialog.setWindowTitle("Export failed")
+        dialog.setText("Export failed.")
+        dialog.setInformativeText(message)
+        dialog.setDetailedText(detail)
+        log_btn = dialog.addButton(
+            "Export Log…",
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        dialog.addButton(QtWidgets.QMessageBox.StandardButton.Close)
+        dialog.exec()
+        if dialog.clickedButton() is log_btn:
+            self._save_export_log(detail)
+
+    def _on_export_canceled(self) -> None:
+        self._set_status_message("Export canceled.", 5000)
+        self._finalize_export_job()
+        QtWidgets.QMessageBox.information(
+            self,
+            "Export canceled",
+            "Export canceled. No changes were written.",
+        )
+
+    def _on_export_selected_pn(self) -> None:
+        if self._export_in_progress:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export running",
+                "An export is already running. Please wait for it to finish.",
+            )
+            return
+        pns = self._selected_pns()
+        if not pns:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No selection",
+                "Select at least one PN.",
+            )
+            return
+        default_dir = self._export_last_directory()
+        suggested_name = self._default_export_filename(pns)
+        file_name, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Selected PN",
+            str(default_dir / suggested_name),
+            "Access Database (*.mdb);;All files (*)",
+        )
+        if not file_name:
+            return
+        target_path = Path(file_name).expanduser()
+        if target_path.suffix.lower() != ".mdb":
+            target_path = target_path.with_suffix(".mdb")
+        self._save_export_last_directory(target_path.parent)
+
+        target_dir = target_path.parent
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot write",
+                f"Unable to use the destination directory: {exc}",
+            )
+            return
+        if target_path.exists():
+            if not os.access(str(target_path), os.W_OK):
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Cannot overwrite",
+                    f"No write permission for {target_path}",
+                )
+                return
+        else:
+            if not os.access(str(target_dir), os.W_OK):
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Cannot write",
+                    f"No write permission for {target_dir}",
+                )
+                return
+
+        if target_path.exists():
+            response = QtWidgets.QMessageBox.question(
+                self,
+                "Overwrite existing file?",
+                f"{target_path} already exists. Overwrite?",
+                QtWidgets.QMessageBox.StandardButton.Yes
+                | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if response != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+
+        template_path = self._ensure_template_path()
+        if template_path is None:
+            return
+
+        try:
+            source_path = self.ctx.current_db_path()
+        except Exception:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No database",
+                "Unable to determine the current database path.",
+            )
+            return
+
+        logger.info(
+            "Export requested pn=%s target=%s template=%s",
+            pns,
+            target_path,
+            template_path,
+        )
+        self._start_export_job(source_path, template_path, target_path, pns)
+
+    def _update_export_action_state(self) -> None:
+        action = self.actionExportSelectedPn
+        if action is None:
+            return
+        if self.db is None:
+            action.setEnabled(False)
+            return
+        action.setEnabled(not self._export_in_progress and bool(self._selected_pns()))
 
     def _process_events(self) -> None:
         app = QtWidgets.QApplication.instance()

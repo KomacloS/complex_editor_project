@@ -8,6 +8,7 @@ from .access_driver import (
     table_exists,
 )
 from .schema_introspect import discover_macro_map
+from .pn_exporter import export_pn_to_mdb, ExportOptions, ExportReport, ExportCanceled
 
 __all__ = [
     "connect",
@@ -16,5 +17,9 @@ __all__ = [
     "make_backup",
     "table_exists",
     "discover_macro_map",
+    "export_pn_to_mdb",
+    "ExportOptions",
+    "ExportReport",
+    "ExportCanceled",
 ]
 
