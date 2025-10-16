@@ -63,6 +63,28 @@ class HealthResponse(BaseModel):
     auth_required: bool
 
 
+class ResolvedPart(BaseModel):
+    pn: str
+    comp_id: int
+
+
+class MdbExportRequest(BaseModel):
+    pns: Optional[List[str]] = None
+    comp_ids: Optional[List[int]] = None
+    out_dir: str
+    mdb_name: str = Field(default="bom_complexes.mdb")
+    require_linked: bool = False
+
+
+class MdbExportResponse(BaseModel):
+    ok: bool = True
+    export_path: str
+    exported_comp_ids: List[int] = Field(default_factory=list)
+    resolved: List[ResolvedPart] = Field(default_factory=list)
+    unlinked: List[str] = Field(default_factory=list)
+    missing: List[str] = Field(default_factory=list)
+
+
 __all__ = [
     "ComplexSummary",
     "ComplexDetail",
@@ -72,4 +94,7 @@ __all__ = [
     "AliasUpdateRequest",
     "AliasUpdateResponse",
     "HealthResponse",
+    "ResolvedPart",
+    "MdbExportRequest",
+    "MdbExportResponse",
 ]

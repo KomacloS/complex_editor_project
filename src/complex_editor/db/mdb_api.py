@@ -14,9 +14,10 @@ Only dependency:  pyodbc
 """
 from __future__ import annotations
 
+import importlib.resources
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Tuple, Union
+from typing import Optional, Dict, List, Any, Tuple, Union, Sequence
 
 import pyodbc
 import re
@@ -488,6 +489,62 @@ class MDB:
 
     def delete_sub(self, sub_id: int):
         self._cur().execute(f"DELETE FROM {DETAIL_T} WHERE {PK_DETAIL}=?", sub_id)
+
+    def save_subset_to_mdb(self, target_path: Union[str, Path], comp_ids: Sequence[int]) -> Path:
+        """Export a subset of complexes into a fresh MDB at ``target_path``."""
+
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for raw in comp_ids:
+            try:
+                cid = int(raw)
+            except Exception:
+                continue
+            if cid <= 0 or cid in seen:
+                continue
+            seen.add(cid)
+            normalized.append(cid)
+        if not normalized:
+            raise ValueError("comp_ids must contain at least one positive integer")
+
+        pn_names: list[str] = []
+        for cid in normalized:
+            device = self.get_complex(cid)
+            name = str(getattr(device, "name", "") or "").strip()
+            if not name:
+                raise LookupError(f"Complex {cid} has no name")
+            pn_names.append(name)
+
+        from .pn_exporter import export_pn_to_mdb
+
+        target = Path(target_path).expanduser()
+        package = "complex_editor.assets"
+        candidates = ("empty_template.mdb", "MAIN_DB.mdb")
+        files_fn = getattr(importlib.resources, "files", None)
+        if files_fn is not None:
+            resources_obj = files_fn(package)
+            for name in candidates:
+                try:
+                    resource = resources_obj.joinpath(name)
+                except (FileNotFoundError, AttributeError):
+                    continue
+                try:
+                    with importlib.resources.as_file(resource) as template_path:
+                        if template_path.exists() and template_path.stat().st_size > 0:
+                            report = export_pn_to_mdb(self.path, template_path, target, pn_names)
+                            return Path(report.target_path)
+                except FileNotFoundError:
+                    continue
+        else:  # pragma: no cover - legacy Python fallback
+            for name in candidates:
+                try:
+                    with importlib.resources.path(package, name) as template_path:  # type: ignore[attr-defined]
+                        if template_path.exists() and template_path.stat().st_size > 0:
+                            report = export_pn_to_mdb(self.path, template_path, target, pn_names)
+                            return Path(report.target_path)
+                except (FileNotFoundError, AttributeError):
+                    continue
+        raise FileNotFoundError("No database template available for subset export")
 
     # ── internals --------------------------------------------------
     @staticmethod
