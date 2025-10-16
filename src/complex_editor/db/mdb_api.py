@@ -531,8 +531,15 @@ class MDB:
                 try:
                     with importlib.resources.as_file(resource) as template_path:
                         if template_path.exists() and template_path.stat().st_size > 0:
-                            report = export_pn_to_mdb(self.path, template_path, target, pn_names)
-                            return Path(report.target_path)
+                            return Path(
+                                export_pn_to_mdb(
+                                    self.path,
+                                    template_path,
+                                    target,
+                                    pn_names,
+                                    comp_ids=normalized,
+                                ).target_path
+                            )
                 except FileNotFoundError:
                     continue
         else:  # pragma: no cover - legacy Python fallback
@@ -540,8 +547,15 @@ class MDB:
                 try:
                     with importlib.resources.path(package, name) as template_path:  # type: ignore[attr-defined]
                         if template_path.exists() and template_path.stat().st_size > 0:
-                            report = export_pn_to_mdb(self.path, template_path, target, pn_names)
-                            return Path(report.target_path)
+                            return Path(
+                                export_pn_to_mdb(
+                                    self.path,
+                                    template_path,
+                                    target,
+                                    pn_names,
+                                    comp_ids=normalized,
+                                ).target_path
+                            )
                 except (FileNotFoundError, AttributeError):
                     continue
         raise FileNotFoundError("No database template available for subset export")

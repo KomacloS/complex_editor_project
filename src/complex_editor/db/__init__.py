@@ -8,7 +8,7 @@ from .access_driver import (
     table_exists,
 )
 from .schema_introspect import discover_macro_map
-from .pn_exporter import export_pn_to_mdb, ExportOptions, ExportReport, ExportCanceled
+from .pn_exporter import export_pn_to_mdb, ExportOptions, ExportReport, ExportCanceled, SubsetExportError
 
 __all__ = [
     "connect",
@@ -21,5 +21,6 @@ __all__ = [
     "ExportOptions",
     "ExportReport",
     "ExportCanceled",
+    "SubsetExportError",
 ]
 

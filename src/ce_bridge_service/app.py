@@ -18,6 +18,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
 from complex_editor import __version__
+from complex_editor.db import SubsetExportError
 from complex_editor.db.mdb_api import (
     ALIAS_T,
     DETAIL_T,
@@ -695,6 +696,9 @@ def create_app(
             "template_hash": "",
             "write_test": False,
             "write_dir": "",
+            "subset_roundtrip_ok": False,
+            "subset_error_reason": "",
+            "subset_error_detail": "",
         }
         template_info = _probe_template()
         if template_info is not None:
@@ -712,6 +716,36 @@ def create_app(
                 exporter_probe["write_test"] = True
         except Exception as exc:  # pragma: no cover - defensive guard
             exporter_probe["write_error"] = str(exc)
+        if exporter_probe["write_test"] and template_info is not None:
+            try:
+                with tempfile.TemporaryDirectory(prefix="ce_export_subset_") as tmp_subset:
+                    subset_dir = Path(tmp_subset)
+                    subset_path = subset_dir / "subset_test.mdb"
+                    subset_ids: list[int] = []
+                    try:
+                        with factory(mdb_path) as test_db:
+                            subset_ids = [int(row[0]) for row in test_db.list_complexes()[:2]]
+                    except Exception as exc_subset:
+                        exporter_probe["subset_error_reason"] = "list_complexes_failed"
+                        exporter_probe["subset_error_detail"] = str(exc_subset)
+                    else:
+                        if subset_ids:
+                            try:
+                                with factory(mdb_path) as exporter_db:
+                                    exporter_db.save_subset_to_mdb(subset_path, subset_ids)
+                                exporter_probe["subset_roundtrip_ok"] = True
+                            except SubsetExportError as exc_subset:
+                                exporter_probe["subset_error_reason"] = exc_subset.reason
+                                exporter_probe["subset_error_detail"] = str(exc_subset)
+                            except Exception as exc_subset:
+                                exporter_probe["subset_error_reason"] = "unexpected"
+                                exporter_probe["subset_error_detail"] = str(exc_subset)
+                        else:
+                            exporter_probe["subset_roundtrip_ok"] = True
+            except Exception as exc_subset:
+                if not exporter_probe["subset_error_reason"]:
+                    exporter_probe["subset_error_reason"] = "selftest_exception"
+                    exporter_probe["subset_error_detail"] = str(exc_subset)
         status_code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
         reason = getattr(app.state, "last_ready_error", "")
         host = app.state.bridge_host or ""
@@ -971,6 +1005,21 @@ def create_app(
                     return _error_response(
                         status_code=status.HTTP_409_CONFLICT,
                         reason="template_missing_or_incompatible",
+                        trace_id=trace_id,
+                        **payload,
+                    )
+                except SubsetExportError as exc:
+                    payload = dict(exc.payload)
+                    payload.setdefault("detail", str(exc))
+                    logger.info(
+                        "Bridge MDB export subset error trace_id=%s reason=%s payload=%s",
+                        trace_id,
+                        exc.reason,
+                        payload,
+                    )
+                    return _error_response(
+                        status_code=exc.status_code,
+                        reason=exc.reason,
                         trace_id=trace_id,
                         **payload,
                     )

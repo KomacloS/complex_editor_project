@@ -10,6 +10,7 @@ from complex_editor.db.pn_exporter import (
     ExportCanceled,
     ExportOptions,
     ExportReport,
+    SubsetExportError,
     export_pn_to_mdb,
 )
 
@@ -53,6 +54,11 @@ class ExportPnWorker(QtCore.QObject):
             )
         except ExportCanceled:
             self.canceled.emit()
+        except SubsetExportError as exc:  # pragma: no cover - surfaced to UI
+            payload = dict(getattr(exc, "payload", {}))
+            detail_lines = [f"{key}: {value}" for key, value in payload.items() if value is not None]
+            detail = "\n".join(detail_lines) if detail_lines else str(exc)
+            self.failed.emit(exc.reason, detail)
         except Exception as exc:  # pragma: no cover - surfaced to UI
             detail = traceback.format_exc()
             self.failed.emit(str(exc), detail)
