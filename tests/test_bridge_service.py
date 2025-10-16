@@ -4,7 +4,7 @@ import atexit
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Callable
+from typing import Callable, Sequence
 
 from fastapi.testclient import TestClient
 
@@ -37,6 +37,8 @@ class FakeCursor:
             needle = str(self.params[0]).replace("%", "").lower()
         results = []
         for cid, info in self.owner.data.items():
+            if not isinstance(cid, int):
+                continue
             device = info["device"]
             name = device.name.lower()
             aliases = [a.lower() for a in device.aliases]
@@ -53,6 +55,7 @@ class FakeMDB:
         self.path = Path(path)
         self.data = data
         self.closed = False
+        self.saved_subset: SimpleNamespace | None = None
 
     def __enter__(self):
         return self
@@ -80,11 +83,23 @@ class FakeMDB:
 
     def list_complexes(self) -> list[tuple[int, str, int]]:
         entries: list[tuple[int, str, int]] = []
-        for cid in sorted(self.data):
+        ids = sorted(cid for cid in self.data if isinstance(cid, int))
+        for cid in ids:
             device = self.data[cid]["device"]
             subs = len(device.subcomponents or [])
             entries.append((cid, device.name, subs))
         return entries
+
+    def save_subset_to_mdb(self, target_path: Path, comp_ids: Sequence[int]) -> Path:
+        target = Path(target_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        comp_list = [int(cid) for cid in comp_ids]
+        target.write_text("subset_export")
+        record = {"path": target, "comp_ids": comp_list}
+        exports = self.data.setdefault("__exports__", [])
+        exports.append(record)
+        self.saved_subset = SimpleNamespace(**record)
+        return target
 
 
 def _make_dataset() -> dict[int, dict]:
@@ -688,6 +703,94 @@ def test_bridge_shutdown_blocked_when_unsaved():
     assert forced.status_code == 200
     assert forced.json() == {"ok": True}
     assert triggered["value"] is True
+
+
+def test_export_mdb_subset_success(tmp_path):
+    dataset = _make_dataset_with_peer()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+    out_dir = tmp_path / "exports"
+    payload = {
+        "pns": ["ALT-1", "UNKNOWN-PN"],
+        "comp_ids": [2],
+        "out_dir": str(out_dir),
+        "mdb_name": "subset.mdb",
+    }
+    resp = client.post("/exports/mdb", headers=_auth(), json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["exported_comp_ids"] == [1, 2]
+    assert sorted(entry["comp_id"] for entry in body["resolved"]) == [1, 2]
+    assert body["missing"] == ["UNKNOWN-PN"]
+    export_path = Path(body["export_path"])
+    assert export_path.exists()
+    exports = dataset.get("__exports__") or []
+    assert exports and exports[0]["comp_ids"] == [1, 2]
+
+
+def test_export_mdb_requires_linked_blocks_when_missing(tmp_path):
+    dataset = _make_dataset()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+    out_dir = tmp_path / "exports"
+    payload = {
+        "pns": ["MISSING-PN"],
+        "out_dir": str(out_dir),
+        "require_linked": True,
+    }
+    resp = client.post("/exports/mdb", headers=_auth(), json=payload)
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["reason"] == "unlinked_or_missing"
+    assert body["missing"] == ["MISSING-PN"]
+    assert dataset.get("__exports__") is None
+
+
+def test_export_mdb_busy_returns_409(tmp_path):
+    dataset = _make_dataset()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+        state={"wizard_open": True, "unsaved_changes": True},
+    )
+    out_dir = tmp_path / "exports"
+    payload = {
+        "pns": ["PN-100"],
+        "out_dir": str(out_dir),
+    }
+    resp = client.post("/exports/mdb", headers=_auth(), json=payload)
+    assert resp.status_code == 409
+    assert resp.json()["reason"] == "busy"
+    assert dataset.get("__exports__") is None
+
+
+def test_export_mdb_headless_returns_503(monkeypatch, tmp_path):
+    dataset = _make_dataset()
+
+    def handler(pn: str, aliases: list[str] | None) -> BridgeCreateResult:
+        return BridgeCreateResult(created=False, reason="cancelled")
+
+    client = _make_client(handler, dataset=dataset)
+
+    def no_export(self, target_path: Path, comp_ids):  # noqa: ANN001 - signature mirrors real method
+        raise NotImplementedError("headless")
+
+    monkeypatch.setattr(FakeMDB, "save_subset_to_mdb", no_export)
+
+    out_dir = tmp_path / "exports"
+    payload = {
+        "comp_ids": [1],
+        "out_dir": str(out_dir),
+    }
+    resp = client.post("/exports/mdb", headers=_auth(), json=payload)
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "headless"
+    assert dataset.get("__exports__") is None
 
 
 def test_build_server_cmd_frozen(monkeypatch):

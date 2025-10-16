@@ -6,7 +6,7 @@ import json
 import logging
 import secrets
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Sequence
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -31,6 +31,9 @@ from .models import (
     ComplexDetail,
     ComplexSummary,
     HealthResponse,
+    MdbExportRequest,
+    MdbExportResponse,
+    ResolvedPart,
 )
 from .types import BridgeCreateResult
 
@@ -76,6 +79,16 @@ def create_app(
     app.state.wizard_open = False
     app.state.focus_handler_available = bool(focus_handler)
     factory = mdb_factory or MDB
+
+    def _caller_identity(request: Request) -> str:
+        client = getattr(request, "client", None)
+        if client is None:
+            return ""
+        host = getattr(client, "host", "") or ""
+        port = getattr(client, "port", None)
+        if port not in (None, 0):
+            return f"{host}:{port}"
+        return host
 
     def _set_ready(value: bool, reason: str = "", *, force_log: bool = False) -> None:
         previous = bool(getattr(app.state, "ready", False))
@@ -287,6 +300,57 @@ def create_app(
             seen.add(cleaned)
             tokens.append(cleaned)
         return tokens
+
+    def _normalize_pn_list(values: Optional[Sequence[str]]) -> List[str]:
+        ordered: List[str] = []
+        seen: set[str] = set()
+        for raw in values or []:
+            candidate = (raw or "").strip()
+            if not candidate:
+                continue
+            key = candidate.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(candidate)
+        return ordered
+
+    def _normalize_comp_ids(values: Optional[Sequence[int]]) -> List[int]:
+        ordered: List[int] = []
+        seen: set[int] = set()
+        for raw in values or []:
+            try:
+                candidate = int(raw)
+            except Exception:
+                continue
+            if candidate <= 0 or candidate in seen:
+                continue
+            seen.add(candidate)
+            ordered.append(candidate)
+        return ordered
+
+    def _build_lookup_indexes(db: MDB) -> tuple[dict[str, tuple[int, str]], dict[str, tuple[int, str]], dict[int, str]]:
+        canonical: dict[str, tuple[int, str]] = {}
+        alias_map: dict[str, tuple[int, str]] = {}
+        id_to_name: dict[int, str] = {}
+        try:
+            rows = db.list_complexes()
+        except Exception as exc:  # pragma: no cover - defensive
+            raise RuntimeError(f"failed to list complexes: {exc}") from exc
+        for comp_id, name, _ in rows:
+            cid = int(comp_id)
+            canonical_name = str(name or "").strip()
+            id_to_name[cid] = canonical_name
+            if canonical_name:
+                canonical.setdefault(canonical_name.lower(), (cid, canonical_name))
+            aliases = _iter_aliases(db, cid)
+            for alias in aliases:
+                cleaned = alias.strip()
+                if not cleaned:
+                    continue
+                key = cleaned.lower()
+                alias_map.setdefault(key, (cid, canonical_name or cleaned))
+        return canonical, alias_map, id_to_name
 
     def _collect_canonical_map(db: MDB) -> Dict[str, int]:
         mapping: Dict[str, int] = {}
@@ -555,6 +619,172 @@ def create_app(
         if not pn.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pn must not be empty")
         return _search(pn.strip(), limit)
+
+    @app.post("/exports/mdb", response_model=MdbExportResponse)
+    async def export_mdb_subset(
+        payload: MdbExportRequest,
+        request: Request,
+        _: None = Depends(_require_auth),
+    ) -> MdbExportResponse | JSONResponse:
+        caller = _caller_identity(request) or "unknown"
+        snapshot = _state_snapshot()
+        wizard_open = bool(snapshot.get("wizard_open"))
+        unsaved = bool(snapshot.get("unsaved_changes"))
+        if wizard_open or unsaved:
+            logger.info(
+                "Bridge MDB export rejected (busy) caller=%s wizard_open=%s unsaved=%s",
+                caller,
+                wizard_open,
+                unsaved,
+            )
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "reason": "busy",
+                    "wizard_open": wizard_open,
+                    "unsaved_changes": unsaved,
+                },
+            )
+
+        pn_list = _normalize_pn_list(payload.pns)
+        comp_ids = _normalize_comp_ids(payload.comp_ids)
+        if not pn_list and not comp_ids:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="pns_or_comp_ids_required",
+            )
+
+        try:
+            out_dir = Path(payload.out_dir).expanduser()
+        except Exception as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid_out_dir") from exc
+        if not out_dir.is_absolute():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid_out_dir")
+
+        mdb_name = (payload.mdb_name or "").strip() or "bom_complexes.mdb"
+        if Path(mdb_name).name != mdb_name:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid_mdb_name")
+        export_path = out_dir / mdb_name
+
+        mdb_path = get_mdb_path()
+        resolved_map: dict[int, ResolvedPart] = {}
+        missing: List[str] = []
+        unlinked: List[str] = []
+        export_ids: set[int] = set()
+
+        try:
+            with factory(mdb_path) as db:
+                canonical_idx, alias_idx, id_to_name = _build_lookup_indexes(db)
+                for pn_value in pn_list:
+                    key = pn_value.lower()
+                    entry = canonical_idx.get(key) or alias_idx.get(key)
+                    if entry is None:
+                        missing.append(pn_value)
+                        continue
+                    comp_id, resolved_name = entry
+                    export_ids.add(comp_id)
+                    if comp_id not in resolved_map:
+                        resolved_map[comp_id] = ResolvedPart(pn=resolved_name, comp_id=comp_id)
+
+                invalid_comp_ids = [cid for cid in comp_ids if cid not in id_to_name]
+                if invalid_comp_ids:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail={"invalid_comp_ids": invalid_comp_ids},
+                    )
+
+                for cid in comp_ids:
+                    export_ids.add(cid)
+                    if cid not in resolved_map:
+                        resolved_name = id_to_name.get(cid, "") or str(cid)
+                        resolved_map[cid] = ResolvedPart(pn=resolved_name, comp_id=cid)
+
+                if payload.require_linked and (missing or unlinked):
+                    logger.info(
+                        "Bridge MDB export rejected (unlinked) caller=%s pns=%s comp_ids=%s missing=%s unlinked=%s export_path=%s",
+                        caller,
+                        pn_list,
+                        comp_ids,
+                        missing,
+                        unlinked,
+                        str(export_path),
+                    )
+                    return JSONResponse(
+                        status_code=status.HTTP_409_CONFLICT,
+                        content={
+                            "reason": "unlinked_or_missing",
+                            "unlinked": unlinked,
+                            "missing": missing,
+                            "resolved": [item.model_dump() for item in resolved_map.values()],
+                        },
+                    )
+
+                if not export_ids:
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="no_matching_comp_ids")
+
+                saver = getattr(db, "save_subset_to_mdb", None)
+                if saver is None or not callable(saver):
+                    logger.info(
+                        "Bridge MDB export rejected (headless) caller=%s pns=%s comp_ids=%s export_path=%s",
+                        caller,
+                        pn_list,
+                        comp_ids,
+                        str(export_path),
+                    )
+                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="headless")
+
+                try:
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    logger.exception(
+                        "Bridge MDB export failed preparing directory path=%s", out_dir
+                    )
+                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+
+                export_list = sorted(export_ids)
+                try:
+                    saver(export_path, export_list)
+                except NotImplementedError as exc:
+                    logger.info(
+                        "Bridge MDB export rejected (headless) caller=%s export_path=%s", caller, str(export_path)
+                    )
+                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="headless") from exc
+                except HTTPException:
+                    raise
+                except OSError as exc:
+                    logger.exception(
+                        "Bridge MDB export failed writing path=%s ids=%s", export_path, export_list
+                    )
+                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.exception(
+                        "Bridge MDB export failed path=%s ids=%s", export_path, export_list
+                    )
+                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+
+        except HTTPException:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Bridge MDB export unexpected error: %s", exc)
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+
+        resolved_list = list(resolved_map.values())
+        logger.info(
+            "Bridge MDB export completed caller=%s exported=%s missing=%s export_path=%s",
+            caller,
+            export_list,
+            missing,
+            str(export_path),
+        )
+
+        return MdbExportResponse(
+            ok=True,
+            export_path=str(export_path),
+            exported_comp_ids=export_list,
+            resolved=resolved_list,
+            unlinked=unlinked,
+            missing=missing,
+        )
 
     @app.post("/admin/shutdown")
     async def shutdown(
