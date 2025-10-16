@@ -577,6 +577,9 @@ def test_bridge_selftest_success_and_failure(tmp_path):
     ok_payload = ok_resp.json()
     assert ok_payload["ok"] is True
     assert any(check["name"] == "mdb_connection" for check in ok_payload["checks"])
+    exporter_info = ok_payload.get("exporter", {})
+    assert "template_ok" in exporter_info
+    assert "write_test" in exporter_info
 
     missing_path = tmp_path / "missing.mdb"
     failing_client = _make_client(handler, mdb_path=missing_path)
@@ -585,6 +588,7 @@ def test_bridge_selftest_success_and_failure(tmp_path):
     fail_payload = fail_resp.json()
     assert fail_payload["ok"] is False
     assert any(not check["ok"] for check in fail_payload["checks"])
+    assert "exporter" in fail_payload
 
 
 def test_bridge_create_complex_success():
@@ -722,13 +726,13 @@ def test_export_mdb_subset_success(tmp_path):
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is True
-    assert body["exported_comp_ids"] == [1, 2]
-    assert sorted(entry["comp_id"] for entry in body["resolved"]) == [1, 2]
-    assert body["missing"] == ["UNKNOWN-PN"]
+    assert body["exported_comp_ids"] == [2]
+    assert [entry["comp_id"] for entry in body["resolved"]] == [2]
+    assert body["missing"] == []
     export_path = Path(body["export_path"])
     assert export_path.exists()
     exports = dataset.get("__exports__") or []
-    assert exports and exports[0]["comp_ids"] == [1, 2]
+    assert exports and exports[0]["comp_ids"] == [2]
 
 
 def test_export_mdb_requires_linked_blocks_when_missing(tmp_path):
@@ -748,6 +752,7 @@ def test_export_mdb_requires_linked_blocks_when_missing(tmp_path):
     body = resp.json()
     assert body["reason"] == "unlinked_or_missing"
     assert body["missing"] == ["MISSING-PN"]
+    assert body["trace_id"]
     assert dataset.get("__exports__") is None
 
 
@@ -765,7 +770,10 @@ def test_export_mdb_busy_returns_409(tmp_path):
     }
     resp = client.post("/exports/mdb", headers=_auth(), json=payload)
     assert resp.status_code == 409
-    assert resp.json()["reason"] == "busy"
+    payload_body = resp.json()
+    assert payload_body["reason"] == "busy"
+    assert payload_body["detail"] == "busy"
+    assert payload_body["trace_id"]
     assert dataset.get("__exports__") is None
 
 
@@ -789,7 +797,30 @@ def test_export_mdb_headless_returns_503(monkeypatch, tmp_path):
     }
     resp = client.post("/exports/mdb", headers=_auth(), json=payload)
     assert resp.status_code == 503
-    assert resp.json()["detail"] == "headless"
+    body = resp.json()
+    assert body["detail"] == "headless"
+    assert body["reason"] == "headless"
+    assert body["trace_id"]
+    assert dataset.get("__exports__") is None
+
+
+def test_export_mdb_invalid_comp_ids(tmp_path):
+    dataset = _make_dataset()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+    out_dir = tmp_path / "exports"
+    payload = {
+        "comp_ids": [999],
+        "out_dir": str(out_dir),
+    }
+    resp = client.post("/exports/mdb", headers=_auth(), json=payload)
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["reason"] == "invalid_comp_ids"
+    assert body["not_found_ids"] == [999]
+    assert body["trace_id"]
     assert dataset.get("__exports__") is None
 
 

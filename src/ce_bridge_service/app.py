@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.resources
 import hashlib
 import json
 import logging
+import os
 import secrets
+import tempfile
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Callable, Dict, List, Optional, Sequence
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
@@ -36,6 +42,14 @@ from .models import (
     ResolvedPart,
 )
 from .types import BridgeCreateResult
+
+try:  # pragma: no cover - optional dependency during tests
+    import pyodbc  # type: ignore
+
+    _PYODBC_ERROR = (pyodbc.Error,)  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - pyodbc not available in unit tests
+    pyodbc = None  # type: ignore[assignment]
+    _PYODBC_ERROR = tuple()
 
 
 logger = logging.getLogger(__name__)
@@ -300,6 +314,11 @@ def create_app(
             seen.add(cleaned)
             tokens.append(cleaned)
         return tokens
+
+    @dataclass(slots=True)
+    class TemplateProbe:
+        path: Path
+        sha256: str
 
     def _normalize_pn_list(values: Optional[Sequence[str]]) -> List[str]:
         ordered: List[str] = []
@@ -572,6 +591,81 @@ def create_app(
             auth_required=bool(token),
         )
 
+    def _make_trace_id() -> str:
+        return str(uuid.uuid4())
+
+    def _error_response(
+        *,
+        status_code: int,
+        reason: str,
+        trace_id: str,
+        detail: Optional[str] = None,
+        **extra: object,
+    ) -> JSONResponse:
+        payload: Dict[str, object] = {"reason": reason, "trace_id": trace_id}
+        if detail is not None:
+            payload["detail"] = detail
+        elif reason:
+            payload["detail"] = reason
+        payload.update(extra)
+        return JSONResponse(status_code=status_code, content=payload)
+
+    def _normalize_out_dir(raw: str) -> tuple[Path, str]:
+        cleaned = (raw or "").strip().strip('"')
+        if not cleaned:
+            raise ValueError("empty_out_dir")
+        expanded = os.path.expandvars(cleaned)
+        # Allow UNC (\\server\share) and Windows style paths
+        normalized = expanded.replace("\\", "/")
+        candidate = Path(normalized).expanduser()
+        looks_windows = bool(re.match(r"^[a-zA-Z]:/", normalized))
+        is_unc = normalized.startswith("//")
+        if not (candidate.is_absolute() or looks_windows or is_unc):
+            raise ValueError("not_absolute")
+        return candidate, str(candidate)
+
+    def _validate_filename(raw: str | None) -> str:
+        name = (raw or "").strip() or "bom_complexes.mdb"
+        if any(sep in name for sep in ("/", "\\")):
+            raise ValueError("path_separator")
+        if any(part == ".." for part in Path(name).parts):
+            raise ValueError("traversal")
+        if not name.lower().endswith(".mdb"):
+            raise ValueError("missing_suffix")
+        if len(name) > 64:
+            raise ValueError("too_long")
+        return name
+
+    def _probe_template() -> TemplateProbe | None:
+        cached = getattr(app.state, "_template_probe", None)
+        if isinstance(cached, TemplateProbe):
+            return cached
+        package = "complex_editor.assets"
+        candidates = ("empty_template.mdb", "MAIN_DB.mdb")
+        files_fn = getattr(importlib.resources, "files", None)
+        if files_fn is None:  # pragma: no cover - legacy Python fallback
+            return None
+        try:
+            resources_obj = files_fn(package)
+        except Exception:
+            return None
+        for name in candidates:
+            try:
+                resource = resources_obj.joinpath(name)
+            except (FileNotFoundError, AttributeError):
+                continue
+            try:
+                with importlib.resources.as_file(resource) as template_path:
+                    if not template_path.exists():
+                        continue
+                    digest = hashlib.sha256(template_path.read_bytes()).hexdigest()
+                    probe = TemplateProbe(path=template_path, sha256=digest)
+                    setattr(app.state, "_template_probe", probe)
+                    return probe
+            except FileNotFoundError:
+                continue
+        return None
+
     @app.get("/state")
     async def state(_: None = Depends(_require_auth)) -> dict[str, object]:
         snapshot = _state_snapshot()
@@ -589,11 +683,35 @@ def create_app(
             "wizard_available": bool(app.state.wizard_available),
             "alias_ops_supported": True,
             "focused_comp_id": snapshot.get("focused_comp_id"),
+            "features": {"export_mdb": bool(getattr(app.state, "ready", False))},
         }
 
     @app.post("/selftest")
     async def selftest(_: None = Depends(_require_auth)) -> JSONResponse:
         ok, checks, _ = await _perform_check_and_update(log_failures=True)
+        exporter_probe: Dict[str, object] = {
+            "template_ok": False,
+            "template_path": "",
+            "template_hash": "",
+            "write_test": False,
+            "write_dir": "",
+        }
+        template_info = _probe_template()
+        if template_info is not None:
+            exporter_probe["template_ok"] = True
+            exporter_probe["template_path"] = str(template_info.path)
+            exporter_probe["template_hash"] = template_info.sha256
+        else:
+            exporter_probe["template_error"] = "template_not_found"
+        try:
+            with tempfile.TemporaryDirectory(prefix="ce_export_probe_") as tmp:
+                probe_dir = Path(tmp)
+                exporter_probe["write_dir"] = str(probe_dir)
+                test_file = probe_dir / "probe.txt"
+                test_file.write_text("ok", encoding="utf-8")
+                exporter_probe["write_test"] = True
+        except Exception as exc:  # pragma: no cover - defensive guard
+            exporter_probe["write_error"] = str(exc)
         status_code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
         reason = getattr(app.state, "last_ready_error", "")
         host = app.state.bridge_host or ""
@@ -608,7 +726,10 @@ def create_app(
                 auth_mode,
                 reason or "selftest_failed",
             )
-        return JSONResponse(status_code=status_code, content={"ok": ok, "checks": checks})
+        return JSONResponse(
+            status_code=status_code,
+            content={"ok": ok, "checks": checks, "exporter": exporter_probe},
+        )
 
     @app.get("/complexes/search", response_model=List[ComplexSummary])
     async def search_complexes(
@@ -626,44 +747,84 @@ def create_app(
         request: Request,
         _: None = Depends(_require_auth),
     ) -> MdbExportResponse | JSONResponse:
+        trace_id = _make_trace_id()
         caller = _caller_identity(request) or "unknown"
         snapshot = _state_snapshot()
         wizard_open = bool(snapshot.get("wizard_open"))
         unsaved = bool(snapshot.get("unsaved_changes"))
         if wizard_open or unsaved:
             logger.info(
-                "Bridge MDB export rejected (busy) caller=%s wizard_open=%s unsaved=%s",
+                "Bridge MDB export rejected (busy) trace_id=%s caller=%s wizard_open=%s unsaved=%s",
+                trace_id,
                 caller,
                 wizard_open,
                 unsaved,
             )
-            return JSONResponse(
+            return _error_response(
                 status_code=status.HTTP_409_CONFLICT,
-                content={
-                    "reason": "busy",
-                    "wizard_open": wizard_open,
-                    "unsaved_changes": unsaved,
-                },
+                reason="busy",
+                trace_id=trace_id,
+                wizard_open=wizard_open,
+                unsaved_changes=unsaved,
             )
 
         pn_list = _normalize_pn_list(payload.pns)
         comp_ids = _normalize_comp_ids(payload.comp_ids)
+        if comp_ids:
+            pn_list = []
+        logger.info(
+            "Bridge MDB export request trace_id=%s caller=%s count_pns=%s count_ids=%s out_dir=%s mdb_name=%s",
+            trace_id,
+            caller,
+            len(pn_list),
+            len(comp_ids),
+            str(payload.out_dir),
+            str(payload.mdb_name or ""),
+        )
         if not pn_list and not comp_ids:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
+            logger.info(
+                "Bridge MDB export rejected (empty selection) trace_id=%s caller=%s",
+                trace_id,
+                caller,
+            )
+            return _error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                reason="empty_selection",
+                trace_id=trace_id,
                 detail="pns_or_comp_ids_required",
             )
 
         try:
-            out_dir = Path(payload.out_dir).expanduser()
-        except Exception as exc:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid_out_dir") from exc
-        if not out_dir.is_absolute():
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid_out_dir")
+            out_dir, normalized_out_dir = _normalize_out_dir(payload.out_dir)
+        except ValueError:
+            logger.info(
+                "Bridge MDB export invalid out_dir trace_id=%s caller=%s out_dir=%s",
+                trace_id,
+                caller,
+                payload.out_dir,
+            )
+            return _error_response(
+                status_code=status.HTTP_409_CONFLICT,
+                reason="outdir_unwritable",
+                trace_id=trace_id,
+                out_dir=str(payload.out_dir or ""),
+                detail="invalid_out_dir",
+            )
 
-        mdb_name = (payload.mdb_name or "").strip() or "bom_complexes.mdb"
-        if Path(mdb_name).name != mdb_name:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="invalid_mdb_name")
+        try:
+            mdb_name = _validate_filename(payload.mdb_name)
+        except ValueError:
+            logger.info(
+                "Bridge MDB export invalid filename trace_id=%s caller=%s name=%s",
+                trace_id,
+                caller,
+                payload.mdb_name,
+            )
+            return _error_response(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                reason="bad_filename",
+                trace_id=trace_id,
+            )
         export_path = out_dir / mdb_name
 
         mdb_path = get_mdb_path()
@@ -671,6 +832,11 @@ def create_app(
         missing: List[str] = []
         unlinked: List[str] = []
         export_ids: set[int] = set()
+
+        template_info = _probe_template()
+
+        def _resolved_payload() -> List[dict[str, object]]:
+            return [item.model_dump() for item in sorted(resolved_map.values(), key=lambda r: r.comp_id)]
 
         try:
             with factory(mdb_path) as db:
@@ -688,9 +854,17 @@ def create_app(
 
                 invalid_comp_ids = [cid for cid in comp_ids if cid not in id_to_name]
                 if invalid_comp_ids:
-                    raise HTTPException(
-                        status.HTTP_400_BAD_REQUEST,
-                        detail={"invalid_comp_ids": invalid_comp_ids},
+                    logger.info(
+                        "Bridge MDB export invalid comp_ids trace_id=%s caller=%s invalid=%s",
+                        trace_id,
+                        caller,
+                        invalid_comp_ids,
+                    )
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="invalid_comp_ids",
+                        trace_id=trace_id,
+                        not_found_ids=invalid_comp_ids,
                     )
 
                 for cid in comp_ids:
@@ -701,76 +875,182 @@ def create_app(
 
                 if payload.require_linked and (missing or unlinked):
                     logger.info(
-                        "Bridge MDB export rejected (unlinked) caller=%s pns=%s comp_ids=%s missing=%s unlinked=%s export_path=%s",
+                        "Bridge MDB export rejected (unlinked) trace_id=%s caller=%s missing=%s unlinked=%s export_path=%s",
+                        trace_id,
                         caller,
-                        pn_list,
-                        comp_ids,
                         missing,
                         unlinked,
                         str(export_path),
                     )
-                    return JSONResponse(
+                    return _error_response(
                         status_code=status.HTTP_409_CONFLICT,
-                        content={
-                            "reason": "unlinked_or_missing",
-                            "unlinked": unlinked,
-                            "missing": missing,
-                            "resolved": [item.model_dump() for item in resolved_map.values()],
-                        },
+                        reason="unlinked_or_missing",
+                        trace_id=trace_id,
+                        missing=missing,
+                        unlinked=unlinked,
+                        resolved=_resolved_payload(),
+                    )
+
+                if missing and not export_ids:
+                    logger.info(
+                        "Bridge MDB export rejected (no matches) trace_id=%s caller=%s missing=%s",
+                        trace_id,
+                        caller,
+                        missing,
+                    )
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="no_matches",
+                        trace_id=trace_id,
+                        missing=missing,
                     )
 
                 if not export_ids:
-                    raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="no_matching_comp_ids")
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="empty_selection",
+                        trace_id=trace_id,
+                    )
 
                 saver = getattr(db, "save_subset_to_mdb", None)
                 if saver is None or not callable(saver):
                     logger.info(
-                        "Bridge MDB export rejected (headless) caller=%s pns=%s comp_ids=%s export_path=%s",
+                        "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s",
+                        trace_id,
                         caller,
-                        pn_list,
-                        comp_ids,
                         str(export_path),
                     )
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="headless")
+                    return _error_response(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        reason="headless",
+                        trace_id=trace_id,
+                        detail="headless",
+                    )
 
                 try:
                     out_dir.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:
                     logger.exception(
-                        "Bridge MDB export failed preparing directory path=%s", out_dir
+                        "Bridge MDB export failed preparing directory trace_id=%s path=%s", trace_id, out_dir
                     )
-                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="outdir_unwritable",
+                        trace_id=trace_id,
+                        out_dir=normalized_out_dir,
+                        errno=getattr(exc, "errno", None),
+                        detail=str(exc),
+                    )
 
                 export_list = sorted(export_ids)
                 try:
                     saver(export_path, export_list)
                 except NotImplementedError as exc:
                     logger.info(
-                        "Bridge MDB export rejected (headless) caller=%s export_path=%s", caller, str(export_path)
+                        "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s",
+                        trace_id,
+                        caller,
+                        str(export_path),
                     )
-                    raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail="headless") from exc
-                except HTTPException:
-                    raise
+                    return _error_response(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        reason="headless",
+                        trace_id=trace_id,
+                        detail=str(exc) or "headless",
+                    )
+                except FileNotFoundError as exc:
+                    logger.exception(
+                        "Bridge MDB export template missing trace_id=%s export_path=%s", trace_id, export_path
+                    )
+                    payload = {
+                        "template_path": str(getattr(exc, "filename", "")) or (str(template_info.path) if template_info else ""),
+                        "detail": str(exc),
+                    }
+                    if template_info is not None:
+                        payload["template_hash"] = template_info.sha256
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="template_missing_or_incompatible",
+                        trace_id=trace_id,
+                        **payload,
+                    )
+                except LookupError as exc:
+                    logger.exception(
+                        "Bridge MDB export data invalid trace_id=%s export_path=%s", trace_id, export_path
+                    )
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="data_invalid",
+                        trace_id=trace_id,
+                        offending_comp_ids=export_list,
+                        detail=str(exc),
+                    )
+                except ValueError as exc:
+                    logger.exception(
+                        "Bridge MDB export validation failed trace_id=%s export_path=%s", trace_id, export_path
+                    )
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="data_invalid",
+                        trace_id=trace_id,
+                        offending_comp_ids=export_list,
+                        detail=str(exc),
+                    )
+                except _PYODBC_ERROR as exc:  # pragma: no cover - depends on pyodbc
+                    logger.exception(
+                        "Bridge MDB export database engine error trace_id=%s export_path=%s", trace_id, export_path
+                    )
+                    return _error_response(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        reason="db_engine_error",
+                        trace_id=trace_id,
+                        error_class=exc.__class__.__name__,
+                        message=str(exc),
+                    )
                 except OSError as exc:
                     logger.exception(
-                        "Bridge MDB export failed writing path=%s ids=%s", export_path, export_list
+                        "Bridge MDB export filesystem error trace_id=%s export_path=%s", trace_id, export_path
                     )
-                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+                    return _error_response(
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="filesystem_error",
+                        trace_id=trace_id,
+                        errno=getattr(exc, "errno", None),
+                        path=str(getattr(exc, "filename", export_path)),
+                        detail=str(exc),
+                    )
                 except Exception as exc:  # pragma: no cover - defensive
                     logger.exception(
-                        "Bridge MDB export failed path=%s ids=%s", export_path, export_list
+                        "Bridge MDB export unexpected failure trace_id=%s export_path=%s", trace_id, export_path
                     )
-                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+                    return _error_response(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        reason="db_engine_error",
+                        trace_id=trace_id,
+                        detail=str(exc),
+                    )
 
-        except HTTPException:
-            raise
+        except HTTPException as exc:  # pragma: no cover - defensive
+            logger.exception("Bridge MDB export unexpected HTTPException trace_id=%s", trace_id)
+            return _error_response(
+                status_code=exc.status_code,
+                reason="db_engine_error",
+                trace_id=trace_id,
+                detail=str(exc.detail),
+            )
         except Exception as exc:  # pragma: no cover - defensive
-            logger.exception("Bridge MDB export unexpected error: %s", exc)
-            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="export_failed") from exc
+            logger.exception("Bridge MDB export unexpected error trace_id=%s", trace_id)
+            return _error_response(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                reason="db_engine_error",
+                trace_id=trace_id,
+                detail=str(exc),
+            )
 
-        resolved_list = list(resolved_map.values())
+        resolved_list = sorted(resolved_map.values(), key=lambda r: r.comp_id)
         logger.info(
-            "Bridge MDB export completed caller=%s exported=%s missing=%s export_path=%s",
+            "Bridge MDB export completed trace_id=%s caller=%s exported=%s missing=%s export_path=%s",
+            trace_id,
             caller,
             export_list,
             missing,
