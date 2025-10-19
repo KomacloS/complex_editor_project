@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.resources
+import importlib.resources as _ires
 import hashlib
 import json
 import logging
@@ -43,6 +44,10 @@ from .models import (
     ResolvedPart,
 )
 from .types import BridgeCreateResult
+from .logging_setup import setup_logging
+from .middleware_trace import TraceIdMiddleware, TRACE_HEADER
+from .exceptions import install_exception_handlers
+from .admin_logs import router as admin_logs_router
 
 try:  # pragma: no cover - optional dependency during tests
     import pyodbc  # type: ignore
@@ -54,6 +59,47 @@ except Exception:  # pragma: no cover - pyodbc not available in unit tests
 
 
 logger = logging.getLogger(__name__)
+
+ASSET_PKG = "complex_editor.assets"
+ASSET_NAME = "Empty_mdb.mdb"
+
+
+class TemplateResolutionError(Exception):
+    def __init__(self, attempted: str) -> None:
+        super().__init__("Template file is missing or empty.")
+        self.attempted = attempted
+
+
+def _resolve_template_path(requested: str | None) -> Path:
+    attempts: list[str] = []
+
+    if requested:
+        candidate = Path(requested).expanduser()
+        attempts.append(str(candidate))
+        if candidate.exists() and candidate.stat().st_size > 0:
+            return candidate
+        raise TemplateResolutionError(str(candidate))
+
+    env = os.environ.get("CE_TEMPLATE_MDB", "").strip()
+    if env:
+        env_path = Path(env).expanduser()
+        attempts.append(str(env_path))
+        if env_path.exists() and env_path.stat().st_size > 0:
+            return env_path
+        raise TemplateResolutionError(str(env_path))
+
+    try:
+        resource = _ires.files(ASSET_PKG) / ASSET_NAME
+        with _ires.as_file(resource) as asset_path:
+            asset = Path(asset_path)
+            attempts.append(str(asset))
+            if asset.exists() and asset.stat().st_size > 0:
+                return asset
+    except Exception:
+        pass
+
+    attempted = attempts[-1] if attempts else ""
+    raise TemplateResolutionError(attempted)
 
 
 class FocusBusyError(Exception):
@@ -70,9 +116,12 @@ def create_app(
     bridge_port: int | None = None,
     state_provider: Callable[[], Dict[str, object]] | None = None,
     focus_handler: Callable[[int, str], Dict[str, object]] | None = None,
+    allow_headless_exports: bool = False,
 ) -> FastAPI:
     """Return a configured FastAPI application for the bridge."""
 
+    # Configure logging early
+    log_dir = setup_logging()
     token = (auth_token or "").strip()
     auth_mode = "enabled" if token else "disabled"
     app = FastAPI(title="Complex Editor Bridge", version=__version__)
@@ -94,6 +143,47 @@ def create_app(
     app.state.wizard_open = False
     app.state.focus_handler_available = bool(focus_handler)
     factory = mdb_factory or MDB
+
+    def _env_truthy(var: str) -> bool:
+        raw = os.environ.get(var)
+        if raw is None:
+            return False
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    headless_mode = wizard_handler is None
+    allow_headless_effective = bool(allow_headless_exports or _env_truthy("CE_ALLOW_HEADLESS_EXPORTS"))
+    app.state.headless = headless_mode
+    app.state.allow_headless_exports = allow_headless_effective
+
+    # Install exception handlers
+    install_exception_handlers(app)
+
+    # Trace middleware (propagate or generate X-Trace-Id, log access)
+    app.add_middleware(TraceIdMiddleware)
+
+    # Protected admin logs router under /admin
+    def _require_auth(request: Request) -> None:
+        if not token:
+            return
+        header = request.headers.get("Authorization", "").strip()
+        if not header or not header.lower().startswith("bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing bearer token",
+            )
+        candidate = header.split(" ", 1)[1].strip()
+        if not candidate:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing bearer token",
+            )
+        if not secrets.compare_digest(candidate, token):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid bearer token",
+            )
+
+    app.include_router(admin_logs_router, prefix="/admin", dependencies=[Depends(_require_auth)])
 
     def _caller_identity(request: Request) -> str:
         client = getattr(request, "client", None)
@@ -260,32 +350,23 @@ def create_app(
             app.state.bridge_port or 0,
             auth_mode,
         )
+        # Advertise log directory and sample curl
+        logger.info("CE bridge logs directory: %s", str(log_dir))
+        sample_trace = str(uuid.uuid4())
+        curl = (
+            f"curl -s -H \"Authorization: Bearer {token}\" "
+            f"http://{app.state.bridge_host or '127.0.0.1'}:{app.state.bridge_port or 0}/admin/logs/{sample_trace}"
+        ) if token else (
+            f"curl -s http://{app.state.bridge_host or '127.0.0.1'}:{app.state.bridge_port or 0}/admin/logs/{sample_trace}"
+        )
+        logger.info("Sample curl for logs by trace_id: %s", curl)
         _schedule_readiness_check(log_failures=True)
 
     @app.on_event("shutdown")
     async def _on_app_shutdown() -> None:
         _set_ready(False, "shutdown")
 
-    async def _require_auth(request: Request) -> None:
-        if not token:
-            return
-        header = request.headers.get("Authorization", "").strip()
-        if not header or not header.lower().startswith("bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing bearer token",
-            )
-        candidate = header.split(" ", 1)[1].strip()
-        if not candidate:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing bearer token",
-            )
-        if not secrets.compare_digest(candidate, token):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid bearer token",
-            )
+    # Note: _require_auth is defined above and used by routers
 
     def _normalize_pattern(term: str) -> str:
         like = term.replace("*", "%")
@@ -571,11 +652,21 @@ def create_app(
     async def health(_: None = Depends(_require_auth)) -> HealthResponse | JSONResponse:  # noqa: D401
         """Readiness-aware liveness probe."""
 
-        if not getattr(app.state, "ready", False):
+        ready_flag = bool(getattr(app.state, "ready", False))
+        headless_flag = bool(getattr(app.state, "headless", False))
+        allow_headless_flag = bool(getattr(app.state, "allow_headless_exports", False))
+
+        if not ready_flag:
             reason = getattr(app.state, "last_ready_error", "") or "warming_up"
             return JSONResponse(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={"ok": False, "reason": reason},
+                content={
+                    "ok": False,
+                    "ready": ready_flag,
+                    "reason": reason,
+                    "headless": headless_flag,
+                    "allow_headless": allow_headless_flag,
+                },
             )
         resolved_path = app.state.mdb_path or ""
         if not resolved_path:
@@ -585,12 +676,23 @@ def create_app(
                 resolved_path = ""
         return HealthResponse(
             ok=True,
+             ready=True,
             version=__version__,
             db_path=resolved_path,
             host=str(app.state.bridge_host or ""),
             port=int(app.state.bridge_port or 0),
             auth_required=bool(token),
+            headless=headless_flag,
+            allow_headless=allow_headless_flag,
         )
+
+    @app.get("/admin/health")
+    async def admin_health(_: None = Depends(_require_auth)) -> Dict[str, bool]:
+        return {
+            "ready": bool(getattr(app.state, "ready", False)),
+            "headless": bool(getattr(app.state, "headless", False)),
+            "allow_headless": bool(getattr(app.state, "allow_headless_exports", False)),
+        }
 
     def _make_trace_id() -> str:
         return str(uuid.uuid4())
@@ -775,7 +877,26 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pn must not be empty")
         return _search(pn.strip(), limit)
 
-    @app.post("/exports/mdb", response_model=MdbExportResponse)
+    @app.post(
+        "/exports/mdb",
+        response_model=MdbExportResponse,
+        responses={
+            status.HTTP_503_SERVICE_UNAVAILABLE: {
+                "description": "Bridge is running headless and exports are disabled.",
+                "content": {
+                    "application/json": {
+                        "example": {
+                            "reason": "bridge_headless",
+                            "status": 503,
+                            "detail": "Exports are disabled in headless mode.",
+                            "trace_id": "example-trace-id",
+                            "allow_headless": False,
+                        }
+                    }
+                },
+            }
+        },
+    )
     async def export_mdb_subset(
         payload: MdbExportRequest,
         request: Request,
@@ -861,13 +982,30 @@ def create_app(
             )
         export_path = out_dir / mdb_name
 
+        allow_headless = bool(getattr(app.state, "allow_headless_exports", False))
+        is_headless = bool(getattr(app.state, "headless", False))
+        if is_headless and not allow_headless:
+            logger.info(
+                "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s allow_headless=%s",
+                trace_id,
+                caller,
+                str(export_path),
+                allow_headless,
+            )
+            return _error_response(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason="bridge_headless",
+                trace_id=trace_id,
+                detail="Exports are disabled in headless mode.",
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                allow_headless=False,
+            )
+
         mdb_path = get_mdb_path()
         resolved_map: dict[int, ResolvedPart] = {}
         missing: List[str] = []
         unlinked: List[str] = []
         export_ids: set[int] = set()
-
-        template_info = _probe_template()
 
         def _resolved_payload() -> List[dict[str, object]]:
             return [item.model_dump() for item in sorted(resolved_map.values(), key=lambda r: r.comp_id)]
@@ -946,20 +1084,17 @@ def create_app(
                         trace_id=trace_id,
                     )
 
-                saver = getattr(db, "save_subset_to_mdb", None)
-                if saver is None or not callable(saver):
-                    logger.info(
-                        "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s",
-                        trace_id,
-                        caller,
-                        str(export_path),
-                    )
+                try:
+                    template_path = _resolve_template_path(getattr(payload, "template_path", None))
+                except TemplateResolutionError as exc:
                     return _error_response(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        reason="headless",
+                        status_code=status.HTTP_409_CONFLICT,
+                        reason="template_missing_or_incompatible",
                         trace_id=trace_id,
-                        detail="headless",
+                        detail="Template file is missing or empty.",
+                        template_path=exc.attempted,
                     )
+                logger.info("Resolved template_path=%s", str(template_path))
 
                 try:
                     out_dir.mkdir(parents=True, exist_ok=True)
@@ -978,30 +1113,57 @@ def create_app(
 
                 export_list = sorted(export_ids)
                 try:
-                    saver(export_path, export_list)
-                except NotImplementedError as exc:
-                    logger.info(
-                        "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s",
-                        trace_id,
-                        caller,
-                        str(export_path),
-                    )
-                    return _error_response(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        reason="headless",
-                        trace_id=trace_id,
-                        detail=str(exc) or "headless",
-                    )
+                    saver = getattr(db, "save_subset_to_mdb", None)
+                    used_mdb_saver = False
+                    fallback_required = False
+                    if saver and callable(saver):
+                        try:
+                            saver(export_path, export_list, template_path=template_path)
+                            used_mdb_saver = True
+                        except NotImplementedError:
+                            fallback_required = True
+                    else:
+                        fallback_required = True
+
+                    if fallback_required or not used_mdb_saver:
+                        if not (is_headless and allow_headless):
+                            logger.info(
+                                "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s allow_headless=%s",
+                                trace_id,
+                                caller,
+                                str(export_path),
+                                allow_headless,
+                            )
+                            return _error_response(
+                                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                reason="bridge_headless",
+                                trace_id=trace_id,
+                                detail="Exports are disabled in headless mode.",
+                                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                allow_headless=allow_headless,
+                            )
+                        from complex_editor.db.pn_exporter import ExportOptions, export_pn_to_mdb  # type: ignore
+
+                        logger.info("headless export: fallback_to_export_pn_to_mdb template=%s", str(template_path))
+                        opts = ExportOptions()
+                        export_pn_to_mdb(
+                            source_db_path=mdb_path,
+                            template_path=template_path,
+                            target_path=export_path,
+                            pn_list=pn_list,
+                            comp_ids=export_list,
+                            options=opts,
+                            progress_cb=None,
+                            cancel_cb=None,
+                        )
                 except FileNotFoundError as exc:
                     logger.exception(
                         "Bridge MDB export template missing trace_id=%s export_path=%s", trace_id, export_path
                     )
                     payload = {
-                        "template_path": str(getattr(exc, "filename", "")) or (str(template_info.path) if template_info else ""),
+                        "template_path": str(getattr(exc, "filename", "")) or str(template_path),
                         "detail": str(exc),
                     }
-                    if template_info is not None:
-                        payload["template_hash"] = template_info.sha256
                     return _error_response(
                         status_code=status.HTTP_409_CONFLICT,
                         reason="template_missing_or_incompatible",

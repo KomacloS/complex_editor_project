@@ -363,10 +363,19 @@ def _export_using_template(
                             payload,
                             message="Duplicate key detected while inserting subset.",
                         ) from exc
+                    # Access 22018: Data type mismatch in criteria expression
+                    reason_payload = {"detail": message}
+                    if "22018" in message or "type mismatch" in message.lower():
+                        reason_payload.update(
+                            {
+                                "offending_table": "detCompDesc",
+                                "hint": "Access type mismatch (22018) likely; see insert logs",
+                            }
+                        )
                     raise SubsetExportError(
                         "db_engine_error",
                         500,
-                        {"detail": message},
+                        reason_payload,
                     ) from exc
             target_db._conn.commit()
     except SubsetExportError:

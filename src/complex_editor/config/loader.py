@@ -127,6 +127,7 @@ class BridgeConfig:
     host: str = "0.0.0.0"
     port: int = 8765
     request_timeout_seconds: int = 15
+    allow_headless_exports: bool = False
 
 
 @dataclass
@@ -193,6 +194,7 @@ def _coerce_bridge(section: Dict[str, Any]) -> BridgeConfig:
     host = section.get("host", "0.0.0.0")
     port = section.get("port", 8765)
     timeout = section.get("request_timeout_seconds", 15)
+    allow_headless = bool(section.get("allow_headless_exports", False))
 
     if not isinstance(base_url, str):
         raise ConfigError("bridge.base_url must be a string")
@@ -220,6 +222,7 @@ def _coerce_bridge(section: Dict[str, Any]) -> BridgeConfig:
         host=host,
         port=port,
         request_timeout_seconds=timeout,
+        allow_headless_exports=allow_headless,
     )
 
 
@@ -268,6 +271,7 @@ def save_config(config: CEConfig) -> None:
             "host": config.bridge.host,
             "port": int(config.bridge.port),
             "request_timeout_seconds": int(config.bridge.request_timeout_seconds),
+            "allow_headless_exports": bool(config.bridge.allow_headless_exports),
         },
     }
     target.parent.mkdir(parents=True, exist_ok=True)

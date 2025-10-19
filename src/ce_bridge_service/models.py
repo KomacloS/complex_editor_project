@@ -56,11 +56,14 @@ class AliasUpdateResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     ok: bool
+    ready: bool
     version: str
     db_path: str
     host: str
     port: int
     auth_required: bool
+    headless: bool = False
+    allow_headless: bool = False
 
 
 class ResolvedPart(BaseModel):
@@ -74,6 +77,7 @@ class MdbExportRequest(BaseModel):
     out_dir: str
     mdb_name: str = Field(default="bom_complexes.mdb")
     require_linked: bool = False
+    template_path: Optional[str] = None
 
 
 class MdbExportResponse(BaseModel):

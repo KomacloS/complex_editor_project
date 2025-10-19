@@ -90,7 +90,7 @@ class FakeMDB:
             entries.append((cid, device.name, subs))
         return entries
 
-    def save_subset_to_mdb(self, target_path: Path, comp_ids: Sequence[int]) -> Path:
+    def save_subset_to_mdb(self, target_path: Path, comp_ids: Sequence[int], template_path: Path | None = None) -> Path:
         target = Path(target_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         comp_list = [int(cid) for cid in comp_ids]
@@ -274,8 +274,11 @@ def test_bridge_health_and_search_and_detail():
     assert health.status_code == 200
     payload = health.json()
     assert payload["ok"] is True
+    assert payload["ready"] is True
     assert payload["port"] == 8765
     assert payload["auth_required"] is True
+    assert payload["headless"] is False
+    assert payload["allow_headless"] is False
 
     search = client.get("/complexes/search", params={"pn": "PN"}, headers=_auth())
     assert search.status_code == 200
@@ -560,7 +563,13 @@ def test_bridge_health_blocks_until_ready():
     client.app.state.last_ready_error = "warming_up"
     warming = client.get("/health", headers=_auth())
     assert warming.status_code == 503
-    assert warming.json() == {"ok": False, "reason": "warming_up"}
+    assert warming.json() == {
+        "ok": False,
+        "ready": False,
+        "reason": "warming_up",
+        "headless": False,
+        "allow_headless": False,
+    }
 
     client.app.state.ready = True
     client.app.state.last_ready_error = ""
@@ -785,7 +794,7 @@ def test_export_mdb_headless_returns_503(monkeypatch, tmp_path):
 
     client = _make_client(handler, dataset=dataset)
 
-    def no_export(self, target_path: Path, comp_ids):  # noqa: ANN001 - signature mirrors real method
+    def no_export(self, target_path: Path, comp_ids, template_path=None):  # noqa: ANN001 - signature mirrors real method
         raise NotImplementedError("headless")
 
     monkeypatch.setattr(FakeMDB, "save_subset_to_mdb", no_export)
@@ -798,8 +807,9 @@ def test_export_mdb_headless_returns_503(monkeypatch, tmp_path):
     resp = client.post("/exports/mdb", headers=_auth(), json=payload)
     assert resp.status_code == 503
     body = resp.json()
-    assert body["detail"] == "headless"
-    assert body["reason"] == "headless"
+    assert body["detail"] == "Exports are disabled in headless mode."
+    assert body["reason"] == "bridge_headless"
+    assert body["allow_headless"] is False
     assert body["trace_id"]
     assert dataset.get("__exports__") is None
 

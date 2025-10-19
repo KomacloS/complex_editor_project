@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import importlib.resources
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple, Union, Sequence
 
 import pyodbc
 import re
+from datetime import datetime
 
 # ─── schema constants ────────────────────────────────────────────────
 DRIVER    = r"{Microsoft Access Driver (*.mdb, *.accdb)}"
@@ -317,13 +319,231 @@ class MDB:
             except Exception:
                 pass
             for sub in cx.subcomponents:
-                self._insert_sub(cur, new_id, sub)
+                cols, vals = sub._flatten(new_id)
+                sub_id = self._insert_sub(cur, DETAIL_T, cols, vals)
+                sub.id_sub_component = sub_id
 
         # write aliases if provided
         if getattr(cx, "aliases", None):
             self.set_aliases(new_id, cx.aliases or [])
 
         return new_id
+
+
+# ---------------------------------------------------------------------------
+# Access type probing and value coercion
+# ---------------------------------------------------------------------------
+from typing import Any, Sequence, Tuple, List, Dict  # re-exported type hints for helpers
+
+
+class DataMismatch(ValueError):
+    pass
+
+
+def _table_schema(cur, table: str) -> Dict[str, Dict[str, Any]]:
+    """
+    Return {col_name_lower: {"type": <odbc/sql type>, "nullable": bool, "column_size": int|None,
+                             "decimal_digits": int|None, "data_type_name": str}} using cur.columns().
+    Normalize names to lowercase.
+    """
+    cols: Dict[str, Dict[str, Any]] = {}
+    try:
+        rows = list(cur.columns(table=table))
+    except Exception:
+        # Fallback: try querying one row to capture description
+        try:
+            cur.execute(f"SELECT TOP 1 * FROM {table}")
+            desc = cur.description or []
+            for d in desc:
+                name = str(d[0])
+                cols[name.lower()] = {
+                    "type": None,
+                    "nullable": True,
+                    "column_size": None,
+                    "decimal_digits": None,
+                    "data_type_name": "",
+                }
+            return cols
+        except Exception:
+            return cols
+    for r in rows:
+        name = str(getattr(r, "column_name", getattr(r, "COLUMN_NAME", "")) or "").strip()
+        if not name:
+            continue
+        data_type = getattr(r, "data_type", getattr(r, "DATA_TYPE", None))
+        type_name = getattr(r, "type_name", getattr(r, "TYPE_NAME", ""))
+        column_size = getattr(r, "column_size", getattr(r, "COLUMN_SIZE", None))
+        decimal_digits = getattr(r, "decimal_digits", getattr(r, "DECIMAL_DIGITS", None))
+        nullable_val = getattr(r, "nullable", getattr(r, "NULLABLE", None))
+        is_nullable = True
+        try:
+            is_nullable = bool(int(nullable_val)) if nullable_val is not None else True
+        except Exception:
+            is_nullable = True
+        cols[name.lower()] = {
+            "type": data_type,
+            "nullable": is_nullable,
+            "column_size": int(column_size) if column_size not in (None, "") else None,
+            "decimal_digits": int(decimal_digits) if decimal_digits not in (None, "") else None,
+            "data_type_name": str(type_name or ""),
+        }
+    return cols
+
+
+def _validate_and_coerce_for_access(
+    cur,
+    table: str,
+    cols: Sequence[str],
+    vals: Sequence[Any],
+) -> Tuple[Sequence[str], Sequence[Any], List[Dict[str, Any]]]:
+    """
+    For each (col,val), look up schema. Apply rules:
+      - Numeric (INTEGER/SMALLINT/TINYINT/BIGINT/DOUBLE/DECIMAL):
+          "" or " " -> None
+          "123" -> int
+          "12.3" -> float
+          bool -> 0/1
+      - Yes/No (BIT/BOOLEAN): True/False or "0"/"1"/"true"/"false" -> 0/1
+      - Date/Time: ISO-like strings -> parsed datetime; otherwise None if empty
+      - Text/VARCHAR/MEMO: ensure <= column_size (truncate if needed and record action "truncate")
+    Build coercions list: [{"col":..., "expected":..., "given_type":..., "action":"none|to_int|to_float|bool_to_int|empty_to_null|truncate|parse_datetime|error"}]
+    If an uncoercible mismatch remains, raise DataMismatch with details.
+    Return (cols, coerced_vals, coercions).
+    """
+
+    schema = _table_schema(cur, table)
+
+    def _is_numeric(type_name: str) -> bool:
+        t = type_name.lower()
+        return any(k in t for k in ["int", "double", "decimal", "single", "float", "long", "byte", "currency"])
+
+    def _is_boolean(type_name: str) -> bool:
+        t = type_name.lower()
+        return "bit" in t or "yes/no" in t or "bool" in t
+
+    def _is_datetime(type_name: str) -> bool:
+        t = type_name.lower()
+        return "date" in t or "time" in t
+
+    def _is_text(type_name: str) -> bool:
+        t = type_name.lower()
+        return any(k in t for k in ["text", "char", "varchar", "memo", "longchar"])
+
+    coerced: List[Any] = []
+    actions: List[Dict[str, Any]] = []
+    for c, v in zip(cols, vals):
+        meta = schema.get(c.lower(), {})
+        type_name = str(meta.get("data_type_name") or meta.get("type") or "")
+        action = "none"
+        expected = type_name or "unknown"
+        given_type = type(v).__name__
+
+        try:
+            if _is_numeric(type_name):
+                if v in ("", " "):
+                    v2 = None
+                    action = "empty_to_null"
+                elif isinstance(v, bool):
+                    v2 = 1 if v else 0
+                    action = "bool_to_int"
+                elif isinstance(v, (int, float)):
+                    v2 = v
+                elif isinstance(v, str):
+                    s = v.strip()
+                    if s == "":
+                        v2 = None
+                        action = "empty_to_null"
+                    elif re.fullmatch(r"[-+]?\d+", s or ""):
+                        v2 = int(s)
+                        action = "to_int"
+                    elif re.fullmatch(r"[-+]?\d*\.\d+", s or ""):
+                        v2 = float(s)
+                        action = "to_float"
+                    else:
+                        raise DataMismatch(f"Unparseable numeric for {c}: {v!r}")
+                else:
+                    raise DataMismatch(f"Numeric expected for {c}, got {type(v).__name__}")
+                coerced.append(v2)
+            elif _is_boolean(type_name):
+                if v in ("", " ", None):
+                    v2 = None
+                    action = "empty_to_null"
+                elif isinstance(v, bool):
+                    v2 = 1 if v else 0
+                    action = "bool_to_int"
+                elif isinstance(v, (int, float)):
+                    v2 = 1 if float(v) != 0.0 else 0
+                    action = "to_int"
+                elif isinstance(v, str):
+                    s = v.strip().lower()
+                    if s in ("1", "true", "yes", "y"):
+                        v2 = 1
+                        action = "to_int"
+                    elif s in ("0", "false", "no", "n"):
+                        v2 = 0
+                        action = "to_int"
+                    elif s == "":
+                        v2 = None
+                        action = "empty_to_null"
+                    else:
+                        raise DataMismatch(f"Boolean expected for {c}, got {v!r}")
+                else:
+                    raise DataMismatch(f"Boolean expected for {c}, got {type(v).__name__}")
+                coerced.append(v2)
+            elif _is_datetime(type_name):
+                if v in ("", " "):
+                    v2 = None
+                    action = "empty_to_null"
+                elif isinstance(v, datetime):
+                    v2 = v
+                elif isinstance(v, str):
+                    s = v.strip()
+                    if not s:
+                        v2 = None
+                        action = "empty_to_null"
+                    else:
+                        # Try common ISO-like formats
+                        for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                            try:
+                                v2 = datetime.strptime(s, fmt)
+                                action = "parse_datetime"
+                                break
+                            except Exception:
+                                v2 = None
+                        if action != "parse_datetime" and v2 is None:
+                            raise DataMismatch(f"Datetime expected for {c}, got {v!r}")
+                else:
+                    raise DataMismatch(f"Datetime expected for {c}, got {type(v).__name__}")
+                coerced.append(v2)
+            elif _is_text(type_name) or not type_name:
+                s = v
+                if v is None:
+                    s2 = None
+                else:
+                    s2 = str(v)
+                max_len = meta.get("column_size")
+                if isinstance(s2, str) and isinstance(max_len, int) and max_len > 0 and len(s2) > max_len:
+                    s2 = s2[:max_len]
+                    action = "truncate"
+                coerced.append(s2)
+            else:
+                # Unknown types: pass-through
+                coerced.append(v)
+        except DataMismatch as dm:
+            preview = repr(v)
+            if len(preview) > 200:
+                preview = preview[:200] + "..."
+            raise DataMismatch(f"{table}.{c} expected {expected} got {given_type} value={preview}") from dm
+        finally:
+            actions.append({
+                "col": c,
+                "expected": expected,
+                "given_type": given_type,
+                "action": action,
+            })
+
+    return cols, coerced, actions
+
 
 
     def duplicate_complex(self, src_id: int, new_name: str) -> int:
@@ -453,7 +673,9 @@ class MDB:
             except Exception:
                 pass
             for sub in new_subs[n_exist:]:
-                self._insert_sub(cur, comp_id, sub)
+                cols, vals = sub._flatten(comp_id)
+                new_id = self._insert_sub(cur, DETAIL_T, cols, vals)
+                sub.id_sub_component = new_id
 
         # 5) DELETE any surplus rows
         if n_exist > n_new:
@@ -478,7 +700,10 @@ class MDB:
     # sub-components
     def add_sub(self, comp_id: int, sub: SubComponent) -> int:
         cur = self._cur()
-        return self._insert_sub(cur, comp_id, sub)
+        cols, vals = sub._flatten(comp_id)
+        new_id = self._insert_sub(cur, DETAIL_T, cols, vals)
+        sub.id_sub_component = new_id
+        return new_id
 
     def update_sub(self, sub_id: int, **fields):
         if not fields:
@@ -490,7 +715,12 @@ class MDB:
     def delete_sub(self, sub_id: int):
         self._cur().execute(f"DELETE FROM {DETAIL_T} WHERE {PK_DETAIL}=?", sub_id)
 
-    def save_subset_to_mdb(self, target_path: Union[str, Path], comp_ids: Sequence[int]) -> Path:
+    def save_subset_to_mdb(
+        self,
+        target_path: Union[str, Path],
+        comp_ids: Sequence[int],
+        template_path: Union[str, Path, None] = None,
+    ) -> Path:
         """Export a subset of complexes into a fresh MDB at ``target_path``."""
 
         normalized: list[int] = []
@@ -519,7 +749,21 @@ class MDB:
 
         target = Path(target_path).expanduser()
         package = "complex_editor.assets"
-        candidates = ("empty_template.mdb", "MAIN_DB.mdb")
+        candidates = ("Empty_mdb.mdb", "MAIN_DB.mdb")
+
+        if template_path is not None:
+            candidate = Path(template_path).expanduser()
+            if not candidate.exists() or candidate.stat().st_size <= 0:
+                raise FileNotFoundError(str(candidate))
+            return Path(
+                export_pn_to_mdb(
+                    self.path,
+                    candidate,
+                    target,
+                    pn_names,
+                    comp_ids=normalized,
+                ).target_path
+            )
         files_fn = getattr(importlib.resources, "files", None)
         if files_fn is not None:
             resources_obj = files_fn(package)
@@ -561,18 +805,71 @@ class MDB:
         raise FileNotFoundError("No database template available for subset export")
 
     # ── internals --------------------------------------------------
-    @staticmethod
-    def _insert_sub(cur, fk_master: int, sub: SubComponent) -> int:
-        cols, vals = sub._flatten(fk_master)
-        sql_cols  = ", ".join(f"[{c}]" for c in cols)
-        sql_qm    = ", ".join("?" for _ in vals)
-        cur.execute(
-            f"INSERT INTO {DETAIL_T} ({sql_cols}) VALUES ({sql_qm})",
-            *vals,
+    def _insert_sub(
+        self,
+        cur,
+        table: str,
+        cols: Sequence[str],
+        vals: Sequence[Any],
+    ) -> int:
+        logger = logging.getLogger("complex_editor.db.mdb_api.insert")
+        fk = None
+        for c, v in zip(cols, vals):
+            if c == PK_MASTER:
+                fk = v
+                break
+
+        try:
+            coerced_cols, coerced_vals, coercions = _validate_and_coerce_for_access(cur, table, list(cols), list(vals))
+        except DataMismatch as dm:
+            preview_items = []
+            for c, v in zip(cols, vals):
+                pv = repr(v)
+                if len(pv) > 200:
+                    pv = pv[:200] + "..."
+                preview_items.append((c, type(v).__name__, pv))
+            logger.info(
+                "INSERT prepare failed table=%s fk=%s cols=%s vals=%s error=%s",
+                table,
+                fk,
+                ",".join(cols),
+                preview_items,
+                str(dm),
+            )
+            raise
+
+        preview_items = []
+        for c, v in zip(coerced_cols, coerced_vals):
+            pv = repr(v)
+            if len(pv) > 200:
+                pv = pv[:200] + "..."
+            preview_items.append((c, type(v).__name__, pv))
+        logger.info(
+            "INSERT prepare table=%s fk=%s cols=%s vals=%s",
+            table,
+            fk,
+            ",".join(coerced_cols),
+            preview_items,
         )
-        cur.execute("SELECT @@IDENTITY")
-        new_id = int(cur.fetchone()[0])
-        sub.id_sub_component = new_id
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("coercions=%s", coercions)
+
+        sql_cols = ", ".join(f"[{c}]" for c in coerced_cols)
+        sql_qm = ", ".join("?" for _ in coerced_vals)
+        try:
+            cur.execute(
+                f"INSERT INTO {table} ({sql_cols}) VALUES ({sql_qm})",
+                *coerced_vals,
+            )
+            cur.execute("SELECT @@IDENTITY")
+            new_id = int(cur.fetchone()[0])
+        except pyodbc.DataError as exc:  # type: ignore[name-defined]
+            message = " ".join(str(part) for part in getattr(exc, "args", ()))
+            if "22018" in message or "type mismatch" in message.lower():
+                raise DataMismatch(f"{table} insert failed: {message}") from exc
+            raise
+
+        logger.info("INSERT committed table=%s new_id=%s fk=%s", table, new_id, fk)
         return new_id
 
 

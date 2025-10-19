@@ -47,6 +47,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Shutdown a running bridge service (requires matching bearer token).",
     )
+    parser.add_argument(
+        "--allow-headless-exports",
+        action="store_true",
+        help="Permit MDB exports even when the bridge runs without a UI (headless).",
+    )
     return parser.parse_args(argv)
 
 
@@ -106,12 +111,15 @@ def _run_server(cfg, bridge_cfg) -> int:
     if not cfg.database.mdb_path.exists():
         raise SystemExit(f"Database not found at {cfg.database.mdb_path}")
 
+    allow_headless = bool(getattr(bridge_cfg, "allow_headless_exports", False))
+
     app = create_app(
         get_mdb_path=lambda: cfg.database.mdb_path,
         auth_token=bridge_cfg.auth_token or None,
         wizard_handler=None,
         bridge_host=bridge_cfg.host,
         bridge_port=int(bridge_cfg.port),
+        allow_headless_exports=allow_headless,
     )
 
     mode = "frozen" if getattr(sys, "frozen", False) else "dev"
@@ -156,6 +164,8 @@ def _ensure_bridge(cfg, bridge_cfg) -> int:
     port = int(bridge_cfg.port)
     status, _, probe_host = _probe_health(bridge_cfg.host, port, token or None)
 
+    allow_headless = bool(getattr(bridge_cfg, "allow_headless_exports", False))
+
     if status == "running":
         auth_mode = "enabled" if token else "disabled"
         print(
@@ -185,6 +195,8 @@ def _ensure_bridge(cfg, bridge_cfg) -> int:
         ]
         if token:
             cmd += ["--token", token]
+        if allow_headless:
+            cmd.append("--allow-headless-exports")
         ce_cfg = os.environ.get("CE_CONFIG")
         if ce_cfg:
             cmd += ["--config", ce_cfg]
@@ -200,6 +212,8 @@ def _ensure_bridge(cfg, bridge_cfg) -> int:
         ]
         if token:
             cmd += ["--token", token]
+        if allow_headless:
+            cmd.append("--allow-headless-exports")
     env = os.environ.copy()
     process = subprocess.Popen(
         cmd,
@@ -323,6 +337,9 @@ def main(argv: list[str] | None = None) -> int:
         bridge_cfg.port = int(args.port)
     if args.token is not None:
         bridge_cfg.auth_token = args.token
+
+    if args.allow_headless_exports:
+        bridge_cfg.allow_headless_exports = True
 
     bridge_cfg.base_url = f"http://{bridge_cfg.host}:{bridge_cfg.port}"
 
