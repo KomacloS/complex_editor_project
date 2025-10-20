@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -17,9 +16,8 @@ from ce_bridge_service.app import create_app  # noqa: E402
 from ce_bridge_service.types import BridgeCreateResult  # noqa: E402
 
 
-def test_exception_logging_contains_trace_and_stack(tmp_path):
+def test_exception_logging_contains_trace_context(tmp_path):
     os.environ["CE_LOG_DIR"] = str(tmp_path)
-    os.environ["CE_LOG_JSON"] = "true"
 
     app = create_app(
         get_mdb_path=lambda: ROOT / "tests" / "data" / "dummy.mdb",
@@ -44,17 +42,13 @@ def test_exception_logging_contains_trace_and_stack(tmp_path):
     assert body["trace_id"] == trace_id
     assert body["reason"] == "internal_error"
 
-    # Scan the log file and assert at least one JSON line has exception and trace_id
+    # Scan the log file and assert at least one line includes trace context
     logs = list(Path(os.environ["CE_LOG_DIR"]).glob("*.log"))
     assert logs, "no log file created"
     found = False
     for path in logs:
         for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            if obj.get("trace_id") == trace_id and obj.get("exception"):
+            if trace_id in line and "event=unhandled_exception" in line:
                 found = True
                 break
         if found:

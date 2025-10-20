@@ -6,6 +6,7 @@ import importlib.resources as _ires
 import hashlib
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import secrets
 import tempfile
@@ -44,7 +45,7 @@ from .models import (
     ResolvedPart,
 )
 from .types import BridgeCreateResult
-from .logging_setup import setup_logging
+from .logging_setup import resolve_log_file
 from .middleware_trace import TraceIdMiddleware, TRACE_HEADER
 from .exceptions import install_exception_handlers
 from .admin_logs import router as admin_logs_router
@@ -59,6 +60,99 @@ except Exception:  # pragma: no cover - pyodbc not available in unit tests
 
 
 logger = logging.getLogger(__name__)
+
+
+def _env_truthy(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+class _BridgeFormatter(logging.Formatter):
+    def __init__(self) -> None:
+        super().__init__(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s",
+            "%Y-%m-%dT%H:%M:%S%z",
+        )
+
+    def format(self, record: logging.LogRecord) -> str:  # type: ignore[override]
+        base = super().format(record)
+        extras: list[str] = []
+        for key in ("trace_id", "event", "method", "path", "status", "duration_ms"):
+            value = getattr(record, key, None)
+            if value is None:
+                continue
+            if isinstance(value, str):
+                if not value:
+                    continue
+                extras.append(f"{key}={value}")
+            else:
+                extras.append(f"{key}={value}")
+        if extras:
+            return f"{base} {' '.join(extras)}"
+        return base
+
+
+def configure_logging() -> Path | None:
+    """Configure application logging based on environment variables."""
+
+    level_name = (os.environ.get("CE_LOG_LEVEL", "WARNING") or "").strip().upper() or "WARNING"
+    debug_enabled = _env_truthy(os.environ.get("CE_DEBUG"))
+    if debug_enabled:
+        level_name = "DEBUG"
+    level = getattr(logging, level_name, logging.WARNING)
+
+    log_file = resolve_log_file()
+    formatter = _BridgeFormatter()
+    handlers: list[logging.Handler] = []
+    destination: Path | None = log_file
+
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=5_000_000,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        handlers.append(file_handler)
+    except OSError:
+        destination = None
+        stream_handler = logging.StreamHandler()
+        stream_handler.setLevel(level)
+        stream_handler.setFormatter(formatter)
+        handlers.append(stream_handler)
+
+    if debug_enabled and destination is not None:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.DEBUG)
+        console_handler.setFormatter(formatter)
+        handlers.append(console_handler)
+
+    root_logger = logging.getLogger()
+    for existing in list(root_logger.handlers):
+        root_logger.removeHandler(existing)
+    for handler in handlers:
+        root_logger.addHandler(handler)
+    root_logger.setLevel(level)
+
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access", "ce_bridge_service", "complex_editor"):
+        target = logging.getLogger(name)
+        target.handlers = []
+        target.setLevel(level)
+        target.propagate = True
+
+    configured_logger = logging.getLogger(__name__)
+    if destination is None:
+        configured_logger.warning(
+            "Logging to console because CE_LOG_FILE/CE_LOG_DIR is unavailable."
+        )
+    else:
+        configured_logger.debug("Logging configured for file %s", destination)
+
+    return destination
 
 ASSET_PKG = "complex_editor.assets"
 ASSET_NAME = "Empty_mdb.mdb"
@@ -126,7 +220,8 @@ def create_app(
     """Return a configured FastAPI application for the bridge."""
 
     # Configure logging early
-    log_dir = setup_logging()
+    log_file = configure_logging()
+    log_dir = log_file.parent if isinstance(log_file, Path) else None
     token = (auth_token or "").strip()
     auth_mode = "enabled" if token else "disabled"
     app = FastAPI(title="Complex Editor Bridge", version=__version__)
@@ -146,17 +241,15 @@ def create_app(
     app.state._pending_mdb_path = None
     app.state.focused_comp_id = None
     app.state.wizard_open = False
+    app.state.log_file_path = str(log_file) if isinstance(log_file, Path) else ""
+    app.state.log_directory = str(log_dir) if log_dir is not None else ""
     app.state.focus_handler_available = bool(focus_handler)
     factory = mdb_factory or MDB
 
-    def _env_truthy(var: str) -> bool:
-        raw = os.environ.get(var)
-        if raw is None:
-            return False
-        return raw.strip().lower() in {"1", "true", "yes", "on"}
-
     headless_mode = wizard_handler is None
-    allow_headless_effective = bool(allow_headless_exports or _env_truthy("CE_ALLOW_HEADLESS_EXPORTS"))
+    allow_headless_effective = bool(
+        allow_headless_exports or _env_truthy(os.environ.get("CE_ALLOW_HEADLESS_EXPORTS"))
+    )
     app.state.headless = headless_mode
     app.state.allow_headless_exports = allow_headless_effective
 
@@ -355,8 +448,11 @@ def create_app(
             app.state.bridge_port or 0,
             auth_mode,
         )
-        # Advertise log directory and sample curl
-        logger.info("CE bridge logs directory: %s", str(log_dir))
+        # Advertise log destination at debug level to avoid noise in production
+        if log_dir is not None:
+            logger.debug("Log files stored in %s", str(log_dir))
+        else:
+            logger.debug("Log output directed to console")
         sample_trace = str(uuid.uuid4())
         curl = (
             f"curl -s -H \"Authorization: Bearer {token}\" "
@@ -364,7 +460,7 @@ def create_app(
         ) if token else (
             f"curl -s http://{app.state.bridge_host or '127.0.0.1'}:{app.state.bridge_port or 0}/admin/logs/{sample_trace}"
         )
-        logger.info("Sample curl for logs by trace_id: %s", curl)
+        logger.debug("Sample curl for logs by trace_id: %s", curl)
         _schedule_readiness_check(log_failures=True)
 
     @app.on_event("shutdown")
@@ -1103,7 +1199,7 @@ def create_app(
                         detail="Template file is missing or empty.",
                         template_path=exc.attempted,
                     )
-                logger.info("Resolved template_path=%s", str(template_path))
+                logger.debug("Resolved template_path=%s", str(template_path))
 
                 try:
                     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1153,7 +1249,10 @@ def create_app(
                             )
                         from complex_editor.db.pn_exporter import ExportOptions, export_pn_to_mdb  # type: ignore
 
-                        logger.info("headless export: fallback_to_export_pn_to_mdb template=%s", str(template_path))
+                        logger.debug(
+                            "headless export: fallback_to_export_pn_to_mdb template=%s",
+                            str(template_path),
+                        )
                         opts = ExportOptions()
                         export_pn_to_mdb(
                             source_db_path=mdb_path,
@@ -1269,7 +1368,7 @@ def create_app(
 
         resolved_list = sorted(resolved_map.values(), key=lambda r: r.comp_id)
         if missing_comp_ids and export_list:
-            logger.info("export partial: missing_comp_ids=%s", missing_comp_ids)
+            logger.warning("export partial: missing_comp_ids=%s", missing_comp_ids)
         logger.info(
             "Bridge MDB export completed trace_id=%s caller=%s exported=%s missing=%s export_path=%s",
             trace_id,

@@ -34,17 +34,16 @@ examples/             # demo MDB & PDF (not committed)
 
 ## CE Bridge: Traceable Logging and Admin Log Retrieval
 
-- Logging directory: controlled by `CE_LOG_DIR`.
-  - Defaults: Windows -> `%LOCALAPPDATA%\CE\logs`; Linux -> `/var/log/ce`.
+- Logging destination: set `CE_LOG_FILE` for an explicit file path or `CE_LOG_DIR` for a directory containing `bridge.log`.
+  - Defaults: Windows -> `%LOCALAPPDATA%\CE\logs\bridge.log`; macOS/Linux -> `~/.local/share/ce/logs/bridge.log`.
 - Other env vars:
-  - `CE_LOG_LEVEL` (default `INFO`)
-  - `CE_LOG_JSON` (default `true`; set to `false` for plain text)
-  - `CE_LOG_MAX_BYTES` (default `10485760`)
-  - `CE_LOG_BACKUP_COUNT` (default `5`)
+  - `CE_LOG_LEVEL` (default `WARNING`)
+  - `CE_DEBUG` (truthy enables debug level and mirrors logs to the console)
+- Logs are emitted as plain text with rotation (5 MB, 3 backups). Debug-only markers (template resolution, fallback traces, insert previews) appear when `CE_DEBUG=1` or `CE_LOG_LEVEL=DEBUG`.
 
 Every request carries a `X-Trace-Id` header. If the client doesn't send one, the bridge generates a UUID4 and returns it in the response header. All log lines include `trace_id`.
 
-On startup, the bridge logs the resolved logs directory and prints a sample curl to fetch logs for a trace id.
+On startup (at DEBUG level), the bridge logs the resolved log destination and prints a sample curl to fetch logs for a trace id; these lines appear when `CE_DEBUG=1` or `CE_LOG_LEVEL=DEBUG`.
 
 To retrieve logs and a nearby stacktrace for a specific request trace id:
 
@@ -59,7 +58,7 @@ Response example:
 {
   "trace_id": "...",
   "hits": [
-    {"file": ".../ce_bridge.log", "line": 120, "context_before": ["..."], "line_text": "...", "context_after": ["..."]}
+    {"file": ".../bridge.log", "line": 120, "context_before": ["..."], "line_text": "...", "context_after": ["..."]}
   ],
   "stacktrace": "Traceback (most recent call last):\n  File ...\nTypeError: ..."
 }
@@ -67,10 +66,11 @@ Response example:
 
 ### Insert Debug Logging
 
-- During detCompDesc inserts, the DB layer logs at INFO using logger `complex_editor.db.mdb_api.insert`:
+- During detCompDesc inserts, the DB layer logs at DEBUG using logger `complex_editor.db.mdb_api.insert`:
   - table name, foreign key, column list, and a preview of coerced values
   - on success, the new `@@IDENTITY`
-- Set overall log level via `CE_LOG_LEVEL` (e.g., `INFO` or `DEBUG`). JSON logs enabled by default (`CE_LOG_JSON=true`).
+- Type/coercion issues log at WARNING (and propagate as failures when inserts cannot continue).
+- Set overall log level via `CE_LOG_LEVEL` (e.g., `INFO` or `DEBUG`). Logs are plain text; set `CE_DEBUG=1` when you need verbose debug markers.
 
 ## Offline MDB tools
 
@@ -89,6 +89,6 @@ Response example:
 - Override per run with `CE_ALLOW_HEADLESS_EXPORTS=1` (environment) or `python -m ce_bridge_service.run --allow-headless-exports` (CLI).
 - When disabled, responses include `reason=bridge_headless`, `status=503`, and `allow_headless=false`; the same booleans are exposed via `GET /admin/health`.
 - Optional: set `CE_TEMPLATE_MDB` to an absolute path for the export template; otherwise the bridge uses `complex_editor/assets/Empty_mdb.mdb`.
-- When the headless saver falls back to the pure exporter you will see `Resolved template_path=<...>` followed by `headless export: fallback_to_export_pn_to_mdb template=<path>` in the logs.
+- When the headless saver falls back to the pure exporter you will see `Resolved template_path=<...>` followed by `headless export: fallback_to_export_pn_to_mdb template=<path>` in the logs when debug logging is enabled.
 - Successful responses can include a non-empty `missing` array listing any requested `comp_ids` that were not found; the export still completes for the known IDs.
 - If every requested `comp_id` is unknown, the bridge returns HTTP 404 with `reason=comp_ids_not_found` and echoes the requested IDs in `missing`.
