@@ -73,28 +73,33 @@ class TemplateResolutionError(Exception):
 def _resolve_template_path(requested: str | None) -> Path:
     attempts: list[str] = []
 
+    def _validate(candidate: Path) -> Path:
+        attempts.append(str(candidate))
+        try:
+            exists = candidate.exists()
+            size = candidate.stat().st_size if exists else 0
+        except OSError as exc:
+            raise TemplateResolutionError(str(candidate)) from exc
+        if not exists or size <= 0:
+            raise TemplateResolutionError(str(candidate))
+        return candidate.resolve()
+
     if requested:
         candidate = Path(requested).expanduser()
-        attempts.append(str(candidate))
-        if candidate.exists() and candidate.stat().st_size > 0:
-            return candidate
-        raise TemplateResolutionError(str(candidate))
+        return _validate(candidate)
 
     env = os.environ.get("CE_TEMPLATE_MDB", "").strip()
     if env:
         env_path = Path(env).expanduser()
-        attempts.append(str(env_path))
-        if env_path.exists() and env_path.stat().st_size > 0:
-            return env_path
-        raise TemplateResolutionError(str(env_path))
+        return _validate(env_path)
 
     try:
         resource = _ires.files(ASSET_PKG) / ASSET_NAME
         with _ires.as_file(resource) as asset_path:
             asset = Path(asset_path)
-            attempts.append(str(asset))
-            if asset.exists() and asset.stat().st_size > 0:
-                return asset
+            return _validate(asset)
+    except TemplateResolutionError:
+        raise
     except Exception:
         pass
 
