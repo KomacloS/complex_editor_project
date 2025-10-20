@@ -329,6 +329,304 @@ class MDB:
 
         return new_id
 
+    def duplicate_complex(self, src_id: int, new_name: str) -> int:
+        """Deep-copy master + sub rows.  Returns new master ID."""
+        cx = self.get_complex(src_id)
+        cx.id_comp_desc = None
+        cx.name = new_name
+        return self.create_complex(cx)
+
+    def add_complex(self, cx: ComplexDevice) -> int:
+        """Insert *cx* and return its new ID.
+
+        This is an alias for :meth:`create_complex` maintained for backwards
+        compatibility with the old API.
+        """
+        return self.create_complex(cx)
+
+    def _reseed_to_max_plus_one(self, cur, table: str, col: str) -> None:
+        """Set AutoNumber seed to MAX(col)+1 for *table*. Safe no-op on failure."""
+        cur.execute(f"SELECT MAX({col}) AS mx FROM {table}")
+        row = cur.fetchone()
+        mx = int(row.mx or 0)
+        seed = mx + 1
+        try:
+            cur.execute(f"ALTER TABLE {table} ALTER COLUMN {col} COUNTER ({seed}, 1)")
+        except Exception:
+            # Some drivers or states may not allow reseeding — ignore quietly.
+            pass
+
+    def _update_sub(self, cur, comp_id: int, sub_id: int, sub: SubComponent) -> None:
+        """UPDATE a detCompDesc row while preserving its IDSubComponent."""
+        # Bracket column names to avoid Access reserved words issues (e.g., Value)
+        set_cols = [
+            f"[IDFunction] = ?",
+            f"[Value] = ?",
+            f"[IDUnit] = ?",
+            f"[TolP] = ?",
+            f"[TolN] = ?",
+            f"[ForceBits] = ?",
+        ]
+        set_vals = [
+            int(sub.id_function),
+            sub.value,
+            None if sub.id_unit is None else int(sub.id_unit),
+            None if sub.tol_p   is None else float(sub.tol_p),
+            None if sub.tol_n   is None else float(sub.tol_n),
+            None if sub.force_bits is None else int(sub.force_bits),
+        ]
+
+        # Pins: accept whatever the caller provided (A..H numeric, S may be str/bytes)
+        pins = sub.pins or {}
+        for name, val in pins.items():
+            key = name.upper().strip()
+            if key not in set(list("ABCDEFGH") + ["S"]):
+                raise ValueError(f"Illegal pin '{name}'")
+            colname = f"Pin{key}"
+            set_cols.append(f"[{colname}] = ?")
+            set_vals.append(val)
+
+        sql = (
+            f"UPDATE {DETAIL_T} SET {', '.join(set_cols)} "
+            f"WHERE [{PK_MASTER}] = ? AND [{PK_DETAIL}] = ?"
+        )
+        set_vals.extend([int(comp_id), int(sub_id)])
+        cur.execute(sql, *set_vals)
+
+    # ── modifiers --------------------------------------------------
+    def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
+        """
+        Update a complex. If `updated` is provided:
+        • UPDATE master row (name, total pins)
+        • UPDATE overlapping detail rows *in place* (preserve IDSubComponent)
+        • INSERT any new rows (optionally reseeding to MAX+1 first)
+        • DELETE surplus rows
+        If `fields` are provided (and `updated` is None), behave as before.
+        """
+        cur = self._cur()
+        aliases_from_fields = fields.pop("aliases", None)
+
+        # Raw field update path (unchanged)
+        if updated is None:
+            if not fields:
+                # Still allow alias-only updates
+                if aliases_from_fields is not None:
+                    self.set_aliases(comp_id, aliases_from_fields)
+                return
+            sql = ", ".join(f"[{k}]=?" for k in fields)
+            vals = list(fields.values()) + [comp_id]
+            cur.execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
+            if aliases_from_fields is not None:
+                self.set_aliases(comp_id, aliases_from_fields)
+            return
+
+        # 1) Update master
+        cur.execute(
+            f"UPDATE {MASTER_T} SET Name=?, TotalPinNumber=? WHERE {PK_MASTER}=?",
+            updated.name, int(updated.total_pins), int(comp_id)
+        )
+
+        # 2) Fetch existing detail IDs (stable order)
+        cur.execute(
+            f"SELECT {PK_DETAIL} FROM {DETAIL_T} WHERE {PK_MASTER}=? ORDER BY {PK_DETAIL} ASC",
+            int(comp_id),
+        )
+        existing_ids = [int(r[0]) for r in cur.fetchall()]
+        new_subs = list(updated.subcomponents or [])
+
+        n_exist = len(existing_ids)
+        n_new = len(new_subs)
+        n_upd = min(n_exist, n_new)
+
+        # 3) UPDATE overlapping rows in place (preserve PKs)
+        for i in range(n_upd):
+            self._update_sub(cur, comp_id, existing_ids[i], new_subs[i])
+
+        # 4) INSERT any additional rows
+        if n_new > n_exist:
+            try:
+                self._reseed_to_max_plus_one(cur, DETAIL_T, PK_DETAIL)
+            except Exception:
+                pass
+            for sub in new_subs[n_exist:]:
+                cols, vals = sub._flatten(comp_id)
+                new_id = self._insert_sub(cur, DETAIL_T, cols, vals)
+                sub.id_sub_component = new_id
+
+        # 5) DELETE any surplus rows
+        if n_exist > n_new:
+            extra_ids = existing_ids[n_new:]
+            qmarks = ",".join("?" for _ in extra_ids)
+            cur.execute(
+                f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=? AND {PK_DETAIL} IN ({qmarks})",
+                int(comp_id), *extra_ids
+            )
+
+        # 6) Update aliases if provided on object
+        if getattr(updated, "aliases", None) is not None:
+            self.set_aliases(comp_id, updated.aliases or [])
+
+    def delete_complex(self, comp_id: int, cascade: bool = True):
+        cur = self._cur()
+        if cascade:
+            cur.execute(f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=?", comp_id)
+        cur.execute(f"DELETE FROM {MASTER_T} WHERE {PK_MASTER}=?", comp_id)
+
+    # sub-components
+    def add_sub(self, comp_id: int, sub: SubComponent) -> int:
+        cur = self._cur()
+        cols, vals = sub._flatten(comp_id)
+        new_id = self._insert_sub(cur, DETAIL_T, cols, vals)
+        sub.id_sub_component = new_id
+        return new_id
+
+    def update_sub(self, sub_id: int, **fields):
+        if not fields:
+            return
+        sql = ", ".join(f"[{k}]=?" for k in fields)
+        vals = list(fields.values()) + [sub_id]
+        self._cur().execute(f"UPDATE {DETAIL_T} SET {sql} WHERE {PK_DETAIL}=?", *vals)
+
+    def delete_sub(self, sub_id: int):
+        self._cur().execute(f"DELETE FROM {DETAIL_T} WHERE {PK_DETAIL}=?", sub_id)
+
+    def save_subset_to_mdb(
+        self,
+        target_path: Union[str, Path],
+        comp_ids: Sequence[int],
+        template_path: Optional[Path] = None,
+    ) -> Path:
+        """Export a subset of complexes into a fresh MDB at ``target_path``."""
+
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for raw in comp_ids:
+            try:
+                cid = int(raw)
+            except Exception:
+                continue
+            if cid <= 0 or cid in seen:
+                continue
+            seen.add(cid)
+            normalized.append(cid)
+        if not normalized:
+            raise ValueError("comp_ids must contain at least one positive integer")
+
+        pn_names: list[str] = []
+        for cid in normalized:
+            device = self.get_complex(cid)
+            name = str(getattr(device, "name", "") or "").strip()
+            if not name:
+                raise LookupError(f"Complex {cid} has no name")
+            pn_names.append(name)
+
+        from .pn_exporter import export_pn_to_mdb
+
+        target = Path(target_path).expanduser()
+
+        if template_path is not None:
+            candidate = Path(template_path).expanduser()
+        else:
+            files_fn = getattr(importlib.resources, "files", None)
+            if files_fn is not None:
+                resource = files_fn("complex_editor.assets") / "Empty_mdb.mdb"
+                with importlib.resources.as_file(resource) as asset_path:
+                    candidate = Path(asset_path)
+            else:  # pragma: no cover - legacy Python fallback
+                with importlib.resources.path("complex_editor.assets", "Empty_mdb.mdb") as asset_path:  # type: ignore[attr-defined]
+                    candidate = Path(asset_path)
+
+        if not candidate.exists() or candidate.stat().st_size <= 0:
+            raise FileNotFoundError(str(candidate))
+
+        result = export_pn_to_mdb(
+            self.path,
+            candidate,
+            target,
+            pn_names,
+            comp_ids=normalized,
+        )
+        return Path(result.target_path)
+
+    # ── internals --------------------------------------------------
+    def _insert_sub(
+        self,
+        cur,
+        table: str,
+        cols: Sequence[str],
+        vals: Sequence[Any],
+    ) -> int:
+        logger = logging.getLogger("complex_editor.db.mdb_api.insert")
+        fk = next((v for c, v in zip(cols, vals) if c == PK_MASTER), None)
+
+        col_list = list(cols)
+        val_list = list(vals)
+
+        def _preview(pcols: Sequence[str], pvals: Sequence[Any]) -> list[tuple[str, str, str]]:
+            items: list[tuple[str, str, str]] = []
+            for c, v in zip(pcols, pvals):
+                rep = repr(v)
+                if len(rep) > 200:
+                    rep = rep[:200] + "..."
+                items.append((c, type(v).__name__, rep))
+            return items
+
+        original_preview = _preview(col_list, val_list)
+
+        try:
+            coerced_cols, coerced_vals, coercions = _validate_and_coerce_for_access(
+                cur,
+                table,
+                col_list,
+                val_list,
+            )
+        except DataMismatch as exc:
+            logger.info(
+                "INSERT prepare failed table=%s fk=%s cols=%s vals=%s error=%s",
+                table,
+                fk,
+                ",".join(col_list),
+                original_preview,
+                str(exc),
+            )
+            raise
+
+        logger.info(
+            "INSERT prepare table=%s fk=%s cols=%s vals=%s",
+            table,
+            fk,
+            ",".join(coerced_cols),
+            _preview(coerced_cols, coerced_vals),
+        )
+        logger.debug("coercions=%s", coercions)
+
+        sql_cols = ", ".join(f"[{c}]" for c in coerced_cols)
+        sql_qm = ", ".join("?" for _ in coerced_vals)
+
+        try:
+            cur.execute(
+                f"INSERT INTO {table} ({sql_cols}) VALUES ({sql_qm})",
+                *coerced_vals,
+            )
+            cur.execute("SELECT @@IDENTITY")
+            new_id = int(cur.fetchone()[0])
+        except pyodbc.DataError as exc:  # type: ignore[name-defined]
+            message = " ".join(str(part) for part in getattr(exc, "args", ()))
+            if "22018" in message or "type mismatch" in message.lower():
+                logger.info(
+                    "INSERT prepare failed table=%s fk=%s cols=%s vals=%s error=%s",
+                    table,
+                    fk,
+                    ",".join(col_list),
+                    original_preview,
+                    message,
+                )
+                raise DataMismatch(f"{table} insert failed: {message}") from exc
+            raise
+
+        logger.info("INSERT committed table=%s fk=%s new_id=%s", table, fk, new_id)
+        return new_id
+
 
 # ---------------------------------------------------------------------------
 # Access type probing and value coercion
@@ -546,331 +844,6 @@ def _validate_and_coerce_for_access(
 
 
 
-    def duplicate_complex(self, src_id: int, new_name: str) -> int:
-        """Deep-copy master + sub rows.  Returns new master ID."""
-        cx = self.get_complex(src_id)
-        cx.id_comp_desc = None
-        cx.name = new_name
-        return self.create_complex(cx)
-
-    def add_complex(self, cx: ComplexDevice) -> int:
-        """Insert *cx* and return its new ID.
-
-        This is an alias for :meth:`create_complex` maintained for backwards
-        compatibility with the old API.
-        """
-        return self.create_complex(cx)
-
-    def _reseed_to_max_plus_one(self, cur, table: str, col: str) -> None:
-        """
-        Set AutoNumber seed to MAX(col)+1 for *table*. Safe no-op on failure.
-        This does NOT change existing data; it only nudges the counter.
-        """
-        cur.execute(f"SELECT MAX({col}) AS mx FROM {table}")
-        row = cur.fetchone()
-        mx = int(row.mx or 0)
-        seed = mx + 1
-        try:
-            cur.execute(f"ALTER TABLE {table} ALTER COLUMN {col} COUNTER ({seed}, 1)")
-        except Exception:
-            # Some drivers or states may not allow reseeding — ignore quietly.
-            pass
-        
-    def _update_sub(self, cur, comp_id: int, sub_id: int, sub: SubComponent) -> None:
-        """
-        UPDATE a detCompDesc row while preserving its IDSubComponent.
-        Only columns present in `sub` are touched; others remain as-is.
-        """
-        # Bracket column names to avoid Access reserved words issues (e.g., Value)
-        set_cols = [
-            f"[IDFunction] = ?",
-            f"[Value] = ?",
-            f"[IDUnit] = ?",
-            f"[TolP] = ?",
-            f"[TolN] = ?",
-            f"[ForceBits] = ?",
-        ]
-        set_vals = [
-            int(sub.id_function),
-            sub.value,
-            None if sub.id_unit is None else int(sub.id_unit),
-            None if sub.tol_p   is None else float(sub.tol_p),
-            None if sub.tol_n   is None else float(sub.tol_n),
-            None if sub.force_bits is None else int(sub.force_bits),
-        ]
-
-        # Pins: accept whatever the caller provided (A..H numeric, S may be str/bytes)
-        pins = sub.pins or {}
-        for name, val in pins.items():
-            key = name.upper().strip()
-            if key not in set(list("ABCDEFGH") + ["S"]):
-                raise ValueError(f"Illegal pin '{name}'")
-            colname = f"Pin{key}"
-            set_cols.append(f"[{colname}] = ?")
-            set_vals.append(val)
-
-        sql = (
-            f"UPDATE {DETAIL_T} SET {', '.join(set_cols)} "
-            f"WHERE [{PK_MASTER}] = ? AND [{PK_DETAIL}] = ?"
-        )
-        set_vals.extend([int(comp_id), int(sub_id)])
-        cur.execute(sql, *set_vals)
-
-
-    # ── modifiers --------------------------------------------------
-    def update_complex(self, comp_id: int, updated: ComplexDevice | None = None, **fields):
-        """
-        Update a complex. If `updated` is provided:
-        • UPDATE master row (name, total pins)
-        • UPDATE overlapping detail rows *in place* (preserve IDSubComponent)
-        • INSERT any new rows (optionally reseeding to MAX+1 first)
-        • DELETE surplus rows
-        If `fields` are provided (and `updated` is None), behave as before.
-        """
-        cur = self._cur()
-        aliases_from_fields = fields.pop("aliases", None)
-
-        # Raw field update path (unchanged)
-        if updated is None:
-            if not fields:
-                # Still allow alias-only updates
-                if aliases_from_fields is not None:
-                    self.set_aliases(comp_id, aliases_from_fields)
-                return
-            sql = ", ".join(f"[{k}]=?" for k in fields)
-            vals = list(fields.values()) + [comp_id]
-            cur.execute(f"UPDATE {MASTER_T} SET {sql} WHERE {PK_MASTER}=?", *vals)
-            if aliases_from_fields is not None:
-                self.set_aliases(comp_id, aliases_from_fields)
-            return
-
-        # 1) Update master
-        cur.execute(
-            f"UPDATE {MASTER_T} SET Name=?, TotalPinNumber=? WHERE {PK_MASTER}=?",
-            updated.name, int(updated.total_pins), int(comp_id)
-        )
-
-        # 2) Fetch existing detail IDs (stable order)
-        cur.execute(
-            f"SELECT {PK_DETAIL} FROM {DETAIL_T} WHERE {PK_MASTER}=? ORDER BY {PK_DETAIL} ASC",
-            int(comp_id),
-        )
-        existing_ids = [int(r[0]) for r in cur.fetchall()]
-        new_subs = list(updated.subcomponents or [])
-
-        n_exist = len(existing_ids)
-        n_new   = len(new_subs)
-        n_upd   = min(n_exist, n_new)
-
-        # 3) UPDATE overlapping rows in place (preserve PKs)
-        for i in range(n_upd):
-            self._update_sub(cur, comp_id, existing_ids[i], new_subs[i])
-
-        # 4) INSERT any additional rows
-        if n_new > n_exist:
-            try:
-                self._reseed_to_max_plus_one(cur, DETAIL_T, PK_DETAIL)
-            except Exception:
-                pass
-            for sub in new_subs[n_exist:]:
-                cols, vals = sub._flatten(comp_id)
-                new_id = self._insert_sub(cur, DETAIL_T, cols, vals)
-                sub.id_sub_component = new_id
-
-        # 5) DELETE any surplus rows
-        if n_exist > n_new:
-            extra_ids = existing_ids[n_new:]
-            qmarks = ",".join("?" for _ in extra_ids)
-            cur.execute(
-                f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=? AND {PK_DETAIL} IN ({qmarks})",
-                int(comp_id), *extra_ids
-            )
-
-        # 6) Update aliases if provided on object
-        if getattr(updated, "aliases", None) is not None:
-            self.set_aliases(comp_id, updated.aliases or [])
-
-
-    def delete_complex(self, comp_id: int, cascade: bool = True):
-        cur = self._cur()
-        if cascade:
-            cur.execute(f"DELETE FROM {DETAIL_T} WHERE {PK_MASTER}=?", comp_id)
-        cur.execute(f"DELETE FROM {MASTER_T} WHERE {PK_MASTER}=?", comp_id)
-
-    # sub-components
-    def add_sub(self, comp_id: int, sub: SubComponent) -> int:
-        cur = self._cur()
-        cols, vals = sub._flatten(comp_id)
-        new_id = self._insert_sub(cur, DETAIL_T, cols, vals)
-        sub.id_sub_component = new_id
-        return new_id
-
-    def update_sub(self, sub_id: int, **fields):
-        if not fields:
-            return
-        sql = ", ".join(f"[{k}]=?" for k in fields)
-        vals = list(fields.values()) + [sub_id]
-        self._cur().execute(f"UPDATE {DETAIL_T} SET {sql} WHERE {PK_DETAIL}=?", *vals)
-
-    def delete_sub(self, sub_id: int):
-        self._cur().execute(f"DELETE FROM {DETAIL_T} WHERE {PK_DETAIL}=?", sub_id)
-
-    def save_subset_to_mdb(
-        self,
-        target_path: Union[str, Path],
-        comp_ids: Sequence[int],
-        template_path: Union[str, Path, None] = None,
-    ) -> Path:
-        """Export a subset of complexes into a fresh MDB at ``target_path``."""
-
-        normalized: list[int] = []
-        seen: set[int] = set()
-        for raw in comp_ids:
-            try:
-                cid = int(raw)
-            except Exception:
-                continue
-            if cid <= 0 or cid in seen:
-                continue
-            seen.add(cid)
-            normalized.append(cid)
-        if not normalized:
-            raise ValueError("comp_ids must contain at least one positive integer")
-
-        pn_names: list[str] = []
-        for cid in normalized:
-            device = self.get_complex(cid)
-            name = str(getattr(device, "name", "") or "").strip()
-            if not name:
-                raise LookupError(f"Complex {cid} has no name")
-            pn_names.append(name)
-
-        from .pn_exporter import export_pn_to_mdb
-
-        target = Path(target_path).expanduser()
-        package = "complex_editor.assets"
-        candidates = ("Empty_mdb.mdb", "MAIN_DB.mdb")
-
-        if template_path is not None:
-            candidate = Path(template_path).expanduser()
-            if not candidate.exists() or candidate.stat().st_size <= 0:
-                raise FileNotFoundError(str(candidate))
-            return Path(
-                export_pn_to_mdb(
-                    self.path,
-                    candidate,
-                    target,
-                    pn_names,
-                    comp_ids=normalized,
-                ).target_path
-            )
-        files_fn = getattr(importlib.resources, "files", None)
-        if files_fn is not None:
-            resources_obj = files_fn(package)
-            for name in candidates:
-                try:
-                    resource = resources_obj.joinpath(name)
-                except (FileNotFoundError, AttributeError):
-                    continue
-                try:
-                    with importlib.resources.as_file(resource) as template_path:
-                        if template_path.exists() and template_path.stat().st_size > 0:
-                            return Path(
-                                export_pn_to_mdb(
-                                    self.path,
-                                    template_path,
-                                    target,
-                                    pn_names,
-                                    comp_ids=normalized,
-                                ).target_path
-                            )
-                except FileNotFoundError:
-                    continue
-        else:  # pragma: no cover - legacy Python fallback
-            for name in candidates:
-                try:
-                    with importlib.resources.path(package, name) as template_path:  # type: ignore[attr-defined]
-                        if template_path.exists() and template_path.stat().st_size > 0:
-                            return Path(
-                                export_pn_to_mdb(
-                                    self.path,
-                                    template_path,
-                                    target,
-                                    pn_names,
-                                    comp_ids=normalized,
-                                ).target_path
-                            )
-                except (FileNotFoundError, AttributeError):
-                    continue
-        raise FileNotFoundError("No database template available for subset export")
-
-    # ── internals --------------------------------------------------
-    def _insert_sub(
-        self,
-        cur,
-        table: str,
-        cols: Sequence[str],
-        vals: Sequence[Any],
-    ) -> int:
-        logger = logging.getLogger("complex_editor.db.mdb_api.insert")
-        fk = None
-        for c, v in zip(cols, vals):
-            if c == PK_MASTER:
-                fk = v
-                break
-
-        try:
-            coerced_cols, coerced_vals, coercions = _validate_and_coerce_for_access(cur, table, list(cols), list(vals))
-        except DataMismatch as dm:
-            preview_items = []
-            for c, v in zip(cols, vals):
-                pv = repr(v)
-                if len(pv) > 200:
-                    pv = pv[:200] + "..."
-                preview_items.append((c, type(v).__name__, pv))
-            logger.info(
-                "INSERT prepare failed table=%s fk=%s cols=%s vals=%s error=%s",
-                table,
-                fk,
-                ",".join(cols),
-                preview_items,
-                str(dm),
-            )
-            raise
-
-        preview_items = []
-        for c, v in zip(coerced_cols, coerced_vals):
-            pv = repr(v)
-            if len(pv) > 200:
-                pv = pv[:200] + "..."
-            preview_items.append((c, type(v).__name__, pv))
-        logger.info(
-            "INSERT prepare table=%s fk=%s cols=%s vals=%s",
-            table,
-            fk,
-            ",".join(coerced_cols),
-            preview_items,
-        )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("coercions=%s", coercions)
-
-        sql_cols = ", ".join(f"[{c}]" for c in coerced_cols)
-        sql_qm = ", ".join("?" for _ in coerced_vals)
-        try:
-            cur.execute(
-                f"INSERT INTO {table} ({sql_cols}) VALUES ({sql_qm})",
-                *coerced_vals,
-            )
-            cur.execute("SELECT @@IDENTITY")
-            new_id = int(cur.fetchone()[0])
-        except pyodbc.DataError as exc:  # type: ignore[name-defined]
-            message = " ".join(str(part) for part in getattr(exc, "args", ()))
-            if "22018" in message or "type mismatch" in message.lower():
-                raise DataMismatch(f"{table} insert failed: {message}") from exc
-            raise
-
-        logger.info("INSERT committed table=%s new_id=%s fk=%s", table, new_id, fk)
-        return new_id
 
 
 # ─── quick CLI demo (run `python mdb_api.py your.mdb`) ───────────────
