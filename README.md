@@ -90,3 +90,5 @@ Response example:
 - When disabled, responses include `reason=bridge_headless`, `status=503`, and `allow_headless=false`; the same booleans are exposed via `GET /admin/health`.
 - Optional: set `CE_TEMPLATE_MDB` to an absolute path for the export template; otherwise the bridge uses `complex_editor/assets/Empty_mdb.mdb`.
 - When the headless saver falls back to the pure exporter you will see `Resolved template_path=<...>` followed by `headless export: fallback_to_export_pn_to_mdb template=<path>` in the logs.
+- Successful responses can include a non-empty `missing` array listing any requested `comp_ids` that were not found; the export still completes for the known IDs.
+- If every requested `comp_id` is unknown, the bridge returns HTTP 404 with `reason=comp_ids_not_found` and echoes the requested IDs in `missing`.

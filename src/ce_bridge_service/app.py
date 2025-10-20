@@ -1009,6 +1009,7 @@ def create_app(
         mdb_path = get_mdb_path()
         resolved_map: dict[int, ResolvedPart] = {}
         missing: List[str] = []
+        missing_comp_ids: List[int] = []
         unlinked: List[str] = []
         export_ids: set[int] = set()
 
@@ -1029,26 +1030,15 @@ def create_app(
                     if comp_id not in resolved_map:
                         resolved_map[comp_id] = ResolvedPart(pn=resolved_name, comp_id=comp_id)
 
-                invalid_comp_ids = [cid for cid in comp_ids if cid not in id_to_name]
-                if invalid_comp_ids:
-                    logger.info(
-                        "Bridge MDB export invalid comp_ids trace_id=%s caller=%s invalid=%s",
-                        trace_id,
-                        caller,
-                        invalid_comp_ids,
-                    )
-                    return _error_response(
-                        status_code=status.HTTP_409_CONFLICT,
-                        reason="invalid_comp_ids",
-                        trace_id=trace_id,
-                        not_found_ids=invalid_comp_ids,
-                    )
-
                 for cid in comp_ids:
-                    export_ids.add(cid)
-                    if cid not in resolved_map:
-                        resolved_name = id_to_name.get(cid, "") or str(cid)
-                        resolved_map[cid] = ResolvedPart(pn=resolved_name, comp_id=cid)
+                    if cid in id_to_name:
+                        export_ids.add(cid)
+                        if cid not in resolved_map:
+                            resolved_name = id_to_name.get(cid, "") or str(cid)
+                            resolved_map[cid] = ResolvedPart(pn=resolved_name, comp_id=cid)
+                    else:
+                        missing_comp_ids.append(cid)
+                        missing.append(str(cid))
 
                 if payload.require_linked and (missing or unlinked):
                     logger.info(
@@ -1069,6 +1059,20 @@ def create_app(
                     )
 
                 if missing and not export_ids:
+                    if comp_ids:
+                        logger.info(
+                            "Bridge MDB export rejected (comp_ids not found) trace_id=%s caller=%s comp_ids=%s",
+                            trace_id,
+                            caller,
+                            comp_ids,
+                        )
+                        return _error_response(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            reason="comp_ids_not_found",
+                            trace_id=trace_id,
+                            detail="No valid comp_ids to export.",
+                            missing=[str(cid) for cid in comp_ids],
+                        )
                     logger.info(
                         "Bridge MDB export rejected (no matches) trace_id=%s caller=%s missing=%s",
                         trace_id,
@@ -1264,6 +1268,8 @@ def create_app(
             )
 
         resolved_list = sorted(resolved_map.values(), key=lambda r: r.comp_id)
+        if missing_comp_ids and export_list:
+            logger.info("export partial: missing_comp_ids=%s", missing_comp_ids)
         logger.info(
             "Bridge MDB export completed trace_id=%s caller=%s exported=%s missing=%s export_path=%s",
             trace_id,

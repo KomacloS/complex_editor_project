@@ -216,6 +216,43 @@ def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
     assert any("fallback_to_export_pn_to_mdb" in rec.message for rec in caplog.records)
 
 
+def test_partial_success_with_missing_ids(monkeypatch, tmp_path, caplog):
+    monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    client, saved = _make_headless_client(tmp_path, allow_flag=True)
+
+    out_dir = tmp_path / "exports"
+    payload = {"comp_ids": [5087, 9999], "out_dir": str(out_dir), "mdb_name": "partial.mdb"}
+
+    with caplog.at_level("INFO"):
+        resp = client.post("/exports/mdb", json=payload)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["exported_comp_ids"] == [5087]
+    assert body["missing"] == ["9999"]
+    assert Path(body["export_path"]).exists()
+    assert saved and saved[0][1] == [5087]
+    assert any("export partial: missing_comp_ids=[9999]" in rec.message for rec in caplog.records)
+
+
+def test_all_missing_ids_returns_error(monkeypatch, tmp_path):
+    monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    client, saved = _make_headless_client(tmp_path, allow_flag=True)
+
+    out_dir = tmp_path / "exports"
+    payload = {"comp_ids": [9999, 8888], "out_dir": str(out_dir), "mdb_name": "missing_only.mdb"}
+
+    resp = client.post("/exports/mdb", json=payload)
+
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["reason"] == "comp_ids_not_found"
+    assert body["detail"] == "No valid comp_ids to export."
+    assert body["missing"] == ["9999", "8888"]
+    assert not saved
+
+
 def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, caplog):
     monkeypatch.setenv("CE_ALLOW_HEADLESS_EXPORTS", "1")
 
