@@ -65,6 +65,52 @@ def test_validate_and_coerce_unparseable_raises():
         _validate_and_coerce_for_access(cur, "detCompDesc", ["TolP"], ["abc"])
 
 
+def test_longchar_accepts_str_xml():
+    xml = """<?xml version=\"1.0\" encoding=\"utf-16\"?>\n<root>""" + ("x" * 2048) + "</root>"
+    cur = _FakeCursor([
+        _FakeCol("PinS", "LONGCHAR", None, None, 1),
+    ])
+
+    cols = ["PinS"]
+    vals = [xml]
+
+    out_cols, coerced, actions = _validate_and_coerce_for_access(cur, "detCompDesc", cols, vals)
+    assert list(out_cols) == cols
+    assert coerced[0] == xml
+    assert actions[0]["action"] in ("none", "to_str")
+
+
+def test_longchar_accepts_bytes_xml():
+    xml = """<?xml version=\"1.0\" encoding=\"utf-16\"?>\n<root>""" + ("y" * 1024) + "</root>"
+    xml_bytes = xml.encode("utf-16")
+    cur = _FakeCursor([
+        _FakeCol("PinS", "memo", None, None, 1),
+    ])
+
+    cols = ["PinS"]
+    vals = [xml_bytes]
+
+    out_cols, coerced, actions = _validate_and_coerce_for_access(cur, "detCompDesc", cols, vals)
+    assert list(out_cols) == cols
+    assert coerced[0] == xml
+    assert actions[0]["action"].startswith("bytes_to_str")
+
+
+def test_longchar_no_truncate_when_memo():
+    long_text = "z" * 5000
+    cur = _FakeCursor([
+        _FakeCol("PinS", "LONGTEXT", 0, None, 1),
+    ])
+
+    cols = ["PinS"]
+    vals = [long_text]
+
+    out_cols, coerced, actions = _validate_and_coerce_for_access(cur, "detCompDesc", cols, vals)
+    assert list(out_cols) == cols
+    assert coerced[0] == long_text
+    assert actions[0]["action"] in ("none", "to_str")
+
+
 def test_bridge_handles_pyodbc_data_error_without_typeerror(monkeypatch, tmp_path):
     # Simulate DataError raised inside export path
     try:

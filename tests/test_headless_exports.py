@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import List
 from types import SimpleNamespace
@@ -20,6 +21,7 @@ from ce_bridge_service.app import (  # noqa: E402
     create_app,
 )
 from ce_bridge_service.types import BridgeCreateResult  # noqa: E402
+from complex_editor.db.mdb_api import _validate_and_coerce_for_access  # noqa: E402
 
 
 def _make_headless_client(
@@ -212,6 +214,96 @@ def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
     assert target_file.read_text() == "pn-exporter-missing"
     assert not saved
     assert any("fallback_to_export_pn_to_mdb" in rec.message for rec in caplog.records)
+
+
+def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, caplog):
+    monkeypatch.setenv("CE_ALLOW_HEADLESS_EXPORTS", "1")
+
+    xml_value = """<?xml version=\"1.0\" encoding=\"utf-16\"?>\n<det>""" + ("p" * 1500) + "</det>"
+
+    def fake_export(source_db_path, template_path, target_path, pn_list, comp_ids, options=None, progress_cb=None, cancel_cb=None):
+        table = "detCompDesc"
+        fk = (comp_ids or [0])[0]
+
+        class _FakeCol:
+            def __init__(self, name: str, type_name: str, size: int | None, digits: int | None, nullable: int = 1):
+                self.COLUMN_NAME = name
+                self.TYPE_NAME = type_name
+                self.COLUMN_SIZE = size
+                self.DECIMAL_DIGITS = digits
+                self.NULLABLE = nullable
+
+        class _FakeCursor:
+            def __init__(self, cols):
+                self._cols = list(cols)
+
+            def columns(self, table: str):
+                for col in self._cols:
+                    yield col
+
+        cols = ["IDCompDesc", "PinS"]
+        vals = [fk, xml_value]
+        cursor = _FakeCursor([
+            _FakeCol("IDCompDesc", "INTEGER", 10, None, 0),
+            _FakeCol("PinS", "LONGCHAR", None, None, 1),
+        ])
+
+        coerced_cols, coerced_vals, coercions = _validate_and_coerce_for_access(cursor, table, cols, vals)
+
+        def _preview(pcols, pvals):
+            items = []
+            for c, v in zip(pcols, pvals):
+                rep = repr(v)
+                if len(rep) > 200:
+                    rep = rep[:200] + "..."
+                items.append((c, type(v).__name__, rep))
+            return items
+
+        insert_logger = logging.getLogger("complex_editor.db.mdb_api.insert")
+        insert_logger.info(
+            "INSERT prepare table=%s fk=%s cols=%s vals=%s",
+            table,
+            fk,
+            ",".join(coerced_cols),
+            _preview(coerced_cols, coerced_vals),
+        )
+        insert_logger.debug("coercions=%s", coercions)
+        insert_logger.info("INSERT committed table=%s fk=%s new_id=%s", table, fk, fk + 1000)
+
+        target = Path(target_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"mdb")
+        return SimpleNamespace(target_path=target, pn_names=tuple(), complex_count=len(comp_ids or pn_list or []))
+
+    monkeypatch.setattr("complex_editor.db.pn_exporter.export_pn_to_mdb", fake_export)
+    monkeypatch.setattr("complex_editor.db.pn_exporter.ExportOptions", lambda: SimpleNamespace())
+
+    insert_logger = logging.getLogger("complex_editor.db.mdb_api.insert")
+    previous_level = insert_logger.level
+    insert_logger.setLevel(logging.DEBUG)
+    try:
+        with caplog.at_level(logging.DEBUG):
+            client, saved = _make_headless_client(tmp_path, allow_flag=True, saver_available=False)
+
+            out_dir = tmp_path / "exports"
+            payload = {"comp_ids": [5087], "out_dir": str(out_dir), "mdb_name": "xmlpins.mdb"}
+
+            resp = client.post("/exports/mdb", json=payload)
+    finally:
+        insert_logger.setLevel(previous_level)
+
+    assert resp.status_code == 200
+    target_file = out_dir / "xmlpins.mdb"
+    assert target_file.exists()
+    assert target_file.read_bytes() == b"mdb"
+    assert not saved
+
+    messages = [rec.message for rec in caplog.records]
+    assert any("Resolved template_path=" in msg for msg in messages)
+    assert any("INSERT prepare table=detCompDesc" in msg for msg in messages)
+    assert any("coercions=[" in msg for msg in messages)
+    assert any("INSERT committed table=detCompDesc" in msg for msg in messages)
+    assert any("fallback_to_export_pn_to_mdb" in msg for msg in messages)
 
 
 def test_headless_export_invalid_template_returns_409(monkeypatch, tmp_path):

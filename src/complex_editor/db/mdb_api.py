@@ -20,6 +20,8 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple, Union, Sequence
 
+from codecs import BOM_UTF16_BE, BOM_UTF16_LE, BOM_UTF8
+
 import pyodbc
 import re
 from datetime import datetime
@@ -669,7 +671,8 @@ def _table_schema(cur, table: str) -> Dict[str, Dict[str, Any]]:
         if not name:
             continue
         data_type = getattr(r, "data_type", getattr(r, "DATA_TYPE", None))
-        type_name = getattr(r, "type_name", getattr(r, "TYPE_NAME", ""))
+        raw_type_name = getattr(r, "type_name", getattr(r, "TYPE_NAME", ""))
+        type_name = str(raw_type_name or "").lower()
         column_size = getattr(r, "column_size", getattr(r, "COLUMN_SIZE", None))
         decimal_digits = getattr(r, "decimal_digits", getattr(r, "DECIMAL_DIGITS", None))
         nullable_val = getattr(r, "nullable", getattr(r, "NULLABLE", None))
@@ -683,9 +686,27 @@ def _table_schema(cur, table: str) -> Dict[str, Dict[str, Any]]:
             "nullable": is_nullable,
             "column_size": int(column_size) if column_size not in (None, "") else None,
             "decimal_digits": int(decimal_digits) if decimal_digits not in (None, "") else None,
-            "data_type_name": str(type_name or ""),
+            "data_type_name": type_name,
         }
     return cols
+
+
+def _detect_text_encoding(data: bytes) -> str:
+    if data.startswith(BOM_UTF16_LE) or data.startswith(BOM_UTF16_BE):
+        return "utf-16"
+    if data.startswith(BOM_UTF8):
+        return "utf-8-sig"
+
+    window = data[:200]
+    stripped = window.lstrip()
+    lower = stripped.lower()
+    if lower.startswith(b"<?xml"):
+        header_end = lower.find(b"?>")
+        header = lower if header_end == -1 else lower[:header_end]
+        if b"encoding" in header and b"utf-16" in header:
+            return "utf-16-le"
+
+    return "utf-8"
 
 
 def _validate_and_coerce_for_access(
@@ -713,7 +734,18 @@ def _validate_and_coerce_for_access(
 
     def _is_numeric(type_name: str) -> bool:
         t = type_name.lower()
-        return any(k in t for k in ["int", "double", "decimal", "single", "float", "long", "byte", "currency"])
+        numeric_tokens = [
+            "int",
+            "integer",
+            "double",
+            "decimal",
+            "single",
+            "float",
+            "byte",
+            "currency",
+            "numeric",
+        ]
+        return any(token in t for token in numeric_tokens)
 
     def _is_boolean(type_name: str) -> bool:
         t = type_name.lower()
@@ -723,21 +755,22 @@ def _validate_and_coerce_for_access(
         t = type_name.lower()
         return "date" in t or "time" in t
 
-    def _is_text(type_name: str) -> bool:
-        t = type_name.lower()
-        return any(k in t for k in ["text", "char", "varchar", "memo", "longchar"])
-
     coerced: List[Any] = []
     actions: List[Dict[str, Any]] = []
     for c, v in zip(cols, vals):
         meta = schema.get(c.lower(), {})
         type_name = str(meta.get("data_type_name") or meta.get("type") or "")
+        type_lower = type_name.lower()
         action = "none"
         expected = type_name or "unknown"
         given_type = type(v).__name__
 
+        is_numeric = _is_numeric(type_lower)
+        is_boolean = _is_boolean(type_lower)
+        is_datetime = _is_datetime(type_lower)
+
         try:
-            if _is_numeric(type_name):
+            if is_numeric:
                 if v in ("", " "):
                     v2 = None
                     action = "empty_to_null"
@@ -762,7 +795,7 @@ def _validate_and_coerce_for_access(
                 else:
                     raise DataMismatch(f"Numeric expected for {c}, got {type(v).__name__}")
                 coerced.append(v2)
-            elif _is_boolean(type_name):
+            elif is_boolean:
                 if v in ("", " ", None):
                     v2 = None
                     action = "empty_to_null"
@@ -788,7 +821,7 @@ def _validate_and_coerce_for_access(
                 else:
                     raise DataMismatch(f"Boolean expected for {c}, got {type(v).__name__}")
                 coerced.append(v2)
-            elif _is_datetime(type_name):
+            elif is_datetime:
                 if v in ("", " "):
                     v2 = None
                     action = "empty_to_null"
@@ -813,20 +846,33 @@ def _validate_and_coerce_for_access(
                 else:
                     raise DataMismatch(f"Datetime expected for {c}, got {type(v).__name__}")
                 coerced.append(v2)
-            elif _is_text(type_name) or not type_name:
-                s = v
+            else:
                 if v is None:
                     s2 = None
+                elif isinstance(v, str):
+                    s2 = v
+                elif isinstance(v, bytes):
+                    encoding = _detect_text_encoding(v)
+                    try:
+                        s2 = v.decode(encoding)
+                    except UnicodeDecodeError:
+                        s2 = v.decode(encoding, errors="replace")
+                    action = "bytes_to_str"
                 else:
                     s2 = str(v)
+                    if action == "none":
+                        action = "to_str"
+
                 max_len = meta.get("column_size")
-                if isinstance(s2, str) and isinstance(max_len, int) and max_len > 0 and len(s2) > max_len:
+                if (
+                    isinstance(s2, str)
+                    and isinstance(max_len, int)
+                    and max_len > 0
+                    and len(s2) > max_len
+                ):
                     s2 = s2[:max_len]
-                    action = "truncate"
+                    action = f"{action}+truncate" if action not in ("none", "truncate") else "truncate"
                 coerced.append(s2)
-            else:
-                # Unknown types: pass-through
-                coerced.append(v)
         except DataMismatch as dm:
             preview = repr(v)
             if len(preview) > 200:
