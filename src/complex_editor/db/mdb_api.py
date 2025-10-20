@@ -583,7 +583,7 @@ class MDB:
                 val_list,
             )
         except DataMismatch as exc:
-            logger.info(
+            logger.warning(
                 "INSERT prepare failed table=%s fk=%s cols=%s vals=%s error=%s",
                 table,
                 fk,
@@ -593,7 +593,7 @@ class MDB:
             )
             raise
 
-        logger.info(
+        logger.debug(
             "INSERT prepare table=%s fk=%s cols=%s vals=%s",
             table,
             fk,
@@ -615,7 +615,7 @@ class MDB:
         except pyodbc.DataError as exc:  # type: ignore[name-defined]
             message = " ".join(str(part) for part in getattr(exc, "args", ()))
             if "22018" in message or "type mismatch" in message.lower():
-                logger.info(
+                logger.warning(
                     "INSERT prepare failed table=%s fk=%s cols=%s vals=%s error=%s",
                     table,
                     fk,
@@ -626,7 +626,7 @@ class MDB:
                 raise DataMismatch(f"{table} insert failed: {message}") from exc
             raise
 
-        logger.info("INSERT committed table=%s fk=%s new_id=%s", table, fk, new_id)
+        logger.debug("INSERT committed table=%s fk=%s new_id=%s", table, fk, new_id)
         return new_id
 
 

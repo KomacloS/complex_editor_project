@@ -115,6 +115,8 @@ def test_template_resolver_failure(monkeypatch, tmp_path):
 
 def test_headless_export_rejected_without_override(monkeypatch, tmp_path):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
     client, saved = _make_headless_client(tmp_path, allow_flag=False)
 
     out_dir = tmp_path / "exports"
@@ -140,6 +142,8 @@ def test_headless_export_rejected_without_override(monkeypatch, tmp_path):
 
 def test_headless_export_allowed_via_flag(monkeypatch, tmp_path):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
     client, saved = _make_headless_client(tmp_path, allow_flag=True)
 
     out_dir = tmp_path / "exports"
@@ -152,6 +156,8 @@ def test_headless_export_allowed_via_flag(monkeypatch, tmp_path):
 
 def test_headless_export_allowed_via_env(monkeypatch, tmp_path):
     monkeypatch.setenv("CE_ALLOW_HEADLESS_EXPORTS", "1")
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
     client, saved = _make_headless_client(tmp_path, allow_flag=False)
 
     out_dir = tmp_path / "exports"
@@ -164,6 +170,8 @@ def test_headless_export_allowed_via_env(monkeypatch, tmp_path):
 
 def test_headless_export_fallback_not_implemented(monkeypatch, tmp_path, caplog):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.setenv("CE_DEBUG", "1")
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
 
     def fake_export(source_db_path, template_path, target_path, pn_list, comp_ids, options=None, progress_cb=None, cancel_cb=None):
         target = Path(target_path)
@@ -174,7 +182,7 @@ def test_headless_export_fallback_not_implemented(monkeypatch, tmp_path, caplog)
     monkeypatch.setattr("complex_editor.db.pn_exporter.export_pn_to_mdb", fake_export)
     monkeypatch.setattr("complex_editor.db.pn_exporter.ExportOptions", lambda: SimpleNamespace())
 
-    with caplog.at_level("INFO"):
+    with caplog.at_level(logging.DEBUG):
         client, saved = _make_headless_client(tmp_path, allow_flag=True, saver_available=True, saver_raises_not_impl=True)
 
         out_dir = tmp_path / "exports"
@@ -191,6 +199,8 @@ def test_headless_export_fallback_not_implemented(monkeypatch, tmp_path, caplog)
 
 def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.setenv("CE_DEBUG", "1")
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
 
     def fake_export(source_db_path, template_path, target_path, pn_list, comp_ids, options=None, progress_cb=None, cancel_cb=None):
         target = Path(target_path)
@@ -201,7 +211,7 @@ def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr("complex_editor.db.pn_exporter.export_pn_to_mdb", fake_export)
     monkeypatch.setattr("complex_editor.db.pn_exporter.ExportOptions", lambda: SimpleNamespace())
 
-    with caplog.at_level("INFO"):
+    with caplog.at_level(logging.DEBUG):
         client, saved = _make_headless_client(tmp_path, allow_flag=True, saver_available=False)
 
         out_dir = tmp_path / "exports"
@@ -218,12 +228,14 @@ def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
 
 def test_partial_success_with_missing_ids(monkeypatch, tmp_path, caplog):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
     client, saved = _make_headless_client(tmp_path, allow_flag=True)
 
     out_dir = tmp_path / "exports"
     payload = {"comp_ids": [5087, 9999], "out_dir": str(out_dir), "mdb_name": "partial.mdb"}
 
-    with caplog.at_level("INFO"):
+    with caplog.at_level(logging.WARNING):
         resp = client.post("/exports/mdb", json=payload)
 
     assert resp.status_code == 200
@@ -238,6 +250,8 @@ def test_partial_success_with_missing_ids(monkeypatch, tmp_path, caplog):
 
 def test_all_missing_ids_returns_error(monkeypatch, tmp_path):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
     client, saved = _make_headless_client(tmp_path, allow_flag=True)
 
     out_dir = tmp_path / "exports"
@@ -255,6 +269,8 @@ def test_all_missing_ids_returns_error(monkeypatch, tmp_path):
 
 def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, caplog):
     monkeypatch.setenv("CE_ALLOW_HEADLESS_EXPORTS", "1")
+    monkeypatch.setenv("CE_DEBUG", "1")
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
 
     xml_value = """<?xml version=\"1.0\" encoding=\"utf-16\"?>\n<det>""" + ("p" * 1500) + "</det>"
 
@@ -297,7 +313,7 @@ def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, 
             return items
 
         insert_logger = logging.getLogger("complex_editor.db.mdb_api.insert")
-        insert_logger.info(
+        insert_logger.debug(
             "INSERT prepare table=%s fk=%s cols=%s vals=%s",
             table,
             fk,
@@ -305,7 +321,7 @@ def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, 
             _preview(coerced_cols, coerced_vals),
         )
         insert_logger.debug("coercions=%s", coercions)
-        insert_logger.info("INSERT committed table=%s fk=%s new_id=%s", table, fk, fk + 1000)
+        insert_logger.debug("INSERT committed table=%s fk=%s new_id=%s", table, fk, fk + 1000)
 
         target = Path(target_path)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -345,6 +361,8 @@ def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, 
 
 def test_headless_export_invalid_template_returns_409(monkeypatch, tmp_path):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
     client, saved = _make_headless_client(tmp_path, allow_flag=True)
 
     out_dir = tmp_path / "exports"
@@ -367,6 +385,8 @@ def test_headless_export_invalid_template_returns_409(monkeypatch, tmp_path):
 
 def test_non_headless_export_unaffected(monkeypatch, tmp_path):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
+    monkeypatch.delenv("CE_DEBUG", raising=False)
+    monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
 
     dataset = [(5087, "PN5087", 0)]
     saved: List[tuple[Path, List[int]]] = []

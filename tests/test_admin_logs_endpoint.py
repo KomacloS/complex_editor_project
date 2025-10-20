@@ -19,7 +19,6 @@ from ce_bridge_service.types import BridgeCreateResult  # noqa: E402
 
 def test_admin_logs_lookup_returns_hits_and_stack(tmp_path):
     os.environ["CE_LOG_DIR"] = str(tmp_path)
-    os.environ["CE_LOG_JSON"] = "true"
 
     trace_id = "trace-4444"
     traceback_text = (
