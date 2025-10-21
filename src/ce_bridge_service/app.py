@@ -39,7 +39,6 @@ from .models import (
     ComplexOpenRequest,
     ComplexDetail,
     ComplexSummary,
-    HealthResponse,
     MdbExportRequest,
     MdbExportResponse,
     ResolvedPart,
@@ -62,7 +61,7 @@ except Exception:  # pragma: no cover - pyodbc not available in unit tests
 logger = logging.getLogger(__name__)
 
 
-def _env_truthy(raw: str | None) -> bool:
+def _truthy(raw: str | None) -> bool:
     if raw is None:
         return False
     return raw.strip().lower() in {"1", "true", "yes", "on"}
@@ -97,7 +96,7 @@ def configure_logging() -> Path | None:
     """Configure application logging based on environment variables."""
 
     level_name = (os.environ.get("CE_LOG_LEVEL", "WARNING") or "").strip().upper() or "WARNING"
-    debug_enabled = _env_truthy(os.environ.get("CE_DEBUG"))
+    debug_enabled = _truthy(os.environ.get("CE_DEBUG"))
     if debug_enabled:
         level_name = "DEBUG"
     level = getattr(logging, level_name, logging.WARNING)
@@ -215,7 +214,7 @@ def create_app(
     bridge_port: int | None = None,
     state_provider: Callable[[], Dict[str, object]] | None = None,
     focus_handler: Callable[[int, str], Dict[str, object]] | None = None,
-    allow_headless_exports: bool = False,
+    allow_headless_exports: bool | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application for the bridge."""
 
@@ -247,11 +246,20 @@ def create_app(
     factory = mdb_factory or MDB
 
     headless_mode = wizard_handler is None
-    allow_headless_effective = bool(
-        allow_headless_exports or _env_truthy(os.environ.get("CE_ALLOW_HEADLESS_EXPORTS"))
-    )
     app.state.headless = headless_mode
-    app.state.allow_headless_exports = allow_headless_effective
+    app.state.ui_present = not headless_mode
+
+    def _effective_allow_headless() -> bool:
+        if allow_headless_exports is not None:
+            return bool(allow_headless_exports)
+        return _truthy(os.getenv("CE_ALLOW_HEADLESS_EXPORTS"))
+
+    def _allow_headless_current() -> bool:
+        effective = bool(_effective_allow_headless())
+        app.state.allow_headless_exports = effective
+        return effective
+
+    app.state.allow_headless_exports = _allow_headless_current()
 
     # Install exception handlers
     install_exception_handlers(app)
@@ -749,54 +757,58 @@ def create_app(
         app.state.wizard_open = bool(base["wizard_open"])
         return base
 
-    @app.get("/health", response_model=HealthResponse)
-    async def health(_: None = Depends(_require_auth)) -> HealthResponse | JSONResponse:  # noqa: D401
+    def _is_headless() -> bool:
+        ui_present = getattr(app.state, "ui_present", None)
+        if ui_present is not None:
+            return ui_present is False
+        return bool(getattr(app.state, "headless", False))
+
+    def _resolve_trace_id(request: Request) -> str:
+        existing = getattr(request.state, "trace_id", None)
+        if existing:
+            return str(existing)
+        incoming = (request.headers.get(TRACE_HEADER) or "").strip()
+        trace_id = incoming or _make_trace_id()
+        request.state.trace_id = trace_id
+        return trace_id
+
+    def _health_payload(trace_id: str) -> tuple[Dict[str, object], int]:
+        headless_flag = _is_headless()
+        allow_headless_flag = bool(_allow_headless_current())
+        ready_raw = bool(getattr(app.state, "ready", False))
+        ready_flag = ready_raw and (not headless_flag or allow_headless_flag)
+        reason = getattr(app.state, "last_ready_error", "") or "warming_up"
+        if headless_flag and not allow_headless_flag:
+            ready_flag = False
+            reason = "exports_disabled_in_headless_mode"
+        elif ready_flag:
+            reason = "ok"
+        payload: Dict[str, object] = {
+            "ready": bool(ready_flag),
+            "headless": bool(headless_flag),
+            "allow_headless": bool(allow_headless_flag),
+            "reason": reason,
+            "trace_id": trace_id,
+        }
+        status_code = status.HTTP_200_OK if ready_flag else status.HTTP_503_SERVICE_UNAVAILABLE
+        return payload, status_code
+
+    @app.get("/health")
+    async def health(request: Request, _: None = Depends(_require_auth)) -> JSONResponse:
         """Readiness-aware liveness probe."""
 
-        ready_flag = bool(getattr(app.state, "ready", False))
-        headless_flag = bool(getattr(app.state, "headless", False))
-        allow_headless_flag = bool(getattr(app.state, "allow_headless_exports", False))
-
-        if not ready_flag:
-            reason = getattr(app.state, "last_ready_error", "") or "warming_up"
-            return JSONResponse(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                content={
-                    "ok": False,
-                    "ready": ready_flag,
-                    "reason": reason,
-                    "headless": headless_flag,
-                    "allow_headless": allow_headless_flag,
-                },
-            )
-        resolved_path = app.state.mdb_path or ""
-        if not resolved_path:
-            try:
-                resolved_path = str(get_mdb_path())
-            except Exception:
-                resolved_path = ""
-        return HealthResponse(
-            ok=True,
-             ready=True,
-            version=__version__,
-            db_path=resolved_path,
-            host=str(app.state.bridge_host or ""),
-            port=int(app.state.bridge_port or 0),
-            auth_required=bool(token),
-            headless=headless_flag,
-            allow_headless=allow_headless_flag,
-        )
+        trace_id = _resolve_trace_id(request)
+        payload, status_code = _health_payload(trace_id)
+        return JSONResponse(status_code=status_code, content=payload)
 
     @app.get("/admin/health")
-    async def admin_health(_: None = Depends(_require_auth)) -> Dict[str, bool]:
-        return {
-            "ready": bool(getattr(app.state, "ready", False)),
-            "headless": bool(getattr(app.state, "headless", False)),
-            "allow_headless": bool(getattr(app.state, "allow_headless_exports", False)),
-        }
+    async def admin_health(request: Request, _: None = Depends(_require_auth)) -> JSONResponse:
+        trace_id = _resolve_trace_id(request)
+        payload, status_code = _health_payload(trace_id)
+        return JSONResponse(status_code=status_code, content=payload)
 
     def _make_trace_id() -> str:
-        return str(uuid.uuid4())
+        return uuid.uuid4().hex
 
     def _error_response(
         *,
@@ -806,7 +818,7 @@ def create_app(
         detail: Optional[str] = None,
         **extra: object,
     ) -> JSONResponse:
-        payload: Dict[str, object] = {"reason": reason, "trace_id": trace_id}
+        payload: Dict[str, object] = {"reason": reason, "trace_id": trace_id, "status": status_code}
         if detail is not None:
             payload["detail"] = detail
         elif reason:
@@ -989,7 +1001,7 @@ def create_app(
                         "example": {
                             "reason": "bridge_headless",
                             "status": 503,
-                            "detail": "Exports are disabled in headless mode.",
+                            "detail": "exports disabled in headless mode",
                             "trace_id": "example-trace-id",
                             "allow_headless": False,
                         }
@@ -1003,8 +1015,25 @@ def create_app(
         request: Request,
         _: None = Depends(_require_auth),
     ) -> MdbExportResponse | JSONResponse:
-        trace_id = _make_trace_id()
+        trace_id = _resolve_trace_id(request)
         caller = _caller_identity(request) or "unknown"
+        headless = _is_headless()
+        allow_headless = bool(_allow_headless_current())
+        if headless and not allow_headless:
+            logger.info(
+                "Bridge MDB export rejected (headless) trace_id=%s caller=%s allow_headless=%s",
+                trace_id,
+                caller,
+                allow_headless,
+            )
+            return _error_response(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                reason="bridge_headless",
+                trace_id=trace_id,
+                detail="exports disabled in headless mode",
+                allow_headless=False,
+            )
+
         snapshot = _state_snapshot()
         wizard_open = bool(snapshot.get("wizard_open"))
         unsaved = bool(snapshot.get("unsaved_changes"))
@@ -1082,25 +1111,6 @@ def create_app(
                 trace_id=trace_id,
             )
         export_path = out_dir / mdb_name
-
-        allow_headless = bool(getattr(app.state, "allow_headless_exports", False))
-        is_headless = bool(getattr(app.state, "headless", False))
-        if is_headless and not allow_headless:
-            logger.info(
-                "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s allow_headless=%s",
-                trace_id,
-                caller,
-                str(export_path),
-                allow_headless,
-            )
-            return _error_response(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                reason="bridge_headless",
-                trace_id=trace_id,
-                detail="Exports are disabled in headless mode.",
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                allow_headless=False,
-            )
 
         mdb_path = get_mdb_path()
         resolved_map: dict[int, ResolvedPart] = {}
@@ -1231,7 +1241,7 @@ def create_app(
                         fallback_required = True
 
                     if fallback_required or not used_mdb_saver:
-                        if not (is_headless and allow_headless):
+                        if not (headless and allow_headless):
                             logger.info(
                                 "Bridge MDB export rejected (headless) trace_id=%s caller=%s export_path=%s allow_headless=%s",
                                 trace_id,
@@ -1243,8 +1253,7 @@ def create_app(
                                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                                 reason="bridge_headless",
                                 trace_id=trace_id,
-                                detail="Exports are disabled in headless mode.",
-                                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="exports disabled in headless mode",
                                 allow_headless=allow_headless,
                             )
                         from complex_editor.db.pn_exporter import ExportOptions, export_pn_to_mdb  # type: ignore

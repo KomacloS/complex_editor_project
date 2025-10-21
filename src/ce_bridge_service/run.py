@@ -111,7 +111,8 @@ def _run_server(cfg, bridge_cfg) -> int:
     if not cfg.database.mdb_path.exists():
         raise SystemExit(f"Database not found at {cfg.database.mdb_path}")
 
-    allow_headless = bool(getattr(bridge_cfg, "allow_headless_exports", False))
+    allow_headless_raw = getattr(bridge_cfg, "allow_headless_exports", None)
+    allow_headless = None if allow_headless_raw is None else bool(allow_headless_raw)
 
     app = create_app(
         get_mdb_path=lambda: cfg.database.mdb_path,

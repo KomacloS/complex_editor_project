@@ -36,11 +36,12 @@ Explore the API via interactive OpenAPI docs at `http://127.0.0.1:8000/docs` (Sw
    > Note: calling `uvicorn ce_bridge_service.app:create_app --factory` without arguments will fail because `create_app` requires `get_mdb_path`.
 
 ### Authentication
-- If the bridge is created with a non-empty `auth_token`, **admin routes** require:
+- When the bridge is created with a non-empty bearer token (via CLI or `CE_AUTH_TOKEN`), **all routes except `/admin/health`** require:
   ```
   Authorization: Bearer <token>
   ```
-- Public routes (like `/exports/mdb`) remain open unless you add your own dependency.
+- `/admin/health` will also honor the token; requests without it receive `401/403`.
+- Always send `X-Trace-Id`; the bridge generates one when absent and echoes it back as `trace_id` in responses.
 
 ### Tracing & Logs
 - Every request accepts/returns a trace id via the `X-Trace-Id` header. If you don’t send one, the bridge will generate it.
@@ -50,6 +51,8 @@ Explore the API via interactive OpenAPI docs at `http://127.0.0.1:8000/docs` (Sw
 ### Key environment variables
 | Name | Purpose |
 | --- | --- |
+| `CE_MDB_PATH` | Absolute path to the Complex Editor main database (required). |
+| `CE_AUTH_TOKEN` | Bearer token expected from clients; must match BOM_DB configuration. |
 | `CE_ALLOW_HEADLESS_EXPORTS` | When truthy (`1`, `true`, `yes`, `on`), allows `/exports/mdb` while the desktop UI is not present. Can also be granted programmatically when creating the app. |
 | `CE_TEMPLATE_MDB` | Absolute/expandable path to the MDB template used for exports when the request body omits `template_path`. |
 | `CE_LOG_LEVEL` | Log level for bridge, uvicorn, and Complex Editor loggers. Defaults to `WARNING`. |
@@ -59,24 +62,49 @@ Explore the API via interactive OpenAPI docs at `http://127.0.0.1:8000/docs` (Sw
 
 ## Admin endpoints
 ### `GET /admin/health`
-Returns readiness information. Response payload:
+Returns readiness information.
 ```json
 {
   "ready": true,
   "headless": true,
-  "allow_headless": false
+  "allow_headless": true,
+  "reason": "ok",
+  "trace_id": "echoed-trace-id"
 }
 ```
+Rules:
+- `ready:true` only after the bridge loads `CE_MDB_PATH` and exports are permitted. If the app is headless but exports are disabled, respond with:
+  ```json
+  {
+    "ready": false,
+    "headless": true,
+    "allow_headless": false,
+    "reason": "exports_disabled_in_headless_mode"
+  }
+  ```
+- `trace_id` echoes `X-Trace-Id` or a generated value so callers can correlate responses with logs.
 
 ### `GET /admin/logs/{trace_id}`
 Returns recent log lines correlated to `trace_id`. Requires bearer token if `auth_token` was provided at startup.
 
 ### `POST /admin/shutdown`
-Requests an orderly shutdown. Requires bearer token if `auth_token` was provided at startup. Include `{"force": 1}` in the JSON body to bypass graceful safeguards when an immediate shutdown is required. Returns `{ "ok": true }` when the shutdown signal is accepted.
+Requests an orderly shutdown. Requires bearer token if `auth_token` was provided at startup. Include `{"force": 1}` in the JSON body to bypass graceful safeguards when an immediate shutdown is required. Returns `204 No Content` when the shutdown signal is accepted.
+
+### `GET /state`
+Minimal process snapshot used by the desktop shell:
+```json
+{ "unsaved_changes": false }
+```
 
 ## Endpoints
-### `POST /exports/mdb`
-Triggers an MDB export using a list of Complex Editor component IDs.
+### `GET /complexes/search`
+Search the CE database by part number or alias. Returns a list of `{ "id": "5087", "pn": "..." }` records. Supports `limit` (default 20, max 200).
+
+### `GET /complexes/{id}`
+Return the detailed CE record for the given ID. Responds with HTTP 404 when the ID is not present.
+
+### `POST /exports/mdb` *(subset export)*
+Legacy export endpoint that writes a subset MDB for the supplied component IDs. Remains for desktop integrations; new automation should prefer `/ce/export`.
 
 #### Request body
 ```json
@@ -92,7 +120,7 @@ Triggers an MDB export using a list of Complex Editor component IDs.
 - `out_dir`: absolute path (UNC and Windows-style paths supported). Created if missing.
 - `mdb_name`: file name ending in `.mdb` (no path separators).
 - `template_path` (optional): absolute path to a valid MDB template. Template source precedence:
-  1. Payload `template_path` (when provided in the request).
+  1. Payload value (when provided).
   2. `CE_TEMPLATE_MDB` environment variable (if set).
   3. Packaged asset `complex_editor.assets/Empty_mdb.mdb`.
 
@@ -110,45 +138,42 @@ Triggers an MDB export using a list of Complex Editor component IDs.
   "missing": []
 }
 ```
-- `resolved`: component IDs (and their part numbers) that were located and exported.
-- `unlinked`: component IDs that were valid but lacked linked data (rare; returned for completeness).
-- `missing`: IDs that could not be resolved. When some IDs are missing but at least one is exported, the call succeeds (HTTP 200) and `missing` contains the rejected IDs. A 404 with `comp_ids_not_found` is only returned when every requested ID is missing.
 
 #### Error responses
-| HTTP status | `reason` | Shape |
+| HTTP status | `reason` | Meaning |
 | --- | --- | --- |
-| 503 | `bridge_headless` | Headless exports are disabled. Payload includes `allow_headless` and `status`. |
-| 409 | `template_missing_or_incompatible` | Template file missing or empty. Payload includes `template_path` of the failing file. |
-| 500 | `db_engine_error` | Database coercion failed (surface of `DataMismatch`). Payload includes `detail` message from Access. |
-| 409 | `no_matches` | Provided PNs/IDs didn’t match anything in the source DB (with at least some unknowns). |
-| 409 | `empty_selection` | After normalization, the export set was empty. |
-| 409 | `outdir_unwritable` | Output directory could not be created or written. Payload includes `out_dir`, `errno`, and `detail`. |
-| 404 | `comp_ids_not_found` | None of the provided IDs resolved. Payload includes the `missing` list. |
+| 503 | `bridge_headless` | Headless exports are disabled (`allow_headless_exports` is false). |
+| 409 | `template_missing_or_incompatible` | Template file missing or empty. Payload includes `template_path`. |
+| 500 | `db_engine_error` | Database coercion failed (surface of `DataMismatch`). Includes `detail`. |
+| 409 | `no_matches` | Provided IDs/PNS didn’t match anything in the source DB. |
+| 409 | `empty_selection` | After normalization, no IDs were left to export. |
+| 409 | `outdir_unwritable` | Destination directory not writable. Includes `errno` and `detail`. |
+| 404 | `comp_ids_not_found` | None of the provided IDs resolved. Payload includes `missing`. |
 
-Example payloads:
+### `POST /ce/export`
+Primary automation endpoint used by BOM_DB. Produces both an Access MDB and a CSV status report.
+
+#### Request body
 ```json
 {
-  "reason": "bridge_headless",
-  "status": 503,
-  "allow_headless": false,
-  "trace_id": "52a9d23d-6a4a-4c7b-86e3-0cbdb4cd3c7a"
+  "trace_id": "echo-of-X-Trace-Id",
+  "out_dir": "C:/exports",
+  "complex_ids": ["5087", "5089"],
+  "options": { "overwrite": true }
 }
 ```
-```json
-{
-  "reason": "db_engine_error",
-  "detail": "detCompDesc insert failed: 22018 type mismatch",
-  "trace_id": "8e9da964-5467-4f83-96d3-f07b0a6131a3"
-}
-```
-```json
-{
-  "reason": "comp_ids_not_found",
-  "detail": "No valid comp_ids to export.",
-  "missing": ["9001", "9002"],
-  "trace_id": "4d68f04c-44b6-4031-9b5d-2fbc9e314031"
-}
-```
+
+#### Responses
+- `SUCCESS`: export completed (`mdb_path`, `report_csv`, `exported`, `skipped`).
+- `PARTIAL_SUCCESS`: export completed with skips; includes `skip_reasons` summarizing why entries were ignored.
+- `FAILED_INPUT`: invalid request (e.g., unwritable out_dir). `reason` explains the input failure.
+- `FAILED_BACKEND`: recoverable CE issue (e.g., `template_missing_or_incompatible`). Include `trace_id` for support.
+- `RETRY_LATER`: bridge warming up (`reason: "ce_warming_up"`).
+- `RETRY_WITH_BACKOFF`: transient CE DB contention (`reason: "db_locked"`).
+
+#### CSV report
+- Written to `<out_dir>/CE/report.csv`.
+- Columns: `pn,ce_complex_id,status,reason` with `status` in `{exported,skipped}`.
 
 ## Logging
 - **Default location**
@@ -180,6 +205,16 @@ curl -X POST http://127.0.0.1:8000/exports/mdb \
   -H "Content-Type: application/json" \
   -d '{"comp_ids": [5087], "out_dir": "C:/exports", "mdb_name": "custom.mdb", "template_path": "C:/templates/bridge_template.mdb"}'
 ```
+
+### Trigger a BOM export
+```bash
+curl -X POST http://127.0.0.1:8000/ce/export \
+  -H "Authorization: Bearer $CE_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Trace-Id: $(uuidgen)" \
+  -d '{"out_dir":"C:/exports","complex_ids":["5087","5089"],"options":{"overwrite":true}}'
+```
+The response includes aggregate counts plus `mdb_path` and `report_csv`. Examine `C:/exports/CE/report.csv` for per-ID status.
 
 ### Windows path quirks
 When invoking from PowerShell, escape backslashes or wrap arguments in double quotes:

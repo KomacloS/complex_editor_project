@@ -27,7 +27,7 @@ from complex_editor.db.mdb_api import _validate_and_coerce_for_access  # noqa: E
 def _make_headless_client(
     tmp_path: Path,
     *,
-    allow_flag: bool = False,
+    allow_flag: bool | None = None,
     saver_available: bool = True,
     saver_raises_not_impl: bool = False,
 ):
@@ -117,7 +117,7 @@ def test_headless_export_rejected_without_override(monkeypatch, tmp_path):
     monkeypatch.delenv("CE_ALLOW_HEADLESS_EXPORTS", raising=False)
     monkeypatch.delenv("CE_DEBUG", raising=False)
     monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
-    client, saved = _make_headless_client(tmp_path, allow_flag=False)
+    client, saved = _make_headless_client(tmp_path)
 
     out_dir = tmp_path / "exports"
     payload = {"comp_ids": [5087], "out_dir": str(out_dir), "mdb_name": "bom.mdb"}
@@ -127,17 +127,19 @@ def test_headless_export_rejected_without_override(monkeypatch, tmp_path):
     body = resp.json()
     assert body["reason"] == "bridge_headless"
     assert body["status"] == 503
+    assert body["detail"] == "exports disabled in headless mode"
     assert body["allow_headless"] is False
+    assert isinstance(body["trace_id"], str) and body["trace_id"]
     assert not saved
 
     health = client.get("/admin/health")
-    assert health.status_code == 200
+    assert health.status_code == 503
     health_data = health.json()
-    assert health_data == {
-        "ready": False,
-        "headless": True,
-        "allow_headless": False,
-    }
+    assert health_data["ready"] is False
+    assert health_data["headless"] is True
+    assert health_data["allow_headless"] is False
+    assert health_data["reason"] == "exports_disabled_in_headless_mode"
+    assert isinstance(health_data["trace_id"], str) and health_data["trace_id"]
 
 
 def test_headless_export_allowed_via_flag(monkeypatch, tmp_path):
@@ -158,7 +160,7 @@ def test_headless_export_allowed_via_env(monkeypatch, tmp_path):
     monkeypatch.setenv("CE_ALLOW_HEADLESS_EXPORTS", "1")
     monkeypatch.delenv("CE_DEBUG", raising=False)
     monkeypatch.setenv("CE_LOG_FILE", str(tmp_path / "bridge.log"))
-    client, saved = _make_headless_client(tmp_path, allow_flag=False)
+    client, saved = _make_headless_client(tmp_path)
 
     out_dir = tmp_path / "exports"
     payload = {"comp_ids": [5087], "out_dir": str(out_dir), "mdb_name": "bom.mdb"}
@@ -194,7 +196,8 @@ def test_headless_export_fallback_not_implemented(monkeypatch, tmp_path, caplog)
     assert target_file.exists()
     assert target_file.read_text() == "pn-exporter"
     assert not saved  # original saver should not have succeeded
-    assert any("fallback_to_export_pn_to_mdb" in rec.message for rec in caplog.records)
+    log_text = caplog.text or (tmp_path / "bridge.log").read_text()
+    assert "fallback_to_export_pn_to_mdb" in log_text
 
 
 def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
@@ -223,7 +226,8 @@ def test_headless_export_fallback_missing_saver(monkeypatch, tmp_path, caplog):
     assert target_file.exists()
     assert target_file.read_text() == "pn-exporter-missing"
     assert not saved
-    assert any("fallback_to_export_pn_to_mdb" in rec.message for rec in caplog.records)
+    log_text = caplog.text or (tmp_path / "bridge.log").read_text()
+    assert "fallback_to_export_pn_to_mdb" in log_text
 
 
 def test_partial_success_with_missing_ids(monkeypatch, tmp_path, caplog):
@@ -245,7 +249,8 @@ def test_partial_success_with_missing_ids(monkeypatch, tmp_path, caplog):
     assert body["missing"] == ["9999"]
     assert Path(body["export_path"]).exists()
     assert saved and saved[0][1] == [5087]
-    assert any("export partial: missing_comp_ids=[9999]" in rec.message for rec in caplog.records)
+    log_text = caplog.text or (tmp_path / "bridge.log").read_text()
+    assert "export partial: missing_comp_ids=[9999]" in log_text
 
 
 def test_all_missing_ids_returns_error(monkeypatch, tmp_path):
@@ -351,12 +356,12 @@ def test_export_mdb_headless_allowed_xml_in_pins_success(monkeypatch, tmp_path, 
     assert target_file.read_bytes() == b"mdb"
     assert not saved
 
-    messages = [rec.message for rec in caplog.records]
-    assert any("Resolved template_path=" in msg for msg in messages)
-    assert any("INSERT prepare table=detCompDesc" in msg for msg in messages)
-    assert any("coercions=[" in msg for msg in messages)
-    assert any("INSERT committed table=detCompDesc" in msg for msg in messages)
-    assert any("fallback_to_export_pn_to_mdb" in msg for msg in messages)
+    log_text = caplog.text or (tmp_path / "bridge.log").read_text()
+    assert "Resolved template_path=" in log_text
+    assert "INSERT prepare table=detCompDesc" in log_text
+    assert "coercions=[" in log_text
+    assert "INSERT committed table=detCompDesc" in log_text
+    assert "fallback_to_export_pn_to_mdb" in log_text
 
 
 def test_headless_export_invalid_template_returns_409(monkeypatch, tmp_path):
