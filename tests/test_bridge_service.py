@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, Sequence
 
+import pytest
 from fastapi.testclient import TestClient
 
 import sys
@@ -134,6 +135,47 @@ def _make_dataset_with_peer() -> dict[int, dict]:
     )
     base[2] = {"device": peer}
     return base
+
+
+def _make_dataset_for_search_analysis() -> dict[int, dict]:
+    return {
+        1: {
+            "device": DbComplex(
+                id_comp_desc=1,
+                name="PN-100",
+                total_pins=0,
+                subcomponents=[],
+                aliases=["ALT-1"],
+            )
+        },
+        2: {
+            "device": DbComplex(
+                id_comp_desc=2,
+                name="PN-100-TR",
+                total_pins=0,
+                subcomponents=[],
+                aliases=["LEGACY"],
+            )
+        },
+        3: {
+            "device": DbComplex(
+                id_comp_desc=3,
+                name="ALIAS-BASE",
+                total_pins=0,
+                subcomponents=[],
+                aliases=["PN-100/TP"],
+            )
+        },
+        4: {
+            "device": DbComplex(
+                id_comp_desc=4,
+                name="LIKE-ONLY",
+                total_pins=0,
+                subcomponents=[],
+                aliases=["PN-100X"],
+            )
+        },
+    }
 
 
 def _make_client(
@@ -287,6 +329,7 @@ def test_bridge_health_and_search_and_detail():
     assert body[0]["id"] == 1
     assert body[0]["pn"] == "PN-100"
     assert body[0]["aliases"] == ["ALT-1"]
+    assert "match_kind" not in body[0]
 
     detail = client.get("/complexes/1", headers=_auth())
     assert detail.status_code == 200
@@ -307,6 +350,168 @@ def test_bridge_health_and_search_and_detail():
     assert state_payload["host"] == "127.0.0.1"
     assert state_payload["alias_ops_supported"] is True
     assert state_payload["focused_comp_id"] is None
+    assert state_payload["headless"] is False
+    assert state_payload["allow_headless"] is False
+    features = state_payload["features"]
+    assert features["export_mdb"] is True
+    assert features["search_match_kind"] is True
+    assert features["normalization_rules_version"] == "v1"
+
+
+def test_search_analyze_returns_match_metadata():
+    dataset = _make_dataset_for_search_analysis()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+
+    assert _wait_for_ready(client)
+
+    response = client.get(
+        "/complexes/search",
+        params={"pn": "PN-100", "analyze": "true"},
+        headers=_auth(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [entry["id"] for entry in body] == [1, 2, 3, 4]
+
+    exact, normalized_pn, normalized_alias, like = body
+
+    assert exact["match_kind"] == "exact_pn"
+    assert exact["reason"] == "Exact PN match"
+    assert exact["normalized_input"] == "PN100"
+    assert exact["normalized_targets"] == []
+    assert exact["rule_ids"] == ["rule.strip_punct"]
+
+    assert normalized_pn["match_kind"] == "normalized_pn"
+    assert normalized_pn["normalized_targets"] == ["PN100"]
+    assert normalized_pn["reason"] == "Normalized input matched PN (removed punctuation, ignored suffix '-TR')"
+
+    assert normalized_alias["match_kind"] == "normalized_alias"
+    assert normalized_alias["normalized_targets"] == ["PN100"]
+    assert normalized_alias["reason"] == "Normalized input matched alias (removed punctuation, ignored suffix '/TP')"
+
+    assert like["match_kind"] == "like"
+    assert like["reason"] == "LIKE match on alias"
+    assert like["normalized_targets"] == []
+
+    for entry in body:
+        assert entry["normalized_input"] == "PN100"
+        assert entry["rule_ids"] == ["rule.strip_punct"]
+
+
+def test_search_exact_is_case_insensitive():
+    dataset = _make_dataset_for_search_analysis()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+
+    assert _wait_for_ready(client)
+
+    response = client.get(
+        "/complexes/search",
+        params={"pn": "pn-100", "analyze": True},
+        headers=_auth(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["id"] == 1
+    assert body[0]["match_kind"] == "exact_pn"
+    assert body[0]["reason"] == "Exact PN match"
+    assert body[0]["rule_ids"] == ["rule.case_fold", "rule.strip_punct"]
+
+
+def test_search_analyze_false_omits_analysis_fields():
+    dataset = _make_dataset_for_search_analysis()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+
+    assert _wait_for_ready(client)
+
+    response = client.get(
+        "/complexes/search",
+        params={"pn": "PN-100", "analyze": "false"},
+        headers=_auth(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [entry["id"] for entry in body] == [1, 2, 3, 4]
+    for entry in body:
+        assert "match_kind" not in entry
+        assert "reason" not in entry
+        assert "normalized_input" not in entry
+        assert "normalized_targets" not in entry
+        assert "rule_ids" not in entry
+
+
+@pytest.mark.parametrize("term", ["*", "%%", " - "])
+def test_search_rejects_wildcard_only_terms(term: str) -> None:
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+
+    assert _wait_for_ready(client)
+
+    response = client.get(
+        "/complexes/search",
+        params={"pn": term},
+        headers=_auth(),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "pn must not be empty"
+
+
+def test_search_with_suffix_only_input_falls_back_to_like():
+    dataset = _make_dataset_for_search_analysis()
+    client = _make_client(
+        lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"),
+        dataset=dataset,
+    )
+
+    assert _wait_for_ready(client)
+
+    response = client.get(
+        "/complexes/search",
+        params={"pn": "-TR", "analyze": True},
+        headers=_auth(),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    result = body[0]
+    assert result["match_kind"] == "like"
+    assert result["reason"] == "LIKE match on PN"
+    assert result["normalized_targets"] == []
+    assert result["rule_ids"] == ["rule.strip_suffix.-TR"]
+
+
+def test_state_includes_headless_flags_when_headless() -> None:
+    client = _make_client(None)
+
+    assert _wait_for_ready(client)
+
+    state = client.get("/state", headers=_auth())
+    assert state.status_code == 200
+    body = state.json()
+    assert body["headless"] is True
+    assert body["allow_headless"] is False
+    assert body["features"]["export_mdb"] is False
+
+
+def test_admin_pn_normalization_endpoint() -> None:
+    client = _make_client(lambda pn, aliases: BridgeCreateResult(created=False, reason="cancelled"))
+
+    assert _wait_for_ready(client)
+
+    response = client.get("/admin/pn_normalization", headers=_auth())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["rules_version"] == "v1"
+    config = payload["config"]
+    assert config["case"] == "upper"
+    assert "–" in config["remove_chars"]
 
 
 def test_alias_update_happy_path():

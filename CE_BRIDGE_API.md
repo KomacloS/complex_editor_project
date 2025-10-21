@@ -87,18 +87,112 @@ Rules:
 ### `GET /admin/logs/{trace_id}`
 Returns recent log lines correlated to `trace_id`. Requires bearer token if `auth_token` was provided at startup.
 
+### `GET /admin/pn_normalization`
+Read-only diagnostics endpoint that reports the active normalization ruleset:
+```json
+{
+  "rules_version": "v1",
+  "config": {
+    "case": "upper",
+    "remove_chars": [" ", "-", "_", ".", "/", "–", "—", "\u00A0"],
+    "ignore_suffixes": ["-TR", "-T", "-REEL", "/TP", "-BK"]
+  }
+}
+```
+Use this to confirm the deployed configuration without scraping logs.
+
+### Telemetry & logging
+- Search analysis emits structured `search_analyze` logs with the normalized
+  input, the active `rules_version`, and the top three match-kind buckets via
+  `match_top_{n}_kind` / `match_top_{n}_count` keys for dashboard-friendly
+  metrics.
+- Alias updates log `alias_update` events. When an alias that exactly matches
+  the canonical normalized PN is added or removed the log payload includes a
+  `rule_ids` map keyed by action (`added` / `removed`). Other aliases omit rule
+  identifiers to keep structured logs compact.
+
 ### `POST /admin/shutdown`
 Requests an orderly shutdown. Requires bearer token if `auth_token` was provided at startup. Include `{"force": 1}` in the JSON body to bypass graceful safeguards when an immediate shutdown is required. Returns `204 No Content` when the shutdown signal is accepted.
 
 ### `GET /state`
-Minimal process snapshot used by the desktop shell:
+Minimal process snapshot used by legacy desktop shells (fields omitted when unknown):
 ```json
-{ "unsaved_changes": false }
+{
+  "unsaved_changes": false,
+  "wizard_open": false
+}
 ```
+
+Typical response while the bridge is serving BOM_DB (feature flags may vary):
+```json
+{
+  "ready": true,
+  "last_ready_error": "",
+  "checks": [],
+  "wizard_open": false,
+  "unsaved_changes": false,
+  "headless": false,
+  "allow_headless": false,
+  "mdb_path": "C:/ComplexEditor/main_db.mdb",
+  "version": "0.1.0",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "auth_required": true,
+  "wizard_available": false,
+  "focused_comp_id": null,
+  "alias_ops_supported": true,
+  "features": {
+    "export_mdb": true,
+    "search_match_kind": true,
+    "normalization_rules_version": "v1"
+  }
+}
+```
+- `features.export_mdb` is only `true` when exports are permitted under the current
+  readiness and headless policy (i.e., the MDB is ready and either the UI is
+  present or headless exports are explicitly enabled).
+- `features.search_match_kind` reports whether the server understands `analyze=true` on
+  `/complexes/search` and will include match metadata when requested.
+- `features.normalization_rules_version` identifies the active part-number normalization rule
+  set. Clients can use this to determine whether their local heuristics need to be refreshed.
 
 ## Endpoints
 ### `GET /complexes/search`
 Search the CE database by part number or alias. Returns a list of `{ "id": "5087", "pn": "..." }` records. Supports `limit` (default 20, max 200).
+- Example (`analyze` omitted, legacy response schema):
+  ```json
+  [
+    {
+      "id": 5087,
+      "pn": "PN-100",
+      "aliases": ["ALT-1"],
+      "db_path": "C:/ComplexEditor/main_db.mdb"
+    }
+  ]
+  ```
+- Optional query parameter `analyze=true` includes additional metadata for each hit:
+  - `match_kind`: why the record matched (`exact_pn`, `exact_alias`, `normalized_pn`,
+    `normalized_alias`, or `like`).
+  - `reason`: human-readable explanation of the match decision, including the
+    normalization tweaks that fired (e.g., removing punctuation or ignoring the suffix `-TR`).
+  - `normalized_input`: canonical form of the caller-supplied part number after server-side
+    normalization.
+  - `normalized_targets`: canonical targets that produced the match (aliases or PNs after
+    normalization). May be empty.
+  - `rule_ids`: ordered list of normalization rule identifiers that fired for the input.
+- Exact matches are determined via case-insensitive comparisons on the raw PN or alias.
+  Normalized matches require the normalized input to be non-empty; pure suffix/wildcard
+  requests (e.g., `-TR`) fall back to LIKE matching only.
+- `reason` will call out whether the LIKE match was on the canonical PN or an alias and may
+  mention target-side normalizations. Only input-side rules are reported via `rule_ids`.
+- Results are ordered by match quality (`exact_*` → `normalized_*` → `like`) and then retain the
+  original database ordering for ties.
+- The handler uses `response_model_exclude_none=True`, so analysis fields are omitted entirely
+  (not returned as `null`) when `analyze` is `false` or omitted.
+- Inputs that consist solely of wildcards, punctuation, or whitespace are rejected with
+  HTTP 400 (`pn must not be empty`) to avoid expensive full-table scans.
+
+When `analyze` is omitted or false the response schema matches legacy releases exactly.
 
 ### `GET /complexes/{id}`
 Return the detailed CE record for the given ID. Responds with HTTP 404 when the ID is not present.

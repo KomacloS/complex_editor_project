@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class MatchKind(str, Enum):
+    EXACT_PN = "exact_pn"
+    EXACT_ALIAS = "exact_alias"
+    NORMALIZED_PN = "normalized_pn"
+    NORMALIZED_ALIAS = "normalized_alias"
+    LIKE = "like"
 
 
 class ComplexSummary(BaseModel):
@@ -12,6 +21,11 @@ class ComplexSummary(BaseModel):
     pn: str
     aliases: List[str] = Field(default_factory=list)
     db_path: Optional[str] = None
+    match_kind: Optional[MatchKind] = None
+    reason: Optional[str] = None
+    normalized_input: Optional[str] = None
+    normalized_targets: Optional[List[str]] = None
+    rule_ids: Optional[List[str]] = None
 
 
 class ComplexDetail(ComplexSummary):
@@ -97,6 +111,7 @@ __all__ = [
     "ComplexCreateResponse",
     "AliasUpdateRequest",
     "AliasUpdateResponse",
+    "MatchKind",
     "HealthResponse",
     "ResolvedPart",
     "MdbExportRequest",

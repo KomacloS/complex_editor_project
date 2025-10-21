@@ -10,3 +10,7 @@ bridge:
   host: "0.0.0.0"
   port: 8765
   request_timeout_seconds: 15
+pn_normalization:
+  case: "upper"
+  remove_chars: [" ", "-", "_", ".", "/", "–", "—", "\u00A0"]
+  ignore_suffixes: ["-TR", "-T", "-REEL", "/TP", "-BK"]

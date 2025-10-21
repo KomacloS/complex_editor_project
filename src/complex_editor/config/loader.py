@@ -83,6 +83,11 @@ def _load_default_config() -> Dict[str, Any]:
                 "port": 8765,
                 "request_timeout_seconds": 15,
             },
+            "pn_normalization": {
+                "case": "upper",
+                "remove_chars": [" ", "-", "_", ".", "/", "–", "—", "\u00A0"],
+                "ignore_suffixes": ["-TR", "-T", "-REEL", "/TP", "-BK"],
+            },
         }
 
     data = yaml.safe_load(raw_text) or {}
@@ -131,10 +136,18 @@ class BridgeConfig:
 
 
 @dataclass
+class PnNormalizationConfig:
+    case: str = "upper"
+    remove_chars: tuple[str, ...] = (" ", "-", "_", ".", "/", "–", "—", "\u00A0")
+    ignore_suffixes: tuple[str, ...] = ("-TR", "-T", "-REEL", "/TP", "-BK")
+
+
+@dataclass
 class CEConfig:
     database: DatabaseConfig
     links: LinksConfig = field(default_factory=LinksConfig)
     bridge: BridgeConfig = field(default_factory=BridgeConfig)
+    pn_normalization: PnNormalizationConfig = field(default_factory=PnNormalizationConfig)
     _source_path: Optional[Path] = field(default=None, repr=False, compare=False)
 
     @property
@@ -227,6 +240,46 @@ def _coerce_bridge(section: Dict[str, Any]) -> BridgeConfig:
     )
 
 
+def _coerce_pn_normalization(section: Dict[str, Any]) -> PnNormalizationConfig:
+    if not isinstance(section, dict):
+        raise ConfigError("pn_normalization must be a mapping")
+
+    case_raw = section.get("case", "upper")
+    if case_raw is None:
+        case_raw = "upper"
+    if not isinstance(case_raw, str):
+        raise ConfigError("pn_normalization.case must be a string")
+    case = case_raw.strip() or "upper"
+
+    def _coerce_list(value: Any, name: str) -> tuple[str, ...]:
+        if value is None:
+            return tuple()
+        if isinstance(value, str):
+            items = [value]
+        else:
+            try:
+                items = list(value)
+            except TypeError as exc:  # pragma: no cover - defensive
+                raise ConfigError(f"pn_normalization.{name} must be a list of strings") from exc
+        result: list[str] = []
+        for item in items:
+            if item is None:
+                continue
+            text = str(item)
+            if not text:
+                continue
+            result.append(text)
+        return tuple(result)
+
+    remove_chars = _coerce_list(section.get("remove_chars", (" ", "-", "_", ".", "/")), "remove_chars")
+    ignore_suffixes = _coerce_list(
+        section.get("ignore_suffixes", ("-TR", "-T", "-REEL", "/TP", "-BK")),
+        "ignore_suffixes",
+    )
+
+    return PnNormalizationConfig(case=case, remove_chars=remove_chars, ignore_suffixes=ignore_suffixes)
+
+
 def _coerce_config(raw: Dict[str, Any]) -> CEConfig:
     base = _default_dict()
     merged: Dict[str, Any] = {}
@@ -236,12 +289,14 @@ def _coerce_config(raw: Dict[str, Any]) -> CEConfig:
     db_section = merged.get("database", {})
     links_section = merged.get("links", {})
     bridge_section = merged.get("bridge", {})
+    pn_norm_section = merged.get("pn_normalization", {})
 
     database = _coerce_database(db_section)
     links = _coerce_links(links_section)
     bridge = _coerce_bridge(bridge_section)
+    pn_norm = _coerce_pn_normalization(pn_norm_section)
 
-    return CEConfig(database=database, links=links, bridge=bridge)
+    return CEConfig(database=database, links=links, bridge=bridge, pn_normalization=pn_norm)
 
 
 def load_config() -> CEConfig:
@@ -273,6 +328,11 @@ def save_config(config: CEConfig) -> None:
             "port": int(config.bridge.port),
             "request_timeout_seconds": int(config.bridge.request_timeout_seconds),
         },
+        "pn_normalization": {
+            "case": config.pn_normalization.case,
+            "remove_chars": list(config.pn_normalization.remove_chars),
+            "ignore_suffixes": list(config.pn_normalization.ignore_suffixes),
+        },
     }
     if config.bridge.allow_headless_exports is not None:
         data["bridge"]["allow_headless_exports"] = bool(config.bridge.allow_headless_exports)
@@ -288,6 +348,7 @@ __all__ = [
     "DatabaseConfig",
     "LinksConfig",
     "BridgeConfig",
+    "PnNormalizationConfig",
     "ConfigError",
     "load_config",
     "save_config",
