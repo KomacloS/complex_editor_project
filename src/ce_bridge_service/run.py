@@ -121,6 +121,7 @@ def _run_server(cfg, bridge_cfg) -> int:
         bridge_host=bridge_cfg.host,
         bridge_port=int(bridge_cfg.port),
         allow_headless_exports=allow_headless,
+        pn_normalization=cfg.pn_normalization,
     )
 
     mode = "frozen" if getattr(sys, "frozen", False) else "dev"

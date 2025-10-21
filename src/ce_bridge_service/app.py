@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import importlib.resources
 import importlib.resources as _ires
 import hashlib
@@ -20,6 +21,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
 from complex_editor import __version__
+from complex_editor.config.loader import PnNormalizationConfig
 from complex_editor.db import SubsetExportError
 from complex_editor.db.mdb_api import (
     ALIAS_T,
@@ -39,6 +41,7 @@ from .models import (
     ComplexOpenRequest,
     ComplexDetail,
     ComplexSummary,
+    MatchKind,
     MdbExportRequest,
     MdbExportResponse,
     ResolvedPart,
@@ -48,6 +51,7 @@ from .logging_setup import resolve_log_file
 from .middleware_trace import TraceIdMiddleware, TRACE_HEADER
 from .exceptions import install_exception_handlers
 from .admin_logs import router as admin_logs_router
+from .normalization import NORMALIZATION_RULES_VERSION, PartNumberNormalizer
 
 try:  # pragma: no cover - optional dependency during tests
     import pyodbc  # type: ignore
@@ -215,6 +219,7 @@ def create_app(
     state_provider: Callable[[], Dict[str, object]] | None = None,
     focus_handler: Callable[[int, str], Dict[str, object]] | None = None,
     allow_headless_exports: bool | None = None,
+    pn_normalization: PnNormalizationConfig | None = None,
 ) -> FastAPI:
     """Return a configured FastAPI application for the bridge."""
 
@@ -248,6 +253,20 @@ def create_app(
     headless_mode = wizard_handler is None
     app.state.headless = headless_mode
     app.state.ui_present = not headless_mode
+
+    normalization_config = pn_normalization or PnNormalizationConfig()
+    normalizer = PartNumberNormalizer(normalization_config)
+    app.state.normalization_rules_version = NORMALIZATION_RULES_VERSION
+    app.state.search_match_kind_supported = True
+    app.state.pn_normalizer = normalizer
+    logger.info(
+        "PN normalization configured case=%s remove_chars=%s ignore_suffixes=%s version=%s",
+        normalization_config.case,
+        list(normalization_config.remove_chars),
+        list(normalization_config.ignore_suffixes),
+        NORMALIZATION_RULES_VERSION,
+        extra={"event": "pn_normalization_config"},
+    )
 
     def _effective_allow_headless() -> bool:
         if allow_headless_exports is not None:
@@ -606,8 +625,9 @@ def create_app(
                     }
         return None
 
-    def _search(term: str, limit: int) -> List[ComplexSummary]:
+    def _search(term: str, limit: int, analyze: bool, trace_id: str | None) -> List[ComplexSummary]:
         like = _normalize_pattern(term)
+        term_casefold = term.casefold()
         mdb_path = get_mdb_path()
         with factory(mdb_path) as db:
             setattr(db, "_bridge_limit", limit)
@@ -631,18 +651,172 @@ def create_app(
                 )
             rows = cur.fetchall()
             summaries: List[ComplexSummary] = []
-            for comp_id, name in rows:
-                cid = int(comp_id)
-                aliases = _iter_aliases(db, cid)
-                summaries.append(
-                    ComplexSummary(
-                        id=cid,
-                        pn=str(name or ""),
-                        aliases=aliases,
-                        db_path=str(mdb_path),
+
+            if not analyze:
+                for comp_id, name in rows:
+                    cid = int(comp_id)
+                    aliases = _iter_aliases(db, cid)
+                    summaries.append(
+                        ComplexSummary(
+                            id=cid,
+                            pn=str(name or ""),
+                            aliases=aliases,
+                            db_path=str(mdb_path),
+                        )
                     )
+                return summaries
+
+            normalized_input_result = normalizer.normalize(term)
+            normalized_input = normalized_input_result.normalized
+            input_rule_ids = list(normalized_input_result.rule_ids)
+            has_normalized_input = bool(normalized_input)
+            needle = term.replace("*", "").replace("%", "").strip().lower()
+
+            def _format_reason(kind: MatchKind, descriptions: List[str], like_target: str | None = None) -> str:
+                base = {
+                    MatchKind.EXACT_PN: "Exact PN match",
+                    MatchKind.EXACT_ALIAS: "Exact alias match",
+                    MatchKind.NORMALIZED_PN: "Normalized input matched PN",
+                    MatchKind.NORMALIZED_ALIAS: "Normalized input matched alias",
+                    MatchKind.LIKE: "LIKE match",
+                }[kind]
+                if kind is MatchKind.LIKE and like_target:
+                    base = f"LIKE match on {like_target}"
+                if descriptions:
+                    return f"{base} ({', '.join(descriptions)})"
+                return base
+
+            def _unique(values: List[str]) -> List[str]:
+                seen: set[str] = set()
+                ordered: List[str] = []
+                for item in values:
+                    if item not in seen:
+                        seen.add(item)
+                        ordered.append(item)
+                return ordered
+
+            scored: List[tuple[int, int, MatchKind, ComplexSummary]] = []
+            priority = {
+                MatchKind.EXACT_PN: 0,
+                MatchKind.EXACT_ALIAS: 1,
+                MatchKind.NORMALIZED_PN: 2,
+                MatchKind.NORMALIZED_ALIAS: 3,
+                MatchKind.LIKE: 4,
+            }
+
+            for index, (comp_id, name) in enumerate(rows):
+                cid = int(comp_id)
+                pn_value = str(name or "")
+                aliases = _iter_aliases(db, cid)
+
+                if pn_value.casefold() == term_casefold:
+                    match_kind = MatchKind.EXACT_PN
+                    reason = _format_reason(match_kind, [])
+                    normalized_targets: List[str] = []
+                elif any(alias.casefold() == term_casefold for alias in aliases):
+                    match_kind = MatchKind.EXACT_ALIAS
+                    reason = _format_reason(match_kind, [])
+                    normalized_targets = []
+                else:
+                    if has_normalized_input:
+                        pn_result = normalizer.normalize(pn_value)
+                        if pn_result.normalized == normalized_input:
+                            match_kind = MatchKind.NORMALIZED_PN
+                            descriptions = PartNumberNormalizer.merge_descriptions(
+                                normalized_input_result,
+                                pn_result,
+                            )
+                            reason = _format_reason(match_kind, descriptions)
+                            normalized_targets = _unique([pn_result.normalized])
+                        else:
+                            alias_results = {
+                                alias: normalizer.normalize(alias) for alias in aliases
+                            }
+                            alias_matches = [
+                                result
+                                for result in alias_results.values()
+                                if result.normalized == normalized_input
+                            ]
+                            if alias_matches:
+                                match_kind = MatchKind.NORMALIZED_ALIAS
+                                descriptions = PartNumberNormalizer.merge_descriptions(
+                                    normalized_input_result,
+                                    *alias_matches,
+                                )
+                                normalized_targets = _unique(
+                                    [res.normalized for res in alias_matches]
+                                )
+                                reason = _format_reason(match_kind, descriptions)
+                            else:
+                                match_kind = MatchKind.LIKE
+                                like_target = None
+                                if needle and needle in pn_value.lower():
+                                    like_target = "PN"
+                                elif needle and any(needle in alias.lower() for alias in aliases):
+                                    like_target = "alias"
+                                reason = _format_reason(match_kind, [], like_target)
+                                normalized_targets = []
+                    else:
+                        match_kind = MatchKind.LIKE
+                        like_target = None
+                        if needle and needle in pn_value.lower():
+                            like_target = "PN"
+                        elif needle and any(needle in alias.lower() for alias in aliases):
+                            like_target = "alias"
+                        reason = _format_reason(match_kind, [], like_target)
+                        normalized_targets = []
+
+                summary = ComplexSummary(
+                    id=cid,
+                    pn=pn_value,
+                    aliases=aliases,
+                    db_path=str(mdb_path),
+                    match_kind=match_kind,
+                    reason=reason,
+                    normalized_input=normalized_input,
+                    normalized_targets=normalized_targets,
+                    rule_ids=list(input_rule_ids),
                 )
-            return summaries
+                scored.append((priority[match_kind], index, match_kind, summary))
+
+            scored.sort(key=lambda item: (item[0], item[1]))
+            ordered = [entry[3] for entry in scored]
+            counts = Counter(
+                summary.match_kind.value  # type: ignore[union-attr]
+                for summary in ordered
+                if summary.match_kind is not None
+            )
+            most_common = counts.most_common(3)
+            rules_version = getattr(
+                app.state,
+                "normalization_rules_version",
+                NORMALIZATION_RULES_VERSION,
+            )
+            top_keys: dict[str, object] = {}
+            for idx in range(1, 4):
+                if idx <= len(most_common):
+                    kind, count = most_common[idx - 1]
+                    top_keys[f"match_top_{idx}_kind"] = kind
+                    top_keys[f"match_top_{idx}_count"] = count
+                else:
+                    top_keys[f"match_top_{idx}_kind"] = ""
+                    top_keys[f"match_top_{idx}_count"] = 0
+            logger.info(
+                "Bridge search analyze term=%s normalized=%s counts=%s",
+                term,
+                normalized_input,
+                dict(counts),
+                extra={
+                    "trace_id": trace_id or "",
+                    "event": "search_analyze",
+                    "method": "GET",
+                    "path": "/complexes/search",
+                    "normalized_input": normalized_input,
+                    "rules_version": rules_version,
+                    **top_keys,
+                },
+            )
+            return ordered
 
     def _detail(comp_id: int) -> ComplexDetail:
         mdb_path = get_mdb_path()
@@ -807,6 +981,22 @@ def create_app(
         payload, status_code = _health_payload(trace_id)
         return JSONResponse(status_code=status_code, content=payload)
 
+    @app.get("/admin/pn_normalization")
+    async def admin_pn_normalization(_: None = Depends(_require_auth)) -> dict[str, object]:
+        config = normalizer.config
+        return {
+            "rules_version": getattr(
+                app.state,
+                "normalization_rules_version",
+                NORMALIZATION_RULES_VERSION,
+            ),
+            "config": {
+                "case": config.case,
+                "remove_chars": list(config.remove_chars),
+                "ignore_suffixes": list(config.ignore_suffixes),
+            },
+        }
+
     def _make_trace_id() -> str:
         return uuid.uuid4().hex
 
@@ -885,8 +1075,11 @@ def create_app(
     @app.get("/state")
     async def state(_: None = Depends(_require_auth)) -> dict[str, object]:
         snapshot = _state_snapshot()
+        headless_flag = _is_headless()
+        allow_headless_flag = bool(_allow_headless_current())
+        ready_flag = bool(getattr(app.state, "ready", False))
         return {
-            "ready": bool(getattr(app.state, "ready", False)),
+            "ready": ready_flag,
             "last_ready_error": str(getattr(app.state, "last_ready_error", "")),
             "checks": list(getattr(app.state, "last_ready_checks", [])),
             "wizard_open": snapshot["wizard_open"],
@@ -899,7 +1092,19 @@ def create_app(
             "wizard_available": bool(app.state.wizard_available),
             "alias_ops_supported": True,
             "focused_comp_id": snapshot.get("focused_comp_id"),
-            "features": {"export_mdb": bool(getattr(app.state, "ready", False))},
+            "headless": headless_flag,
+            "allow_headless": allow_headless_flag,
+            "features": {
+                "export_mdb": ready_flag and (not headless_flag or allow_headless_flag),
+                "search_match_kind": bool(
+                    getattr(app.state, "search_match_kind_supported", False)
+                ),
+                "normalization_rules_version": getattr(
+                    app.state,
+                    "normalization_rules_version",
+                    NORMALIZATION_RULES_VERSION,
+                ),
+            },
         }
 
     @app.post("/selftest")
@@ -980,15 +1185,25 @@ def create_app(
             content={"ok": ok, "checks": checks, "exporter": exporter_probe},
         )
 
-    @app.get("/complexes/search", response_model=List[ComplexSummary])
+    @app.get(
+        "/complexes/search",
+        response_model=List[ComplexSummary],
+        response_model_exclude_none=True,
+    )
     async def search_complexes(
+        request: Request,
         pn: str = Query(..., description="Part number or alias pattern"),
         limit: int = Query(20, ge=1, le=200),
+        analyze: bool = Query(False, description="Return match analysis metadata"),
         _: None = Depends(_require_auth),
     ) -> List[ComplexSummary]:
-        if not pn.strip():
+        pn_value = pn.strip()
+        if not pn_value:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pn must not be empty")
-        return _search(pn.strip(), limit)
+        if not any(ch.isalnum() for ch in pn_value):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="pn must not be empty")
+        trace_id = _resolve_trace_id(request) if analyze and request is not None else ""
+        return _search(pn_value, limit, analyze, trace_id or None)
 
     @app.post(
         "/exports/mdb",
@@ -1528,15 +1743,17 @@ def create_app(
     async def update_aliases(
         comp_id: int,
         payload: AliasUpdateRequest,
+        request: Request,
         _: None = Depends(_require_auth),
     ) -> AliasUpdateResponse:
-        request = payload.model_copy(deep=True)
-        add_tokens = _normalize_alias_tokens(request.add)
-        remove_tokens = _normalize_alias_tokens(request.remove)
+        alias_request = payload.model_copy(deep=True)
+        add_tokens = _normalize_alias_tokens(alias_request.add)
+        remove_tokens = _normalize_alias_tokens(alias_request.remove)
         mdb_path = get_mdb_path()
         added: List[str] = []
         removed: List[str] = []
         skipped: List[str] = []
+        trace_id = _resolve_trace_id(request)
 
         with factory(mdb_path) as db:
             try:
@@ -1546,6 +1763,9 @@ def create_app(
 
             canonical = str(device.name or "")
             canonical_key = _alias_key(canonical)
+            canonical_norm = normalizer.normalize(canonical)
+            canonical_norm_value = canonical_norm.normalized
+            canonical_rule_ids = list(canonical_norm.rule_ids)
             canonical_map = _collect_canonical_map(db)
             if canonical_key:
                 canonical_map.setdefault(canonical_key, comp_id)
@@ -1597,12 +1817,35 @@ def create_app(
             "skipped": skipped,
         }
         detail = _detail(comp_id)
+        normalized_alias_rule_ids: dict[str, dict[str, List[str]]] = {"added": {}, "removed": {}}
+
+        def _record_alias(bucket: str, alias_value: str) -> None:
+            if canonical_rule_ids and alias_value == canonical_norm_value:
+                normalized_alias_rule_ids[bucket][alias_value] = list(canonical_rule_ids)
+
+        for alias in added:
+            _record_alias("added", alias)
+        for alias in removed:
+            _record_alias("removed", alias)
+
+        normalized_alias_rule_ids = {
+            bucket: values for bucket, values in normalized_alias_rule_ids.items() if values
+        }
+        log_extra = {
+            "trace_id": trace_id or "",
+            "event": "alias_update",
+            "method": "POST",
+            "path": f"/complexes/{comp_id}/aliases",
+        }
+        if normalized_alias_rule_ids:
+            log_extra["rule_ids"] = normalized_alias_rule_ids
         logger.info(
             "Bridge alias update completed comp_id=%s added=%s removed=%s skipped=%s",
             comp_id,
             len(added),
             len(removed),
             len(skipped),
+            extra=log_extra,
         )
         return AliasUpdateResponse(
             id=detail.id,
