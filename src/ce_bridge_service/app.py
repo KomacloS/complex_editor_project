@@ -280,6 +280,22 @@ def create_app(
 
     app.state.allow_headless_exports = _allow_headless_current()
 
+    def _apply_subset_timeout(db: object) -> None:
+        """Try to reduce pyodbc command timeout for subset probes."""
+
+        if pyodbc is None:
+            return
+        conn = getattr(db, "_conn", None)
+        if conn is None:
+            return
+        try:
+            timeout_attr = getattr(conn, "timeout", None)
+            target = 5
+            if timeout_attr is None or timeout_attr == 0 or timeout_attr > target:
+                setattr(conn, "timeout", target)
+        except Exception:  # pragma: no cover - best-effort safeguard
+            pass
+
     # Install exception handlers
     install_exception_handlers(app)
 
@@ -1138,34 +1154,45 @@ def create_app(
             exporter_probe["write_error"] = str(exc)
         if exporter_probe["write_test"] and template_info is not None:
             try:
-                with tempfile.TemporaryDirectory(prefix="ce_export_subset_") as tmp_subset:
-                    subset_dir = Path(tmp_subset)
-                    subset_path = subset_dir / "subset_test.mdb"
-                    subset_ids: list[int] = []
-                    try:
-                        with factory(mdb_path) as test_db:
-                            subset_ids = [int(row[0]) for row in test_db.list_complexes()[:2]]
-                    except Exception as exc_subset:
-                        exporter_probe["subset_error_reason"] = "list_complexes_failed"
-                        exporter_probe["subset_error_detail"] = str(exc_subset)
-                    else:
-                        if subset_ids:
-                            try:
-                                with factory(mdb_path) as exporter_db:
-                                    exporter_db.save_subset_to_mdb(subset_path, subset_ids)
-                                exporter_probe["subset_roundtrip_ok"] = True
-                            except SubsetExportError as exc_subset:
-                                exporter_probe["subset_error_reason"] = exc_subset.reason
-                                exporter_probe["subset_error_detail"] = str(exc_subset)
-                            except Exception as exc_subset:
-                                exporter_probe["subset_error_reason"] = "unexpected"
-                                exporter_probe["subset_error_detail"] = str(exc_subset)
-                        else:
-                            exporter_probe["subset_roundtrip_ok"] = True
+                mdb_path = get_mdb_path()
             except Exception as exc_subset:
-                if not exporter_probe["subset_error_reason"]:
-                    exporter_probe["subset_error_reason"] = "selftest_exception"
-                    exporter_probe["subset_error_detail"] = str(exc_subset)
+                exporter_probe["subset_error_reason"] = "resolve_mdb_path_failed"
+                exporter_probe["subset_error_detail"] = str(exc_subset)
+            else:
+                try:
+                    with tempfile.TemporaryDirectory(prefix="ce_export_subset_") as tmp_subset:
+                        subset_dir = Path(tmp_subset)
+                        subset_path = subset_dir / "subset_test.mdb"
+                        subset_ids: list[int] = []
+                        try:
+                            with factory(mdb_path) as test_db:
+                                _apply_subset_timeout(test_db)
+                                subset_ids = [int(row[0]) for row in test_db.list_complexes()[:2]]
+                        except Exception as exc_subset:
+                            exporter_probe["subset_error_reason"] = "list_complexes_failed"
+                            exporter_probe["subset_error_detail"] = str(exc_subset)
+                        else:
+                            if subset_ids:
+                                try:
+                                    with factory(mdb_path) as exporter_db:
+                                        _apply_subset_timeout(exporter_db)
+                                        exporter_db.save_subset_to_mdb(subset_path, subset_ids)
+                                    exporter_probe["subset_roundtrip_ok"] = True
+                                except SubsetExportError as exc_subset:
+                                    exporter_probe["subset_error_reason"] = exc_subset.reason
+                                    exporter_probe["subset_error_detail"] = str(exc_subset)
+                                except Exception as exc_subset:
+                                    exporter_probe["subset_error_reason"] = "unexpected"
+                                    exporter_probe["subset_error_detail"] = str(exc_subset)
+                            else:
+                                exporter_probe["subset_roundtrip_ok"] = True
+                except Exception as exc_subset:
+                    exporter_probe["subset_error_reason"] = (
+                        exporter_probe["subset_error_reason"] or "selftest_exception"
+                    )
+                    exporter_probe["subset_error_detail"] = (
+                        exporter_probe["subset_error_detail"] or str(exc_subset)
+                    )
         status_code = status.HTTP_200_OK if ok else status.HTTP_503_SERVICE_UNAVAILABLE
         reason = getattr(app.state, "last_ready_error", "")
         host = app.state.bridge_host or ""
