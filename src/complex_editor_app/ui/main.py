@@ -283,12 +283,15 @@ def ensure_sample_data(path: Path) -> None:
         path.write_text(json.dumps({"complexes": []}, indent=2), encoding="utf-8")
 
 
-def main() -> None:
+def main(buffer_path: Path | str | None = None) -> None:
     root = tk.Tk()
     apply_scaling(root)
     ensure_theme(root)
     logger = _setup_logging()
-    data_path = get_user_data_dir() / DATA_FILE
+    if buffer_path is None:
+        data_path = get_user_data_dir() / DATA_FILE
+    else:
+        data_path = Path(buffer_path).expanduser().resolve()
     ensure_sample_data(data_path)
     catalog = build_sample_catalog()
     repo = Repository(data_path, catalog)
