@@ -283,21 +283,12 @@ def ensure_sample_data(path: Path) -> None:
         path.write_text(json.dumps({"complexes": []}, indent=2), encoding="utf-8")
 
 
-def main(buffer_path: Optional[Path] | None = None) -> None:
-    """Launch the Tkinter Complex Editor demo.
-
-    Parameters
-    ----------
-    buffer_path:
-        Optional path to the JSON buffer file used for persistence. When not
-        provided the application stores data inside the user data directory.
-    """
-
+def main() -> None:
     root = tk.Tk()
     apply_scaling(root)
     ensure_theme(root)
     logger = _setup_logging()
-    data_path = (buffer_path.expanduser().resolve() if buffer_path else get_user_data_dir() / DATA_FILE)
+    data_path = get_user_data_dir() / DATA_FILE
     ensure_sample_data(data_path)
     catalog = build_sample_catalog()
     repo = Repository(data_path, catalog)
