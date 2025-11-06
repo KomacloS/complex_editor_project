@@ -1,15 +1,15 @@
-"""UI package providing lazy access to heavy Qt modules."""
+"""Tkinter-based Complex Editor UI shims replacing the legacy PyQt widgets."""
+from __future__ import annotations
 
-__all__ = ["MainWindow", "run_gui", "NewComplexWizard"]
+from pathlib import Path
+from typing import Optional
+
+from .main_window import run_gui
+
+__all__ = ["run_gui", "launch"]
 
 
-def __getattr__(name):  # pragma: no cover - simple lazy loader
-    if name in {"MainWindow", "run_gui"}:
-        from .main_window import MainWindow, run_gui
+def launch(mdb_file: Optional[Path] = None, buffer_path: Optional[Path] = None) -> None:
+    """Backward-compatible entry point for the deprecated PyQt launcher."""
 
-        return {"MainWindow": MainWindow, "run_gui": run_gui}[name]
-    if name == "NewComplexWizard":
-        from .new_complex_wizard import NewComplexWizard
-
-        return NewComplexWizard
-    raise AttributeError(name)
+    run_gui(mdb_file=mdb_file, buffer_path=buffer_path)

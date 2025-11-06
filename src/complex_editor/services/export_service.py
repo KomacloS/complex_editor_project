@@ -2,8 +2,8 @@ from __future__ import annotations
 
 """Legacy helpers for the deprecated workflow.
 
-The new :mod:`complex_editor.ui.complex_editor` persists complexes via the
-``MDB`` API directly.  This module is kept for backwards compatibility with
+The Tkinter editor backed by :mod:`complex_editor_app` persists complexes via
+the ``MDB`` API directly. This module is kept for backwards compatibility with
 older tools and tests but is otherwise unused by the new flow.
 """
 
