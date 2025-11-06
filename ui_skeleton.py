@@ -1,44 +1,72 @@
 # ruff: noqa: E402
 
+"""Entry point for launching the Tkinter complex editor demo."""
+
+from __future__ import annotations
+
 import argparse
 import pathlib
 import sys
+from pathlib import Path
 
 ROOT = pathlib.Path(__file__).resolve().parent
 SRC_ROOT = ROOT / "src"
-sys.path.insert(0, str(SRC_ROOT))
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
-from complex_editor.bootstrap import add_repo_src_to_syspath
+try:  # pragma: no cover - optional legacy bootstrap
+    from complex_editor.bootstrap import add_repo_src_to_syspath
+except ModuleNotFoundError:  # pragma: no cover - legacy path missing
+    add_repo_src_to_syspath = None  # type: ignore[assignment]
+else:
+    add_repo_src_to_syspath()
 
-add_repo_src_to_syspath()
-import complex_editor.logging_cfg  # noqa: F401
+try:  # pragma: no cover - legacy logging config may not be present
+    import complex_editor.logging_cfg  # noqa: F401
+except ModuleNotFoundError:
+    pass
 
-from pathlib import Path
-from complex_editor.ui.main_window import run_gui
+from complex_editor_app.ui.main import main as run_tk_demo
+
+
+def _resolve_path(path: Path | None) -> Path | None:
+    """Normalize command-line paths to absolute filesystem locations."""
+
+    if path is None:
+        return None
+    return path.expanduser().resolve()
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Parse CLI options and launch the Tkinter demo UI."""
+
+    parser = argparse.ArgumentParser(description="Launch the Tkinter Complex Editor demo UI.")
+    parser.add_argument(
+        "--buffer",
+        type=Path,
+        default=None,
+        help="Optional JSON buffer file to load and persist complexes.",
+    )
+    parser.add_argument(
+        "--load-buffer",
+        type=Path,
+        default=None,
+        help="Deprecated alias for --buffer; retained for backwards compatibility.",
+    )
+    parser.add_argument(
+        "--mdb",
+        type=Path,
+        default=None,
+        help="Optional path to the main MDB file to open.",
+    )
+    args = parser.parse_args(argv)
+
+    buffer_path = args.load_buffer or args.buffer
+    if args.load_buffer and not args.buffer:
+        print("[ui_skeleton] --load-buffer is deprecated; use --buffer instead.", file=sys.stderr)
+
+    run_tk_demo(buffer_path=_resolve_path(buffer_path), mdb_path=_resolve_path(args.mdb))
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--buffer", type=Path, default=None)
-    parser.add_argument("--load-buffer", type=Path, default=None)
-    args = parser.parse_args()
-
-    if args.load_buffer is not None:
-        from PyQt6 import QtWidgets  # noqa: E402
-        from complex_editor.io.buffer_loader import (  # noqa: E402
-            load_complex_from_buffer_json,
-            to_wizard_prefill,
-        )
-        from complex_editor.ui.new_complex_wizard import (  # noqa: E402
-            NewComplexWizard,
-        )
-
-        app = QtWidgets.QApplication(sys.argv)
-        buf = load_complex_from_buffer_json(args.load_buffer)
-        prefill = to_wizard_prefill(buf, lambda name: None, lambda m: m)
-        wiz = NewComplexWizard.from_wizard_prefill(prefill)
-        wiz.show()
-        sys.exit(app.exec())
-    elif args.buffer is not None:
-        run_gui(mdb_file=None, buffer_path=args.buffer)
-    else:
-        run_gui()
+    main()

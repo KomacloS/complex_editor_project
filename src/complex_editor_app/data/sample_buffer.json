@@ -1,0 +1,73 @@
+{
+  "complexes": [
+    {
+      "identifier": "cmp-100",
+      "part_number": "CMP-100",
+      "alternate_part_numbers": ["CMP-100A"],
+      "aliases": ["demo-board"],
+      "pin_count": 16,
+      "subcomponents": [
+        {
+          "position": 1,
+          "macro": "Resistor",
+          "pin_a": "1",
+          "pin_b": "2",
+          "pin_c": "",
+          "pin_d": "",
+          "parameters": {
+            "value": 10000.0,
+            "tolerance": "1%"
+          }
+        },
+        {
+          "position": 2,
+          "macro": "BufferGate",
+          "pin_a": "3",
+          "pin_b": "4",
+          "pin_c": "",
+          "pin_d": "",
+          "parameters": {
+            "channels": 2,
+            "schmitt": true,
+            "drive_ma": 4
+          }
+        }
+      ]
+    },
+    {
+      "identifier": "cmp-200",
+      "part_number": "CMP-200",
+      "alternate_part_numbers": ["CMP-200B"],
+      "aliases": ["indicator"],
+      "pin_count": 12,
+      "subcomponents": [
+        {
+          "position": 1,
+          "macro": "LED",
+          "pin_a": "5",
+          "pin_b": "6",
+          "pin_c": "",
+          "pin_d": "",
+          "parameters": {
+            "color": "green",
+            "forward_voltage": 2.1,
+            "diffused": true
+          }
+        },
+        {
+          "position": 2,
+          "macro": "LED",
+          "pin_a": "7",
+          "pin_b": "8",
+          "pin_c": "",
+          "pin_d": "",
+          "parameters": {
+            "color": "red",
+            "forward_voltage": 1.9,
+            "diffused": true
+          }
+        }
+      ]
+    }
+  ]
+}

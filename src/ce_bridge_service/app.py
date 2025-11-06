@@ -974,12 +974,15 @@ def create_app(
         elif ready_flag:
             reason = "ok"
         payload: Dict[str, object] = {
+            "ok": bool(ready_flag),
             "ready": bool(ready_flag),
             "headless": bool(headless_flag),
             "allow_headless": bool(allow_headless_flag),
             "reason": reason,
-            "trace_id": trace_id,
         }
+        if ready_flag:
+            payload["port"] = int(getattr(app.state, "bridge_port", 0) or 0)
+            payload["auth_required"] = bool(getattr(app.state, "auth_required", False))
         status_code = status.HTTP_200_OK if ready_flag else status.HTTP_503_SERVICE_UNAVAILABLE
         return payload, status_code
 
@@ -1243,7 +1246,7 @@ def create_app(
                         "example": {
                             "reason": "bridge_headless",
                             "status": 503,
-                            "detail": "exports disabled in headless mode",
+                            "detail": "Exports are disabled in headless mode.",
                             "trace_id": "example-trace-id",
                             "allow_headless": False,
                         }
@@ -1272,7 +1275,7 @@ def create_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 reason="bridge_headless",
                 trace_id=trace_id,
-                detail="exports disabled in headless mode",
+                detail="Exports are disabled in headless mode.",
                 allow_headless=False,
             )
 
@@ -1409,17 +1412,16 @@ def create_app(
                 if missing and not export_ids:
                     if comp_ids:
                         logger.info(
-                            "Bridge MDB export rejected (comp_ids not found) trace_id=%s caller=%s comp_ids=%s",
+                            "Bridge MDB export rejected (invalid comp_ids) trace_id=%s caller=%s comp_ids=%s",
                             trace_id,
                             caller,
                             comp_ids,
                         )
                         return _error_response(
-                            status_code=status.HTTP_404_NOT_FOUND,
-                            reason="comp_ids_not_found",
+                            status_code=status.HTTP_409_CONFLICT,
+                            reason="invalid_comp_ids",
                             trace_id=trace_id,
-                            detail="No valid comp_ids to export.",
-                            missing=[str(cid) for cid in comp_ids],
+                            not_found_ids=[int(cid) for cid in comp_ids],
                         )
                     logger.info(
                         "Bridge MDB export rejected (no matches) trace_id=%s caller=%s missing=%s",
@@ -1495,7 +1497,7 @@ def create_app(
                                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                                 reason="bridge_headless",
                                 trace_id=trace_id,
-                                detail="exports disabled in headless mode",
+                                detail="Exports are disabled in headless mode.",
                                 allow_headless=allow_headless,
                             )
                         from complex_editor.db.pn_exporter import ExportOptions, export_pn_to_mdb  # type: ignore
