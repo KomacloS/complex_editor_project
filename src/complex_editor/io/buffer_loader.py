@@ -40,11 +40,12 @@ class BufferComplex:
 
 @dataclass
 class WizardPrefill:
-    """Data passed to :class:`~complex_editor.ui.new_complex_wizard.NewComplexWizard`.
+    """Legacy structure produced for the historical PyQt wizard UI.
 
     ``sub_components`` contains entries with the keys ``macro_name``,
-    ``id_function`` (optional) and ``pins`` (list of pad numbers).  This mirrors
-    the internal structure expected by the wizard's list page.
+    ``id_function`` (optional) and ``pins`` (list of pad numbers).  The new
+    Tkinter editor reads buffer files via :mod:`complex_editor_app`, but the
+    conversion helpers remain for older tooling.
     """
 
     complex_name: str

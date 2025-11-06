@@ -28,7 +28,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--token", type=str, default=None, help="Override bridge bearer token for this run")
     parser.add_argument("--config", type=Path, default=None, help="Path to configuration file")
     parser.add_argument("--buffer", type=Path, default=None, help="Open the GUI against a buffer JSON file")
-    parser.add_argument("--load-buffer", type=Path, default=None, help="Preview a buffer JSON in the wizard")
+    parser.add_argument(
+        "--load-buffer",
+        type=Path,
+        default=None,
+        help="Deprecated alias for --buffer; retained for backwards compatibility",
+    )
     parser.add_argument(
         "--with-ui",
         action="store_true",
@@ -54,12 +59,6 @@ def _forward_bridge_args(args: argparse.Namespace) -> list[str]:
     if args.shutdown_bridge:
         forwarded.append("--shutdown-bridge")
     return forwarded
-
-
-def _ensure_interactive_qt() -> None:
-    platform = os.environ.get("QT_QPA_PLATFORM", "")
-    if platform.lower() == "offscreen":
-        os.environ.pop("QT_QPA_PLATFORM", None)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -113,7 +112,6 @@ def main(argv: list[str] | None = None) -> int:
         bridge_cfg.base_url = f"http://{bridge_cfg.host}:{bridge_cfg.port}"
 
         ctx = AppContext(cfg)
-        _ensure_interactive_qt()
         run_gui(ctx=ctx, bridge_autostart=bridge_cfg, bridge_ui_mode="with-ui")
         return 0
 
@@ -125,48 +123,14 @@ def main(argv: list[str] | None = None) -> int:
         forwarded = _forward_bridge_args(args)
         return bridge_run.main(forwarded)
 
-    if args.load_buffer is not None and args.buffer is not None:
-        raise SystemExit("--buffer and --load-buffer are mutually exclusive")
-
-    if args.load_buffer is not None:
-        from PyQt6 import QtWidgets  # type: ignore
-        from .core.app_context import AppContext
-        from .io.buffer_loader import load_complex_from_buffer_json, to_wizard_prefill
-        from .ui.new_complex_wizard import NewComplexWizard
-
-        _ensure_interactive_qt()
-        app = QtWidgets.QApplication(sys.argv)
-        ctx = AppContext()
-        buf = load_complex_from_buffer_json(args.load_buffer)
-        prefill = to_wizard_prefill(buf, lambda name: None, lambda m: m)
-        wiz = NewComplexWizard.from_wizard_prefill(prefill)
-        pn = (getattr(prefill, "complex_name", "") or "").strip()
-        if pn:
-            wiz.setWindowTitle(f"New Complex — {pn}")
-        wiz.setMinimumSize(1000, 720)
-        ctx.wizard_opened()
-
-        def _on_finished(result: int) -> None:
-            saved = result == QtWidgets.QDialog.DialogCode.Accepted
-            ctx.wizard_closed(saved=saved, had_changes=saved)
-
-        wiz.finished.connect(_on_finished)
-        wiz.show()
-        try:
-            wiz.raise_()
-        except Exception:
-            pass
-        try:
-            wiz.activateWindow()
-        except Exception:
-            pass
-        app.processEvents()
-        sys.exit(app.exec())
-
     from .ui.main_window import run_gui
 
-    if args.buffer is not None:
-        run_gui(mdb_file=None, buffer_path=args.buffer)
+    buffer_path = args.buffer or args.load_buffer
+    if args.load_buffer and not args.buffer:
+        print("[complex_editor] --load-buffer is deprecated; use --buffer instead.")
+
+    if buffer_path is not None:
+        run_gui(mdb_file=None, buffer_path=buffer_path)
     else:
         run_gui()
     return 0

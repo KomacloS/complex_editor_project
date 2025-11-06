@@ -2,6 +2,8 @@
 
 **Complex‑Editor** is a Python tool that lets engineers create, edit and export *complex device* definitions for Seica / VIVA ATE systems.
 
+<!-- Demo launcher: python -m complex_editor_app.ui.main -->
+
 * ⚙️  Build new complexes by combining existing VIVA macros, pins and parameters  
 * 📎  View the component datasheet side‑by‑side while you work  
 * 🗄️  Store complexes in a searchable SQLite library  
@@ -21,6 +23,7 @@ source .venv/Scripts/activate
 pip install -r requirements.txt
 python -m complex_editor.cli --help
 python ui_skeleton.py          # works from project root without PYTHONPATH hacks
+# optional: python ui_skeleton.py --mdb path/to/main_db.mdb
 ```
 
 ## Directory layout
