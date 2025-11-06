@@ -15,6 +15,8 @@ class MacroComboDelegate:
         values_provider: Callable[[], Sequence[str]],
         commit: Callable[[str], None],
         cancel: Callable[[], None],
+        *,
+        max_results: int | None = None,
     ) -> None:
         self.tree = tree
         self.values_provider = values_provider
@@ -22,6 +24,7 @@ class MacroComboDelegate:
         self.cancel = cancel
         self.editor: ttk.Combobox | None = None
         self._all_values: List[str] = []
+        self.max_results = max_results
 
     def begin(self, item_id: str, column: str, initial: str = "") -> None:
         bbox = self.tree.bbox(item_id, column)
@@ -47,7 +50,9 @@ class MacroComboDelegate:
 
     # ------------------------------------------------------------------
     def _limit(self, values: Sequence[str]) -> Sequence[str]:
-        return list(values[:20])
+        if self.max_results is None or self.max_results <= 0:
+            return list(values)
+        return list(values[: self.max_results])
 
     def _on_keyrelease(self, _event: tk.Event) -> None:
         assert self.editor is not None
