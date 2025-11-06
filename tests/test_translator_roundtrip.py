@@ -17,8 +17,7 @@ def test_translator_roundtrip() -> None:
     xml = mxt.params_to_xml(params, ctx=ctx, rules=rules)
     text = xml.decode('utf-16')
     assert '<Macro Name="RELAY2"' in text
-    inv_map = yaml.safe_load((DATA / 'xml_macro_to_function_map.yaml').read_text())
-    parsed = mxt.xml_to_params(xml, inv_map=inv_map)
+    parsed = mxt.xml_to_params(xml)
     assert 'RELAIS' in parsed
 
 

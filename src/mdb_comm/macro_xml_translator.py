@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 import argparse
 import logging
 from functools import lru_cache
@@ -45,6 +45,22 @@ def _is_default(val: Any, default: Any) -> bool:
         return float(val) == float(default)
     except (TypeError, ValueError):
         return str(val) == str(default)
+
+
+def _invert_function_map(fn_map: Mapping[str, Any]) -> dict[str, list[str]]:
+    """Return mapping of {Macro: [Function, ...]} derived from *fn_map*."""
+
+    macro_to_functions: dict[str, list[str]] = {}
+    for fname, macros in fn_map.items():
+        if isinstance(macros, str):
+            iterable: Iterable[str] = (macros,)
+        elif isinstance(macros, Iterable) and not isinstance(macros, Mapping):
+            iterable = (m for m in macros if isinstance(m, str))
+        else:
+            continue
+        for macro in iterable:
+            macro_to_functions.setdefault(macro, []).append(fname)
+    return macro_to_functions
 
 
 def _validate_gate(params: Mapping[str, Any]) -> None:
@@ -108,17 +124,27 @@ def xml_to_params(
     xml: bytes | str,
     *,
     inv_map: Mapping[str, list[str]] | None = None,
+    fn_map: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Mapping[str, str]]:
     """Parse XML macros into canonical function mapping when possible."""
 
-    if inv_map is None:
-        inv_map = _load_yaml(DATA_DIR / "xml_macro_to_function_map.yaml")
+    if fn_map is None:
+        fn_map = _load_yaml(DATA_DIR / "function_to_xml_macro_map.yaml")
+    macro_to_functions = _invert_function_map(fn_map)
+    if inv_map is not None:
+        for macro, funcs in inv_map.items():
+            if not funcs:
+                continue
+            existing = macro_to_functions.setdefault(macro, [])
+            for func in funcs:
+                if func not in existing:
+                    existing.append(func)
     macros = _xml_to_params(xml)
     result = {}
     for mname, params in macros.items():
-        fname = map_macro_to_function(mname, inv_map)
+        fname = map_macro_to_function(mname, macro_to_functions)
         if fname is None:
-            funcs = inv_map.get(mname)
+            funcs = macro_to_functions.get(mname)
             if funcs:
                 fname = funcs[0]
                 LOGGER.warning("ambiguous-macro-name", extra={"macro": mname, "function": fname})
@@ -162,7 +188,8 @@ def main(argv: list[str] | None = None) -> int:
     else:  # to-params
         xml_data = Path(args.infile).read_bytes()
         inv_map = _load_yaml(args.inv)
-        macros = xml_to_params(xml_data, inv_map=inv_map)
+        fn_map = _load_yaml(args.map_path)
+        macros = xml_to_params(xml_data, inv_map=inv_map, fn_map=fn_map)
         text = yaml.safe_dump(macros, sort_keys=False)
         if args.outfile:
             Path(args.outfile).write_text(text, encoding="utf-8")
