@@ -4,6 +4,7 @@ from typing import Dict
 import logging
 
 from complex_editor.param_spec import ALLOWED_PARAMS, resolve_macro_name
+from complex_editor.db_overlay.runtime import get_runtime
 
 from ..domain import MacroDef, MacroParam
 from .access_driver import fetch_macro_pairs
@@ -14,6 +15,49 @@ CANDIDATE_MACRO_COLS = ["MacroName", "FunctionName", "Macro", "Function"]
 CORE_PARAM_COLS = {"ParamName", "ParamType", "DefValue"}
 # Helper list used for SELECT queries
 PARAM_COLS = ["ParamName", "ParamType", "DefValue", "MinValue", "MaxValue"]
+
+
+def _fill_from_yaml_specs(macro_map: Dict[int, MacroDef]) -> Dict[int, MacroDef]:
+    log = logging.getLogger(__name__)
+    for m in macro_map.values():
+        if m.params:
+            continue
+        spec = ALLOWED_PARAMS.get(resolve_macro_name(m.name.strip()), {})
+        if not spec:
+            log.warning("Macro %s has no parameter definition in DB or YAML", m.name)
+            continue
+        m.params = [
+            MacroParam(
+                name=pname,
+                type=spec[pname].get("type", "STR"),
+                default=spec[pname].get("default"),
+                min=spec[pname].get("min"),
+                max=spec[pname].get("max"),
+            )
+            for pname in spec
+        ]
+
+    existing = {m.name.strip() for m in macro_map.values()}
+    next_id = max(macro_map.keys(), default=0) + 1
+    for name, spec in ALLOWED_PARAMS.items():
+        if name in existing:
+            continue
+        macro_map[next_id] = MacroDef(
+            id_function=next_id,
+            name=name,
+            params=[
+                MacroParam(
+                    name=pname,
+                    type=spec[pname].get("type", "STR"),
+                    default=spec[pname].get("default"),
+                    min=spec[pname].get("min"),
+                    max=spec[pname].get("max"),
+                )
+                for pname in spec
+            ],
+        )
+        next_id += 1
+    return macro_map
 
 
 def _fetch_param_rows(cursor, table: str) -> list[tuple]:
@@ -34,6 +78,16 @@ def discover_macro_map(cursor_or_conn) -> Dict[int, MacroDef]:
     """
 
     log = logging.getLogger(__name__)
+    runtime = get_runtime()
+    if runtime:
+        state = runtime.state()
+        if state.ready:
+            macro_map = runtime.macro_map()
+            return _fill_from_yaml_specs(macro_map)
+        if state.fingerprint_pending:
+            log.warning("DB overlay pending fingerprint confirmation; suppressing DB macros")
+            return _fill_from_yaml_specs({})
+
     macro_map: Dict[int, MacroDef] = {}
 
     cursor = None
@@ -49,24 +103,7 @@ def discover_macro_map(cursor_or_conn) -> Dict[int, MacroDef]:
 
     # If there's no DB connection, build the macro map solely from YAML.
     if cursor is None:
-        next_id = 1
-        for name, spec in ALLOWED_PARAMS.items():
-            macro_map[next_id] = MacroDef(
-                id_function=next_id,
-                name=name,
-                params=[
-                    MacroParam(
-                        name=pname,
-                        type=spec[pname].get("type", "STR"),
-                        default=spec[pname].get("default"),
-                        min=spec[pname].get("min"),
-                        max=spec[pname].get("max"),
-                    )
-                    for pname in spec
-                ],
-            )
-            next_id += 1
-        return macro_map
+        return _fill_from_yaml_specs({})
 
     tables = {}
     try:
@@ -166,4 +203,4 @@ def discover_macro_map(cursor_or_conn) -> Dict[int, MacroDef]:
         )
         next_id += 1
 
-    return macro_map
+    return _fill_from_yaml_specs(macro_map)

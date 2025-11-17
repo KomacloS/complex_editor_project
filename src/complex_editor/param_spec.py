@@ -1,6 +1,7 @@
 import importlib.resources
+import copy
 import re
-from typing import Dict, Optional
+from typing import Dict, Mapping, Optional
 
 from .utils import yaml_adapter as yaml
 
@@ -13,6 +14,7 @@ if isinstance(data, dict):
     data.pop("version", None)
 
 ALLOWED_PARAMS: Dict[str, Dict] = data
+_DYNAMIC_PARAMS: Dict[str, Dict] = {}
 
 
 def normalize_macro_name(name: str) -> str:
@@ -27,9 +29,7 @@ def normalize_macro_name(name: str) -> str:
 
 
 # Map of normalised canonical macro names to the name as used in the YAML spec
-_CANONICAL: Dict[str, str] = {
-    normalize_macro_name(key): key for key in ALLOWED_PARAMS.keys()
-}
+_CANONICAL: Dict[str, str] = {}
 
 # Optional alias mapping loaded from resources/macro_aliases.yaml.  Each alias
 # maps to a canonical YAML key.  Missing file or invalid contents are tolerated.
@@ -43,11 +43,20 @@ except FileNotFoundError:  # pragma: no cover - optional resource
     _alias_data = {}
 
 _ALIASES: Dict[str, str] = {}
-if isinstance(_alias_data, dict):
-    for alias, target in _alias_data.items():
-        norm_alias = normalize_macro_name(alias)
-        norm_target = normalize_macro_name(target)
-        _ALIASES[norm_alias] = _CANONICAL.get(norm_target, target)
+
+
+def _rebuild_lookup_tables() -> None:
+    global _CANONICAL
+    _CANONICAL = {normalize_macro_name(key): key for key in ALLOWED_PARAMS.keys()}
+    _ALIASES.clear()
+    if isinstance(_alias_data, dict):
+        for alias, target in _alias_data.items():
+            norm_alias = normalize_macro_name(alias)
+            norm_target = normalize_macro_name(target)
+            _ALIASES[norm_alias] = _CANONICAL.get(norm_target, target)
+
+
+_rebuild_lookup_tables()
 
 
 def resolve_macro_name(macro_name: str) -> Optional[str]:
@@ -67,5 +76,32 @@ def resolve_macro_name(macro_name: str) -> Optional[str]:
     return None
 
 
-__all__ = ["ALLOWED_PARAMS", "normalize_macro_name", "resolve_macro_name"]
+def set_dynamic_param_specs(spec: Mapping[str, Mapping[str, object]] | None) -> None:
+    """Install dynamic macro parameter specs (e.g., DB overlay approvals).
+
+    The supplied mapping uses the same shape as ``ALLOWED_PARAMS``.
+    Existing dynamic specs are removed before the new set is applied.
+    Passing ``None`` or an empty mapping clears all dynamic additions.
+    """
+
+    global _DYNAMIC_PARAMS
+    # Remove previously injected specs
+    for key in list(_DYNAMIC_PARAMS.keys()):
+        ALLOWED_PARAMS.pop(key, None)
+    _DYNAMIC_PARAMS = {}
+    if spec:
+        copied: Dict[str, Dict] = {
+            str(name): copy.deepcopy(dict(params)) for name, params in spec.items()
+        }
+        ALLOWED_PARAMS.update(copied)
+        _DYNAMIC_PARAMS = copied
+    _rebuild_lookup_tables()
+
+
+__all__ = [
+    "ALLOWED_PARAMS",
+    "normalize_macro_name",
+    "resolve_macro_name",
+    "set_dynamic_param_specs",
+]
 

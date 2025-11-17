@@ -143,11 +143,21 @@ class PnNormalizationConfig:
 
 
 @dataclass
+class DbOverlayConfig:
+    enabled: bool = False
+    yaml_name: str = "function_param_allowed.yaml"
+    allow_session_approvals: bool = True
+    prompt_on_soft_changes: bool = True
+    lock_timeout_seconds: int = 10
+
+
+@dataclass
 class CEConfig:
     database: DatabaseConfig
     links: LinksConfig = field(default_factory=LinksConfig)
     bridge: BridgeConfig = field(default_factory=BridgeConfig)
     pn_normalization: PnNormalizationConfig = field(default_factory=PnNormalizationConfig)
+    db_overlay: DbOverlayConfig = field(default_factory=DbOverlayConfig)
     _source_path: Optional[Path] = field(default=None, repr=False, compare=False)
 
     @property
@@ -280,6 +290,29 @@ def _coerce_pn_normalization(section: Dict[str, Any]) -> PnNormalizationConfig:
     return PnNormalizationConfig(case=case, remove_chars=remove_chars, ignore_suffixes=ignore_suffixes)
 
 
+def _coerce_db_overlay(section: Dict[str, Any]) -> DbOverlayConfig:
+    if not isinstance(section, dict):
+        section = {}
+    enabled = bool(section.get("enabled", False))
+    yaml_name = str(section.get("yaml_name", "function_param_allowed.yaml") or "function_param_allowed.yaml")
+    allow_session = bool(section.get("allow_session_approvals", True))
+    prompt_on_soft = bool(section.get("prompt_on_soft_changes", True))
+    lock_timeout = section.get("lock_timeout_seconds", 10)
+    try:
+        lock_timeout = int(lock_timeout)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError("db_overlay.lock_timeout_seconds must be an integer") from exc
+    if lock_timeout <= 0:
+        raise ConfigError("db_overlay.lock_timeout_seconds must be positive")
+    return DbOverlayConfig(
+        enabled=enabled,
+        yaml_name=yaml_name,
+        allow_session_approvals=allow_session,
+        prompt_on_soft_changes=prompt_on_soft,
+        lock_timeout_seconds=lock_timeout,
+    )
+
+
 def _coerce_config(raw: Dict[str, Any]) -> CEConfig:
     base = _default_dict()
     merged: Dict[str, Any] = {}
@@ -290,13 +323,21 @@ def _coerce_config(raw: Dict[str, Any]) -> CEConfig:
     links_section = merged.get("links", {})
     bridge_section = merged.get("bridge", {})
     pn_norm_section = merged.get("pn_normalization", {})
+    overlay_section = merged.get("db_overlay", {})
 
     database = _coerce_database(db_section)
     links = _coerce_links(links_section)
     bridge = _coerce_bridge(bridge_section)
     pn_norm = _coerce_pn_normalization(pn_norm_section)
+    db_overlay = _coerce_db_overlay(overlay_section)
 
-    return CEConfig(database=database, links=links, bridge=bridge, pn_normalization=pn_norm)
+    return CEConfig(
+        database=database,
+        links=links,
+        bridge=bridge,
+        pn_normalization=pn_norm,
+        db_overlay=db_overlay,
+    )
 
 
 def load_config() -> CEConfig:
@@ -333,6 +374,13 @@ def save_config(config: CEConfig) -> None:
             "remove_chars": list(config.pn_normalization.remove_chars),
             "ignore_suffixes": list(config.pn_normalization.ignore_suffixes),
         },
+        "db_overlay": {
+            "enabled": config.db_overlay.enabled,
+            "yaml_name": config.db_overlay.yaml_name,
+            "allow_session_approvals": config.db_overlay.allow_session_approvals,
+            "prompt_on_soft_changes": config.db_overlay.prompt_on_soft_changes,
+            "lock_timeout_seconds": int(config.db_overlay.lock_timeout_seconds),
+        },
     }
     if config.bridge.allow_headless_exports is not None:
         data["bridge"]["allow_headless_exports"] = bool(config.bridge.allow_headless_exports)
@@ -349,6 +397,7 @@ __all__ = [
     "LinksConfig",
     "BridgeConfig",
     "PnNormalizationConfig",
+    "DbOverlayConfig",
     "ConfigError",
     "load_config",
     "save_config",

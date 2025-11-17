@@ -11,6 +11,7 @@ from typing import Callable, Iterable, Optional, Sequence, Mapping
 import pyodbc
 
 from .mdb_api import MDB, ComplexDevice, ALIAS_T, MASTER_T, NAME_COL, DETAIL_T
+from complex_editor.db_overlay.runtime import get_runtime
 
 pyodbc.pooling = False
 
@@ -416,6 +417,16 @@ def _export_using_template(
 
     try:
         with MDB(target_path) as target_db:
+            runtime = get_runtime()
+            if runtime is not None:
+                try:
+                    runtime.prepare_export_target(
+                        target_path=target_path,
+                        connection=target_db._conn,
+                        macro_ids=macro_ids,
+                    )
+                except Exception:
+                    logger.exception("DB overlay failed to prepare export target")
             if macro_ids:
                 missing = _validate_macros_available(target_db._conn, macro_ids)
                 if missing:

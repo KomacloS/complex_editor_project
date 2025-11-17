@@ -14,3 +14,9 @@ pn_normalization:
   case: "upper"
   remove_chars: [" ", "-", "_", ".", "/", "–", "—", "\u00A0"]
   ignore_suffixes: ["-TR", "-T", "-REEL", "/TP", "-BK"]
+db_overlay:
+  enabled: false
+  yaml_name: "function_param_allowed.yaml"
+  allow_session_approvals: true
+  prompt_on_soft_changes: true
+  lock_timeout_seconds: 10
