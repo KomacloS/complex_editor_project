@@ -6,11 +6,11 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Callable, Iterable, Optional, Sequence, Mapping
 
 import pyodbc
 
-from .mdb_api import MDB, ComplexDevice
+from .mdb_api import MDB, ComplexDevice, ALIAS_T, MASTER_T, NAME_COL, DETAIL_T
 
 pyodbc.pooling = False
 
@@ -66,6 +66,21 @@ def _normalized_pns(pn_list: Sequence[str]) -> list[str]:
             continue
         seen.add(key)
         ordered.append(pn)
+    return ordered
+
+
+def _normalized_comp_ids(comp_ids: Sequence[int | str]) -> list[int]:
+    ordered: list[int] = []
+    seen: set[int] = set()
+    for raw in comp_ids:
+        try:
+            cid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if cid <= 0 or cid in seen:
+            continue
+        seen.add(cid)
+        ordered.append(cid)
     return ordered
 
 
@@ -187,35 +202,39 @@ def _collect_complex_devices(
     *,
     progress_cb: Optional[ProgressCallback],
     cancel_cb: Optional[CancelCallback],
-) -> tuple[list[ComplexDevice], set[int], int, list[int], int, list[str]]:
+) -> tuple[list[ComplexDevice], set[int], dict[int, set[str]], int, list[int], int, list[str]]:
     devices: list[ComplexDevice] = []
     macro_ids: set[int] = set()
+    macro_usage: dict[int, set[str]] = {}
     alias_total = 0
     subcomponent_total = 0
     export_ids: list[int] = []
     pn_out: list[str] = []
 
     if comp_ids:
-        ids = [int(cid) for cid in comp_ids if int(cid) > 0]
+        ids = _normalized_comp_ids(comp_ids)
         for idx, cid in enumerate(ids, start=1):
             _ensure_not_canceled(cancel_cb)
             _report(progress_cb, f"Collecting ID {cid}", idx, max(len(ids), 1))
             device = db.get_complex(cid)
             export_ids.append(cid)
-            pn_out.append(str(getattr(device, "name", "") or f"ID {cid}"))
+            pn_value = str(getattr(device, "name", "") or f"ID {cid}")
+            pn_out.append(pn_value)
             _prepare_device(device)
             for sub in getattr(device, "subcomponents", []) or []:
                 macro = getattr(sub, "id_function", None)
                 if macro is not None:
                     try:
-                        macro_ids.add(int(macro))
+                        macro_id = int(macro)
                     except Exception:
                         continue
+                    macro_ids.add(macro_id)
+                    macro_usage.setdefault(macro_id, set()).add(pn_value)
             alias_total += len(device.aliases or [])
             subcomponent_total += len(getattr(device, "subcomponents", []) or [])
             device.id_comp_desc = None
             devices.append(device)
-        return devices, macro_ids, alias_total, export_ids, subcomponent_total, pn_out
+        return devices, macro_ids, macro_usage, alias_total, export_ids, subcomponent_total, pn_out
 
     rows = db.list_complexes()
     name_to_ids: dict[str, list[int]] = {}
@@ -244,14 +263,16 @@ def _collect_complex_devices(
             macro = getattr(sub, "id_function", None)
             if macro is not None:
                 try:
-                    macro_ids.add(int(macro))
+                    macro_id = int(macro)
                 except Exception:
                     continue
+                macro_ids.add(macro_id)
+                macro_usage.setdefault(macro_id, set()).add(pn_value)
         alias_total += len(device.aliases or [])
         subcomponent_total += len(getattr(device, "subcomponents", []) or [])
         device.id_comp_desc = None
         devices.append(device)
-    return devices, macro_ids, alias_total, export_ids, subcomponent_total, pn_out
+    return devices, macro_ids, macro_usage, alias_total, export_ids, subcomponent_total, pn_out
 
 
 def _validate_macros_available(conn: pyodbc.Connection, macro_ids: Iterable[int]) -> set[int]:
@@ -294,6 +315,73 @@ def _extract_index_name(message: str) -> str:
     return ""
 
 
+def _diagnose_duplicate_conflict(target_db: MDB, device: ComplexDevice) -> dict[str, object]:
+    hints: dict[str, object] = {}
+    try:
+        cur = target_db._conn.cursor()
+    except Exception:
+        return hints
+
+    name = str(getattr(device, "name", "") or "").strip()
+    if name:
+        try:
+            cur.execute(f"SELECT COUNT(1) FROM {MASTER_T} WHERE [{NAME_COL}]=?", name)
+            row = cur.fetchone()
+            count = int(row[0] if row else 0)
+            if count:
+                hints.setdefault("conflict_table", MASTER_T)
+                hints["duplicate_name"] = name
+                hints["existing_name_count"] = count
+        except Exception:
+            pass
+
+    aliases = [alias for alias in (getattr(device, "aliases", None) or []) if alias]
+    if aliases:
+        try:
+            fk_col, alias_col, _ = target_db._alias_schema(cur)
+            placeholders = ",".join("?" for _ in aliases)
+            cur.execute(
+                f"SELECT DISTINCT [{alias_col}] FROM {ALIAS_T} WHERE [{alias_col}] IN ({placeholders})",
+                *aliases,
+            )
+            rows = [row[0] for row in cur.fetchall() if row and row[0]]
+            dup_aliases = sorted({str(alias).strip() for alias in rows if str(alias).strip()})
+            if dup_aliases:
+                hints.setdefault("conflict_table", ALIAS_T)
+                hints["alias_conflicts"] = dup_aliases
+        except Exception:
+            pass
+
+    return hints
+
+
+def _purge_existing_complex_data(target_db: MDB) -> None:
+    """
+    Remove existing complexes from the template copy before export.
+
+    Some customer templates include seed complexes (e.g., demo PNs). These rows
+    collide with exported data when Access enforces unique indexes on names or
+    aliases. Clearing the master/detail/alias tables keeps the export isolated
+    without requiring a pristine template from the UI.
+    """
+    try:
+        cur = target_db._conn.cursor()
+        last_table = ""
+        for table in (ALIAS_T, DETAIL_T, MASTER_T):
+            last_table = table
+            cur.execute(f"DELETE FROM {table}")
+        target_db._conn.commit()
+    except Exception as exc:  # pragma: no cover - depends on template state
+        raise SubsetExportError(
+            "template_missing_or_incompatible",
+            409,
+            {
+                "detail": "Failed to clear template data prior to export.",
+                "table": last_table,
+            },
+        ) from exc
+
+
 def _export_using_template(
     *,
     template_path: Path,
@@ -301,12 +389,14 @@ def _export_using_template(
     devices: list[ComplexDevice],
     pn_names: Sequence[str],
     macro_ids: set[int],
+    macro_usage: Mapping[int, set[str]] | None,
     alias_total: int,
     subcomponent_total: int,
     export_ids: Sequence[int],
     progress_cb: Optional[ProgressCallback],
     cancel_cb: Optional[CancelCallback],
 ) -> ExportReport:
+    macro_usage = macro_usage or {}
     _copy_template(template_path, target_path)
 
     _ensure_not_canceled(cancel_cb)
@@ -329,6 +419,11 @@ def _export_using_template(
             if macro_ids:
                 missing = _validate_macros_available(target_db._conn, macro_ids)
                 if missing:
+                    usage_map = {
+                        mid: sorted(macro_usage.get(mid, []))  # type: ignore[arg-type]
+                        for mid in missing
+                        if macro_usage and macro_usage.get(mid)
+                    }
                     raise SubsetExportError(
                         "template_missing_or_incompatible",
                         409,
@@ -336,8 +431,10 @@ def _export_using_template(
                             "template_path": str(template_path),
                             "detail": "Template database is missing macro definitions.",
                             "missing_macro_ids": sorted(missing),
+                            **({"missing_macro_usage": usage_map} if usage_map else {}),
                         },
                     )
+            _purge_existing_complex_data(target_db)
 
             total = len(devices)
             for idx, device in enumerate(devices, start=1):
@@ -346,7 +443,8 @@ def _export_using_template(
                 _report(progress_cb, f"Writing {label}", idx, max(total, 1))
                 try:
                     target_db.create_complex(device)
-                except pyodbc.DataError as exc:
+                except pyodbc.Error as exc:
+                    device_name = str(getattr(device, "name", "") or "")
                     message = " ".join(str(part) for part in getattr(exc, "args", ()))
                     if _is_duplicate_error(exc):
                         payload = {
@@ -357,26 +455,56 @@ def _export_using_template(
                         index_name = _extract_index_name(message)
                         if index_name:
                             payload["index_name"] = index_name
+                        diagnostics = _diagnose_duplicate_conflict(target_db, device)
+                        if diagnostics:
+                            payload.setdefault("diagnostics", diagnostics)
+                            payload.setdefault(
+                                "conflict_table",
+                                payload.get("conflict_table") or diagnostics.get("conflict_table", ""),
+                            )
+                            if diagnostics.get("duplicate_name"):
+                                payload.setdefault("duplicate_name", diagnostics["duplicate_name"])
+                                payload.setdefault(
+                                    "existing_name_count", diagnostics.get("existing_name_count", 0)
+                                )
+                            if diagnostics.get("alias_conflicts"):
+                                payload.setdefault("duplicate_aliases", diagnostics["alias_conflicts"])
+                            logger.error(
+                                "Duplicate conflict while writing %s (name=%s): %s | diagnostics=%s",
+                                label,
+                                device_name,
+                                message,
+                                diagnostics,
+                            )
+                        else:
+                            logger.error(
+                                "Duplicate conflict while writing %s (name=%s): %s",
+                                label,
+                                device_name,
+                                message,
+                            )
                         raise SubsetExportError(
                             "data_invalid",
                             409,
                             payload,
                             message="Duplicate key detected while inserting subset.",
                         ) from exc
-                    # Access 22018: Data type mismatch in criteria expression
-                    reason_payload = {"detail": message}
-                    if "22018" in message or "type mismatch" in message.lower():
-                        reason_payload.update(
-                            {
-                                "offending_table": "detCompDesc",
-                                "hint": "Access type mismatch (22018) likely; see insert logs",
-                            }
-                        )
-                    raise SubsetExportError(
-                        "db_engine_error",
-                        500,
-                        reason_payload,
-                    ) from exc
+                    if isinstance(exc, pyodbc.DataError):
+                        # Access 22018: Data type mismatch in criteria expression
+                        reason_payload = {"detail": message}
+                        if "22018" in message or "type mismatch" in message.lower():
+                            reason_payload.update(
+                                {
+                                    "offending_table": "detCompDesc",
+                                    "hint": "Access type mismatch (22018) likely; see insert logs",
+                                }
+                            )
+                        raise SubsetExportError(
+                            "db_engine_error",
+                            500,
+                            reason_payload,
+                        ) from exc
+                    raise
             target_db._conn.commit()
     except SubsetExportError:
         raise
@@ -438,7 +566,15 @@ def export_pn_to_mdb(
     _report(progress_cb, "Preparing export...", 0, max(len(pn_names), 1))
 
     with MDB(source_db_path) as source_db:
-        devices, macro_ids, alias_total, export_ids, subcomponents_total, pn_out = _collect_complex_devices(
+        (
+            devices,
+            macro_ids,
+            macro_usage,
+            alias_total,
+            export_ids,
+            subcomponents_total,
+            pn_out,
+        ) = _collect_complex_devices(
             source_db,
             pn_names,
             comp_ids,
@@ -446,13 +582,15 @@ def export_pn_to_mdb(
             cancel_cb=cancel_cb,
         )
 
+    enforce_macros = opts.strict_schema_compat and opts.include_macros
     try:
         report = _export_using_template(
             template_path=template_path,
             target_path=target_path,
             devices=devices,
             pn_names=pn_out,
-            macro_ids=macro_ids if (opts.strict_schema_compat and opts.include_macros) else set(),
+            macro_ids=macro_ids if enforce_macros else set(),
+            macro_usage=macro_usage if enforce_macros else {},
             alias_total=alias_total,
             subcomponent_total=subcomponents_total,
             export_ids=export_ids,

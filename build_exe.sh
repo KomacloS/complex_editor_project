@@ -186,7 +186,7 @@ args=(
 args+=( "${ADD_DATA_ARGS[@]}" )
 args+=( "src/complex_editor/__main__.py" )
 
-pyinstaller "${args[@]}"
+python -m PyInstaller "${args[@]}"
 
 echo
 echo "Build complete -> ./dist/ComplexEditor/ (no console window)"
