@@ -2,15 +2,18 @@
 
 import logging
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 from urllib.parse import urlparse
 
 from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtGui import QDesktopServices
 
 from complex_editor.config.loader import BridgeConfig
 from complex_editor.core.app_context import AppContext
 from complex_editor.db.mdb_api import MDB
+from complex_editor.ui.db_overlay_dialog import DbOverlayApprovalDialog
+
+if TYPE_CHECKING:
+    from complex_editor.db_overlay.runtime import DbOverlayRuntime
 
 
 BridgeStatusCb = Optional[Callable[[], bool]]
@@ -45,6 +48,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         self._client_snippet = client_snippet
         self._bridge_error = bridge_error
         self._mdb_path = ctx.current_db_path()
+        self._last_allowlist_warning: Path | None = None
 
         self._build_ui()
         self._apply_config_to_ui()
@@ -64,7 +68,15 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         self.browse_btn = QtWidgets.QPushButton("Browse...")
         self.browse_btn.clicked.connect(self._on_browse)
         path_row.addWidget(self.browse_btn)
+        db_layout.addWidget(QtWidgets.QLabel("main_db.mdb"))
         db_layout.addLayout(path_row)
+
+        allowlist_row = QtWidgets.QHBoxLayout()
+        self.allowlist_path_edit = QtWidgets.QLineEdit()
+        self.allowlist_path_edit.setReadOnly(True)
+        allowlist_row.addWidget(self.allowlist_path_edit)
+        db_layout.addWidget(QtWidgets.QLabel("function_param_allowed.yaml"))
+        db_layout.addLayout(allowlist_row)
 
         btn_row = QtWidgets.QHBoxLayout()
         self.create_btn = QtWidgets.QPushButton("Create/Copy...")
@@ -150,6 +162,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
     def _apply_config_to_ui(self) -> None:
         cfg = self.ctx.config
         self.mdb_path_edit.setText(str(cfg.database.mdb_path))
+        self._update_allowlist_path_display()
         self.bom_link_edit.setText(cfg.links.bom_db_hint)
 
         bridge = cfg.bridge
@@ -161,9 +174,12 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         self.bridge_timeout_spin.setValue(int(bridge.request_timeout_seconds))
 
     # ----------------------------------------------------------------- callbacks
-    def _set_mdb_path(self, path: Path) -> None:
+    def _set_mdb_path(self, path: Path, *, warn_allowlist: bool = False) -> None:
         self._mdb_path = path
         self.mdb_path_edit.setText(str(path))
+        self._update_allowlist_path_display()
+        if warn_allowlist:
+            self._notify_allowlist_state(path)
 
     def _on_browse(self) -> None:
         start_dir = str(self._mdb_path.parent) if self._mdb_path else str(Path.home())
@@ -174,7 +190,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
             "Access database (*.mdb *.accdb);;All files (*)",
         )
         if file_name:
-            self._set_mdb_path(Path(file_name))
+            self._set_mdb_path(Path(file_name), warn_allowlist=True)
 
     def _on_create_copy(self) -> None:
         start_dir = str(self._mdb_path.parent) if self._mdb_path else str(Path.home())
@@ -206,7 +222,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
                 f"Could not create database:\n{exc}",
             )
             return
-        self._set_mdb_path(dest)
+        self._set_mdb_path(dest, warn_allowlist=True)
         QtWidgets.QMessageBox.information(
             self,
             "Database created",
@@ -242,6 +258,82 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         text = self.bom_link_edit.text().strip()
         parsed = urlparse(text)
         self.open_bom_btn.setEnabled(bool(parsed.scheme and parsed.netloc))
+
+    def _overlay_runtime(self) -> "DbOverlayRuntime | None":
+        runtime = getattr(self.ctx, "overlay_runtime", None)
+        if runtime is None:
+            return None
+        config = getattr(runtime, "config", None)
+        if not config or not getattr(config, "enabled", False):
+            return None
+        return runtime
+
+    def _allowlist_path_for(self, path: Path) -> Path | None:
+        runtime = self._overlay_runtime()
+        if runtime is None:
+            return None
+        expanded = path.expanduser()
+        folder = expanded.parent if expanded.parent != Path("") else Path.cwd()
+        return folder / runtime.config.yaml_name
+
+    def _update_allowlist_path_display(self) -> None:
+        if not getattr(self, "allowlist_path_edit", None):
+            return
+        if not self._mdb_path:
+            self.allowlist_path_edit.setText("")
+            return
+        allowlist_path = self._allowlist_path_for(self._mdb_path)
+        if allowlist_path is None:
+            self.allowlist_path_edit.setText("(overlay disabled)")
+        else:
+            self.allowlist_path_edit.setText(str(allowlist_path))
+
+    def _notify_allowlist_state(self, path: Path) -> None:
+        allowlist_path = self._allowlist_path_for(path)
+        if allowlist_path is None or allowlist_path.exists():
+            return
+        if self._last_allowlist_warning and allowlist_path == self._last_allowlist_warning:
+            return
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Allowlist missing",
+            (
+                "No approved-function YAML file was found next to the selected database.\n"
+                f"Expected: {allowlist_path}\n"
+                "A new allowlist will be created once the database is opened."
+            ),
+        )
+        self._last_allowlist_warning = allowlist_path
+
+    def _handle_overlay_prompts(self) -> None:
+        runtime = self._overlay_runtime()
+        if runtime is None:
+            return
+        state = runtime.state()
+        if state.fingerprint_pending:
+            response = QtWidgets.QMessageBox.question(
+                self,
+                "Fingerprint mismatch",
+                (
+                    "The allowlist fingerprint does not match the selected database.\n"
+                    "Update the fingerprint to reuse previous approvals?"
+                ),
+            )
+            if response == QtWidgets.QMessageBox.StandardButton.Yes:
+                runtime.accept_fingerprint()
+                state = runtime.state()
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Overlay paused",
+                    "The database overlay remains disabled until the fingerprint is accepted.",
+                )
+                return
+        diff = state.diff
+        if not diff or not diff.added:
+            return
+        dialog = DbOverlayApprovalDialog(runtime, diff.added, parent=self)
+        dialog.exec()
 
     def _on_open_bom_link(self) -> None:
         link = self.bom_link_edit.text().strip()
@@ -358,6 +450,7 @@ class IntegrationSettingsDialog(QtWidgets.QDialog):
         cfg.bridge.port = bridge_cfg.port
         cfg.bridge.request_timeout_seconds = bridge_cfg.request_timeout_seconds
         self.ctx.persist_config()
+        self._handle_overlay_prompts()
         self.accept()
 
     def _validate_before_save(self) -> bool:

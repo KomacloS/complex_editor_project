@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import importlib.resources
+import logging
 import shutil
 from pathlib import Path
 from typing import Optional
 
 from complex_editor.config.loader import CEConfig, load_config, save_config
 from complex_editor.db.mdb_api import MDB
+from complex_editor.db_overlay.runtime import configure_runtime
 from complex_editor.internal.paths import get_app_root, get_internal_root
 
 
@@ -28,6 +30,7 @@ class AppContext:
             except Exception:
                 pass
         self.db: MDB | None = None
+        self.overlay_runtime = configure_runtime(self.config.db_overlay)
         self.wizard_open: bool = False
         self.unsaved_changes: bool = False
         self.focused_comp_id: int | None = None
@@ -140,6 +143,12 @@ class AppContext:
         self._close_db()
         self.db = MDB(target)
         self.config.database.mdb_path = target
+        runtime = getattr(self, "overlay_runtime", None)
+        if runtime is not None:
+            try:
+                runtime.bind_to_database(db_path=target, cursor_factory=self.db._conn.cursor)
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to initialise DB overlay runtime")
         return self.db
 
     def reconnect(self) -> MDB:
