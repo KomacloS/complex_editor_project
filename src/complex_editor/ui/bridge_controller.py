@@ -199,19 +199,27 @@ class BridgeController:
             self._use_external = None
             return
         thread: threading.Thread | None = None
+        server: uvicorn.Server | None = None
         was_running = self._running.is_set()
         with self._lock:
             if self._server is None or self._thread is None:
                 logger.debug("Bridge stop requested but no server instance is active.")
                 return
             logger.info("Stopping bridge server.")
+            server = self._server
             self._server.should_exit = True
-            self._server.force_exit = True
             thread = self._thread
         if thread is not None:
             thread.join(timeout=5)
             if thread.is_alive():
-                logger.warning("Bridge server thread did not terminate within timeout.")
+                logger.warning(
+                    "Bridge server thread did not terminate within timeout; sending force-exit signal."
+                )
+                if server is not None:
+                    server.force_exit = True
+                thread.join(timeout=2)
+                if thread.is_alive():
+                    logger.error("Bridge server thread still running after force-exit request.")
         with self._lock:
             self._server = None
             self._thread = None

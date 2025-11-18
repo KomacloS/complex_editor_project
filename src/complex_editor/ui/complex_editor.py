@@ -222,6 +222,44 @@ class ComplexSubComponentsModel(QtCore.QAbstractTableModel):
         return result
 
 
+class _SubComponentTable(QtWidgets.QTableView):
+    """QTableView variant that only opens editors on editable cells."""
+
+    def __init__(self, clickable_columns: set[int] | None = None, parent=None) -> None:
+        super().__init__(parent)
+        self._clickable_columns = set(clickable_columns or [])
+        if self._clickable_columns:
+            self.setMouseTracking(True)
+
+    def edit(
+        self,
+        index: QtCore.QModelIndex,
+        trigger: QtWidgets.QAbstractItemView.EditTrigger = QtWidgets.QAbstractItemView.EditTrigger.AllEditTriggers,
+        event: QtCore.QEvent | None = None,
+    ) -> bool:  # pragma: no cover - UI behaviour
+        if not index.isValid():
+            return False
+        if not (index.flags() & QtCore.Qt.ItemFlag.ItemIsEditable):
+            # Ignore edits on non-editable cells so PyQt does not spam "edit: editing failed".
+            return False
+        return super().edit(index, trigger, event)
+
+    def mouseMoveEvent(self, event):  # pragma: no cover - UI behaviour
+        if self._clickable_columns:
+            pos = event.position().toPoint()
+            index = self.indexAt(pos)
+            if index.isValid() and index.column() in self._clickable_columns:
+                self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.viewport().unsetCursor()
+        return super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):  # pragma: no cover - UI behaviour
+        if self._clickable_columns:
+            self.viewport().unsetCursor()
+        return super().leaveEvent(event)
+
+
 class MacroComboDelegate(QtWidgets.QStyledItemDelegate):
     """Combo-box delegate for selecting macros (popup sized to contents; no eliding)."""
 
@@ -386,7 +424,7 @@ class ComplexEditor(QtWidgets.QDialog):
         form.addRow("Number of pins", self.pin_spin)
 
         self.model = ComplexSubComponentsModel(macro_map)
-        self.table = QtWidgets.QTableView()
+        self.table = _SubComponentTable(clickable_columns={6, 7})
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows
@@ -508,9 +546,7 @@ class ComplexEditor(QtWidgets.QDialog):
             return
         dlg = ParamEditorDialog(macro, r.params, self)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            # Preserve existing parameters when reopening without changes by
-            # saving all current values (defaults are dropped at serialization).
-            r.params = dlg.params(only_changed=False)
+            r.params = dlg.params()
             idx = self.model.index(row, 6)
             self.model.dataChanged.emit(idx, idx)
 

@@ -28,3 +28,13 @@ def test_param_editor_dialog_preserves_existing_values(qtbot):
     dlg = ParamEditorDialog(macro, {"P1": "7"})
     qtbot.addWidget(dlg)
     assert dlg.params() == {"P1": "7"}
+
+
+def test_param_editor_dialog_can_revert_to_default(qtbot):
+    macro = MacroDef(0, "MAC", [MacroParam("P1", "INT", "5", None, None)])
+    dlg = ParamEditorDialog(macro, {"P1": "9"})
+    qtbot.addWidget(dlg)
+    widget = dlg._widgets["P1"]
+    assert isinstance(widget, QtWidgets.QSpinBox)
+    widget.setValue(5)
+    assert dlg.params() == {}

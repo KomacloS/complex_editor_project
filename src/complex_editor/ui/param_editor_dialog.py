@@ -22,8 +22,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
         self._macro = macro
         layout = QtWidgets.QGridLayout(self)
         self._widgets: dict[str, QtWidgets.QWidget] = {}
-        self._present_keys = set(values.keys()) if values else set()
-        self._changed_keys = set(self._present_keys)
+        self._defaults: dict[str, str] = {}
 
         params = list(macro.params)
         row_count = 0
@@ -57,34 +56,44 @@ class ParamEditorDialog(QtWidgets.QDialog):
                     w.setMinimum(min_val)
                     w.setMaximum(max_val)
                     w.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+                    if p.default not in (None, ""):
+                        try:
+                            w.setValue(int(float(p.default)))
+                        except ValueError:
+                            pass
                 elif p.type == "FLOAT":
                     w = QtWidgets.QDoubleSpinBox()
                     w.setMinimum(float(p.min or 0.0))
                     w.setMaximum(float(p.max or 1e9))
                     w.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+                    if p.default not in (None, ""):
+                        try:
+                            w.setValue(float(p.default))
+                        except ValueError:
+                            pass
                 elif p.type == "BOOL":
                     w = QtWidgets.QCheckBox()
+                    if p.default not in (None, ""):
+                        w.setChecked(str(p.default).lower() in {"1", "true", "yes"})
                 elif p.type == "ENUM":
                     w = QtWidgets.QComboBox()
                     for choice in (p.default or "").split(";"):
                         if choice:
                             w.addItem(choice)
+                    if p.default not in (None, ""):
+                        idx = w.findText(str(p.default))
+                        if idx >= 0:
+                            w.setCurrentIndex(idx)
                 else:
                     w = QtWidgets.QLineEdit()
+                    if p.default not in (None, ""):
+                        w.setText(str(p.default))
                 label = QtWidgets.QLabel(p.name)
                 layout.addWidget(label, row, col * 2)
                 layout.addWidget(w, row, col * 2 + 1)
                 self._widgets[p.name] = w
-                if isinstance(w, QtWidgets.QSpinBox):
-                    w.valueChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
-                elif isinstance(w, QtWidgets.QDoubleSpinBox):
-                    w.valueChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
-                elif isinstance(w, QtWidgets.QCheckBox):
-                    w.stateChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
-                elif isinstance(w, QtWidgets.QComboBox):
-                    w.currentTextChanged.connect(lambda _=0, n=p.name, d=p.default: self._on_param_changed(n, d))
-                else:
-                    w.textChanged.connect(lambda _="", n=p.name, d=p.default: self._on_param_changed(n, d))
+                self._defaults[p.name] = self._normalize_default_value(w, p.default)
+                self._connect_change_signal(w, p.name)
             row_count = max(len(left), len(right))
 
         # Fallback: no schema but values exist -> render simple line edits
@@ -107,7 +116,8 @@ class ParamEditorDialog(QtWidgets.QDialog):
                 layout.addWidget(label, row, col * 2)
                 layout.addWidget(w, row, col * 2 + 1)
                 self._widgets[pname] = w
-                w.textChanged.connect(lambda _="", n=pname: self._on_param_changed(n))
+                self._defaults[pname] = ""
+                self._connect_change_signal(w, pname)
             row_count = max(len(left), len(right))
 
         buttons = QtWidgets.QDialogButtonBox(
@@ -119,8 +129,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
         layout.addWidget(buttons, row_count, 0, 1, 4)
         if values:
             self.set_values(values)
-        for name in self._present_keys:
-            self._set_changed_style(name, True)
+        self._refresh_all_changed_states()
 
     # ------------------------------------------------------------------
     def set_values(self, values: Dict[str, str]) -> None:
@@ -167,7 +176,7 @@ class ParamEditorDialog(QtWidgets.QDialog):
 
         result: Dict[str, str] = {}
         for name, w in self._widgets.items():
-            if only_changed and name not in self._changed_keys:
+            if only_changed and not self._is_changed(name):
                 continue
             result[name] = self._string_value(w)
         return result
@@ -190,12 +199,53 @@ class ParamEditorDialog(QtWidgets.QDialog):
             return
         w.setStyleSheet("background:#C5F1FF" if on else "")
 
-    def _on_param_changed(self, name: str, default: str | None = None) -> None:
-        w = self._widgets[name]
+    def _on_param_changed(self, name: str) -> None:
+        self._update_changed_state(name)
+
+    def _update_changed_state(self, name: str) -> None:
+        self._set_changed_style(name, self._is_changed(name))
+
+    def _refresh_all_changed_states(self) -> None:
+        for name in self._widgets:
+            self._update_changed_state(name)
+
+    def _is_changed(self, name: str) -> bool:
+        w = self._widgets.get(name)
+        if not w:
+            return False
         val = self._string_value(w)
-        changed = (name in self._present_keys) or (default not in (None, "", val) and val != (default or ""))
-        self._set_changed_style(name, changed)
-        if changed:
-            self._changed_keys.add(name)
+        default = self._defaults.get(name, "")
+        if default != "":
+            return val != default
+        return val != ""
+
+    def _normalize_default_value(self, widget: QtWidgets.QWidget, default: str | None) -> str:
+        if default in (None, ""):
+            return ""
+        if isinstance(widget, QtWidgets.QSpinBox):
+            try:
+                return str(int(float(default)))
+            except ValueError:
+                return ""
+        if isinstance(widget, QtWidgets.QDoubleSpinBox):
+            try:
+                return str(float(default))
+            except ValueError:
+                return ""
+        if isinstance(widget, QtWidgets.QCheckBox):
+            return "1" if str(default).lower() in {"1", "true", "yes"} else "0"
+        if isinstance(widget, QtWidgets.QComboBox):
+            return str(default)
+        return str(default)
+
+    def _connect_change_signal(self, widget: QtWidgets.QWidget, name: str) -> None:
+        if isinstance(widget, QtWidgets.QSpinBox):
+            widget.valueChanged.connect(lambda _=0, n=name: self._on_param_changed(n))
+        elif isinstance(widget, QtWidgets.QDoubleSpinBox):
+            widget.valueChanged.connect(lambda _=0, n=name: self._on_param_changed(n))
+        elif isinstance(widget, QtWidgets.QCheckBox):
+            widget.stateChanged.connect(lambda _=0, n=name: self._on_param_changed(n))
+        elif isinstance(widget, QtWidgets.QComboBox):
+            widget.currentTextChanged.connect(lambda _="", n=name: self._on_param_changed(n))
         else:
-            self._changed_keys.discard(name)
+            widget.textChanged.connect(lambda _="", n=name: self._on_param_changed(n))
